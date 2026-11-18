@@ -6,7 +6,7 @@ import { currentDay, dueGroupOf, dueLabel, NOT_YOUR_TASK, taskEditBlock } from '
 import { customerTaskFilters, mergeTasks } from './taskLists'
 
 const LATE_UTC = new Date('2026-11-18T22:30:00Z') // already Thu 19 Nov in Riyadh / Dubai
-const open = (dueDate: string | null) => ({ status: 'To do' as const, dueDate })
+const open = (dueDate: string | null) => ({ status: 'todo' as const, dueDate })
 
 afterEach(() => setRegion(null))
 
@@ -36,7 +36,7 @@ describe('My tasks groups follow the company calendar', () => {
   it('No date and Completed', () => {
     const day = companyDay({ timezone: 'UTC', weekStartsOn: 1 }, LATE_UTC)
     expect(dueGroupOf(open(null), day)).toBe('none')
-    expect(dueGroupOf({ status: 'Done', dueDate: '2020-01-01' }, day)).toBe('done')
+    expect(dueGroupOf({ status: 'done', dueDate: '2020-01-01' }, day)).toBe('done')
     expect(dueLabel(null, day)).toBe('No date')
     expect(dueLabel('2027-01-05', day)).toBe('5 Jan 2027')
   })
@@ -82,7 +82,7 @@ describe('Customer 360 Tasks tab queries', () => {
   })
 
   it('shows a task returned by several queries once, in the API order', () => {
-    const t = (id: string, dueDate: string | null) => ({ id, dueDate, priority: 'Medium' }) as TaskView
+    const t = (id: string, dueDate: string | null) => ({ id, dueDate, priority: 'medium' }) as TaskView
     const merged = mergeTasks([[t('A', '2026-11-20'), t('B', null)], undefined, [t('A', '2026-11-20'), t('C', '2026-11-19')]])
     expect(merged.map((x) => x.id)).toEqual(['C', 'A', 'B'])
   })

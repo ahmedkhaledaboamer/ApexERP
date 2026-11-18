@@ -20,7 +20,7 @@ import {
 import { customerPath, leadPath, PATHS, quotationPath } from '@/app/paths'
 import { templateTotals, type ServiceDetail } from '@/modules/services/types'
 import { useServiceQuery } from '@/modules/services/hooks/useServices'
-import { QUOTATION_STATUS_TONE } from '@/modules/quotations/components/QuotationStatusBadge'
+import { QUOTATION_STATUS_LABEL, QUOTATION_STATUS_TONE } from '@/modules/quotations/components/QuotationStatusBadge'
 import { useLookups } from '@/shared/hooks/useLookups'
 import { ApiError } from '@/shared/lib/apiError'
 import { fmtDate, fmtMoney } from '@/shared/lib/utils'
@@ -263,7 +263,7 @@ function Overview({ s, totals, onTemplate }: { s: ServiceDetail; totals: { hours
                 <span className="flex items-center gap-2">
                   <span className="num text-[0.8125rem] text-ink">{fmtMoney(q.total)}</span>
                   <Badge tone={(QUOTATION_STATUS_TONE as Record<string, Tone>)[q.status] ?? 'neutral'} variant="dot">
-                    {q.status}
+                    {(QUOTATION_STATUS_LABEL as Record<string, string>)[q.status] ?? q.status}
                   </Badge>
                 </span>
               ),

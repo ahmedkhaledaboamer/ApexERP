@@ -7,6 +7,10 @@ import type {
   PlanId,
 } from '@/modules/billing/types'
 import { http } from '@/shared/lib/axios'
+import { billingMapper } from '@/shared/api/mappers'
+
+const fromApi = <T,>(data: unknown) => billingMapper.fromApi(data) as T
+const toApi = (body: object) => billingMapper.toApi(body as never)
 
 /**
  * Billing endpoints (docs/API.md › Billing). The company comes from the session; nothing here
@@ -15,42 +19,42 @@ import { http } from '@/shared/lib/axios'
  */
 
 export async function getEntitlements(): Promise<Entitlements> {
-  return (await http.get<Entitlements>('/billing/entitlements')).data
+  return fromApi<Entitlements>((await http.get<unknown>('/billing/entitlements')).data)
 }
 
 export async function getBillingOverview(): Promise<BillingOverview> {
-  return (await http.get<BillingOverview>('/billing/overview')).data
+  return fromApi<BillingOverview>((await http.get<unknown>('/billing/overview')).data)
 }
 
 export async function changePlan(planId: PlanId): Promise<ChangePlanResult> {
-  return (await http.post<ChangePlanResult>('/billing/change-plan', { planId })).data
+  return fromApi<ChangePlanResult>((await http.post<unknown>('/billing/change-plan', toApi({ planId }))).data)
 }
 
 /** Trialing only (Company Admin): the paid plan the trial converts to; the saved card is charged for it at trial end. */
 export async function setTrialPlan(planId: PlanId): Promise<BillingOverview> {
-  return (await http.post<BillingOverview>('/billing/trial-plan', { planId })).data
+  return fromApi<BillingOverview>((await http.post<unknown>('/billing/trial-plan', toApi({ planId }))).data)
 }
 
 export async function cancelScheduledChange(): Promise<unknown> {
-  return (await http.delete('/billing/scheduled-change')).data
+  return fromApi<unknown>((await http.delete('/billing/scheduled-change')).data)
 }
 
 export async function updatePaymentMethod(input: PaymentMethodInput): Promise<unknown> {
-  return (await http.post('/billing/payment-method', input)).data
+  return fromApi<unknown>((await http.post('/billing/payment-method', toApi(input))).data)
 }
 
 export async function cancelSubscription(): Promise<unknown> {
-  return (await http.post('/billing/cancel', {})).data
+  return fromApi<unknown>((await http.post('/billing/cancel', {})).data)
 }
 
 export async function resumeSubscription(): Promise<unknown> {
-  return (await http.post('/billing/resume', {})).data
+  return fromApi<unknown>((await http.post('/billing/resume', {})).data)
 }
 
 export async function reactivateSubscription(planId: PlanId): Promise<unknown> {
-  return (await http.post('/billing/reactivate', { planId })).data
+  return fromApi<unknown>((await http.post('/billing/reactivate', toApi({ planId }))).data)
 }
 
 export async function exportData(): Promise<DataExport> {
-  return (await http.get<DataExport>('/billing/export', { timeout: 120_000 })).data
+  return fromApi<DataExport>((await http.get<unknown>('/billing/export', { timeout: 120_000 })).data)
 }

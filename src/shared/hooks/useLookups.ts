@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getLookups, saveLookupList } from '@/modules/settings/api/settingsApi'
 import type { IndustryOption, ListOption, LookupList, Lookups, StatusOption } from '@/modules/settings/types'
+import { isClosedType, isParkedType } from '@/shared/domain/leadStatus'
 
 export const lookupKeys = {
   all: ['lookups'] as const,
@@ -17,8 +18,9 @@ const FALLBACK_STATUS: Omit<StatusOption, 'key' | 'label'> = {
   active: false,
   order: 999,
   probability: 0,
-  kind: 'open',
-  requires: 'none',
+  type: 'open',
+  requiresNextStep: false,
+  requiresLossReason: false,
   tone: 'neutral',
   color: '#a1a1ab',
   system: false,
@@ -68,14 +70,15 @@ export function useLookups() {
       status,
       statusLabel: (key: string) => status(key).label,
       probability: (key: string) => status(key).probability,
-      /** Out of the active pipeline: won, lost or parked (Cold). */
-      isClosed: (key: string) => status(key).kind !== 'open',
-      isWon: (key: string) => status(key).kind === 'won',
-      isLost: (key: string) => status(key).kind === 'lost',
-      isParked: (key: string) => status(key).kind === 'parked',
+      /** Out of the active pipeline: won, lost, cold or parked. */
+      isClosed: (key: string) => isClosedType(status(key).type),
+      isWon: (key: string) => status(key).type === 'won',
+      isLost: (key: string) => status(key).type === 'lost',
+      /** Cold or another parked status. */
+      isParked: (key: string) => isParkedType(status(key).type),
       /** Active statuses of the open pipeline, in order (kanban columns, funnels). */
-      openStatuses: activeOnly(data.statuses).filter((s) => s.kind === 'open'),
-      closedStatusKeys: data.statuses.filter((s) => s.kind !== 'open').map((s) => s.key),
+      openStatuses: activeOnly(data.statuses).filter((s) => s.type === 'open'),
+      closedStatusKeys: data.statuses.filter((s) => isClosedType(s.type)).map((s) => s.key),
 
       sourceLabel: (key: string | null | undefined) => label(data.sources, key),
       industryLabel: (key: string | null | undefined) => label(data.industries, key),

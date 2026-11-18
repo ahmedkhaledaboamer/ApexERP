@@ -5,8 +5,17 @@ import { Badge, DOT, type Tone } from '@/shared/components/ui/Badge'
 import { Menu } from '@/shared/components/ui/Menu'
 import { Tooltip } from '@/shared/components/ui/Kbd'
 import { SelectInput, Switch } from '@/shared/components/form/Field'
-import type { StatusKind, StatusRequirement } from '@/modules/settings/types'
-import { KIND_HINT, KIND_LABEL, kindDefaults, newStatus, REQUIRES_LABEL, TONE_HEX, TONES, type DraftStatus } from './draft'
+import type { StatusType } from '@/modules/settings/types'
+import {
+  flagsOfRequirement,
+  LEAD_STATUS_TYPE_HINT,
+  LEAD_STATUS_TYPE_LABEL,
+  LEAD_STATUS_TYPES,
+  requirementOf,
+  STAGE_REQUIREMENT_LABEL,
+  type StageRequirement,
+} from '@/shared/domain/leadStatus'
+import { newStatus, TONE_HEX, TONES, typeDefaults, type DraftStatus } from './draft'
 import { AddItem, InlineLabel } from './ListEditor'
 import { SortableList } from './SortableList'
 
@@ -19,7 +28,7 @@ interface StatusesEditorProps {
   errors: Record<string, string>
 }
 
-/** Lead statuses: label, kind, what's required to enter, forecast probability, colour, active. */
+/** Lead statuses: label, type, what's required to enter, forecast probability, colour, active. */
 export function StatusesEditor({ items, onChange, readOnly, errors }: StatusesEditorProps) {
   const errId = useId()
   const patch = (id: string, p: Partial<DraftStatus>) => onChange(items.map((s) => (s._id === id ? { ...s, ...p } : s)))
@@ -31,7 +40,7 @@ export function StatusesEditor({ items, onChange, readOnly, errors }: StatusesEd
           <div className={cn(GRID, 'border-y border-line bg-sunken/50 px-3 py-2 text-xs font-medium text-muted')} aria-hidden>
             <span />
             <span className="ps-2">Status</span>
-            <span>Kind</span>
+            <span>Type</span>
             <span>Requires</span>
             <span>Probability</span>
             <span>Colour</span>
@@ -64,7 +73,7 @@ export function StatusesEditor({ items, onChange, readOnly, errors }: StatusesEd
                         />
                       </div>
                       {s.system && (
-                        <Tooltip label="Built in: rename or deactivate, but its kind is fixed">
+                        <Tooltip label="Built in: rename or deactivate, but its type is fixed">
                           <Badge variant="outline" icon={<Lock aria-hidden />} className="cursor-default">
                             Built-in
                           </Badge>
@@ -75,39 +84,39 @@ export function StatusesEditor({ items, onChange, readOnly, errors }: StatusesEd
                     </div>
 
                     {readOnly ? (
-                      <span className="text-[0.8125rem] text-ink-2">{KIND_LABEL[s.kind]}</span>
+                      <span className="text-[0.8125rem] text-ink-2">{LEAD_STATUS_TYPE_LABEL[s.type]}</span>
                     ) : (
                       <SelectInput
-                        aria-label={`Kind of ${s.label}`}
-                        title={s.system ? 'Built-in statuses keep their kind' : KIND_HINT[s.kind]}
-                        value={s.kind}
+                        aria-label={`Type of ${s.label}`}
+                        title={s.system ? 'Built-in statuses keep their type' : LEAD_STATUS_TYPE_HINT[s.type]}
+                        value={s.type}
                         disabled={s.system}
                         className="h-8"
                         onChange={(e) => {
-                          const kind = e.target.value as StatusKind
-                          patch(s._id, { kind, ...kindDefaults(kind, s) })
+                          const type = e.target.value as StatusType
+                          patch(s._id, { type, ...typeDefaults(type, s) })
                         }}
                       >
-                        {(Object.keys(KIND_LABEL) as StatusKind[]).map((k) => (
+                        {LEAD_STATUS_TYPES.map((k) => (
                           <option key={k} value={k}>
-                            {KIND_LABEL[k]}
+                            {LEAD_STATUS_TYPE_LABEL[k]}
                           </option>
                         ))}
                       </SelectInput>
                     )}
 
-                    {readOnly ? (
-                      <span className="text-[0.8125rem] text-ink-2">{REQUIRES_LABEL[s.requires]}</span>
+                    {readOnly || s.type === 'won' ? (
+                      <span className="text-[0.8125rem] text-ink-2">{s.type === 'won' ? 'Won flow' : STAGE_REQUIREMENT_LABEL[requirementOf(s)]}</span>
                     ) : (
                       <SelectInput
                         aria-label={`What ${s.label} requires`}
-                        value={s.requires}
+                        value={requirementOf(s)}
                         className="h-8"
-                        onChange={(e) => patch(s._id, { requires: e.target.value as StatusRequirement })}
+                        onChange={(e) => patch(s._id, flagsOfRequirement(e.target.value as StageRequirement))}
                       >
-                        {(Object.keys(REQUIRES_LABEL) as StatusRequirement[]).map((r) => (
+                        {(Object.keys(STAGE_REQUIREMENT_LABEL) as StageRequirement[]).map((r) => (
                           <option key={r} value={r}>
-                            {REQUIRES_LABEL[r]}
+                            {STAGE_REQUIREMENT_LABEL[r]}
                           </option>
                         ))}
                       </SelectInput>

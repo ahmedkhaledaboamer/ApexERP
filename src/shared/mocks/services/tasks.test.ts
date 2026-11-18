@@ -5,6 +5,7 @@ import { ApiError } from '@/shared/lib/apiError'
 import {
   addAttachment,
   addComment,
+  addTimeEntry,
   compareTasks,
   createTask,
   getTask,
@@ -63,7 +64,7 @@ describe('Tasks scope', () => {
     const open = await getTasks(admin)
     const all = await getTasks(admin, { includeDone: true })
     expect(all).toHaveLength(tasks.filter((t) => t.companyId === admin.companyId).length)
-    expect(open.every((t) => t.status !== 'Done')).toBe(true)
+    expect(open.every((t) => t.status !== 'done')).toBe(true)
     expect(open.length).toBeLessThan(all.length)
   })
 
@@ -88,8 +89,8 @@ describe('Create validation', () => {
   it('defaults the owner to the caller and records a created event', async () => {
     const t = await createTask(agent, { title: 'Call back about the proposal', dueDate: '2026-12-01' })
     expect(t.ownerId).toBe(agent.id)
-    expect(t.status).toBe('To do')
-    expect(t.priority).toBe('Medium')
+    expect(t.status).toBe('todo')
+    expect(t.priority).toBe('medium')
     expect(t.history[0].kind).toBe('created')
   })
 
@@ -108,8 +109,10 @@ describe('Create validation', () => {
     await rejects(createTask(agent, { title: 'Ghost lead', link: { type: 'lead', id: 'L-NOPE' } }), 422)
     const c = await createTask(admin, { title: 'QBR prep', link: { type: 'customer', id: customers[0].id } })
     expect(c.linkView).toMatchObject({ type: 'customer', available: true })
-    const ev = await createTask(admin, { title: 'Booth setup', link: { type: 'event', id: 'EV-1' } })
-    expect(ev.linkView?.available).toBe(false)
+    // Events module (Enterprise plan): a real event of the company links; an unknown one is refused.
+    await rejects(createTask(admin, { title: 'Ghost event', link: { type: 'event', id: 'EV-NOPE' } }), 422)
+    const ev = await createTask(admin, { title: 'Booth setup', link: { type: 'event', id: 'EV-1003' } })
+    expect(ev.linkView).toMatchObject({ type: 'event', label: 'Dubai Business Breakfast', available: true })
   })
 
   it('notifies the owner when someone else assigns the task', async () => {
@@ -123,34 +126,37 @@ describe('Create validation', () => {
 
 describe('Update history', () => {
   it('records one event per changed field and sets completedAt on Done', async () => {
-    const t = await createTask(agent, { title: 'Send brochure', priority: 'Low' })
-    const u = await updateTask(agent, t.id, { status: 'In progress', priority: 'High', dueDate: '2026-12-10', loggedHours: 2 })
+    const t = await createTask(agent, { title: 'Send brochure', priority: 'low' })
+    await updateTask(agent, t.id, { status: 'in_progress', priority: 'high', dueDate: '2026-12-10' })
+    // Hours are time entries now (POST /tasks/:id/time-entries); the task's loggedHours is their sum.
+    const u = await addTimeEntry(agent, t.id, { entryDate: '2026-12-09', hours: 2 })
     const summaries = u.history.map((h) => h.summary)
     expect(summaries).toContain('Status: To do → In progress')
     expect(summaries).toContain('Priority: Low → High')
     expect(summaries).toContain('Due: no date → 2026-12-10')
-    expect(summaries).toContain('Logged: 0 h → 2 h')
+    expect(summaries).toContain('Logged 2 h on 2026-12-09')
+    expect(u.loggedHours).toBe(2)
     expect(u.completedAt).toBeNull()
-    const done = await updateTask(agent, t.id, { status: 'Done' })
+    const done = await updateTask(agent, t.id, { status: 'done' })
     expect(done.completedAt).not.toBeNull()
-    const reopened = await updateTask(agent, t.id, { status: 'To do' })
+    const reopened = await updateTask(agent, t.id, { status: 'todo' })
     expect(reopened.completedAt).toBeNull()
   })
 
   it('unchanged fields add no events', async () => {
     const t = await createTask(agent, { title: 'Same same' })
-    const u = await updateTask(agent, t.id, { title: 'Same same', priority: 'Medium' })
+    const u = await updateTask(agent, t.id, { title: 'Same same', priority: 'medium' })
     expect(u.history).toHaveLength(1)
   })
 
   it('only owner, creator, followers or scope over the owner may edit', async () => {
     const t = await createTask(admin, { title: 'Agent-owned', ownerId: agent.id })
-    await rejects(updateTask(otherAgent, t.id, { status: 'Done' }), 404) // not even visible
+    await rejects(updateTask(otherAgent, t.id, { status: 'done' }), 404) // not even visible
     const followed = await createTask(admin, { title: 'Followed', ownerId: agent.id, followerIds: [otherAgent.id] })
-    const u = await updateTask(otherAgent, followed.id, { status: 'In progress' })
-    expect(u.status).toBe('In progress')
-    const m = await updateTask(manager, t.id, { priority: 'Urgent' })
-    expect(m.priority).toBe('Urgent')
+    const u = await updateTask(otherAgent, followed.id, { status: 'in_progress' })
+    expect(u.status).toBe('in_progress')
+    const m = await updateTask(manager, t.id, { priority: 'urgent' })
+    expect(m.priority).toBe('urgent')
   })
 
   it('reassigning notifies the new owner', async () => {
@@ -191,10 +197,10 @@ describe('Comments and @mentions', () => {
 describe('Attachments (mocked)', () => {
   it('adds and removes metadata with history, max 25 MB', async () => {
     const t = await createTask(agent, { title: 'Collect docs' })
-    const a = await addAttachment(agent, t.id, { name: 'trade-licence.pdf', size: 120_000, type: 'application/pdf' })
+    const a = await addAttachment(agent, t.id, { name: 'trade-licence.pdf', sizeBytes: 120_000, mimeType: 'application/pdf' })
     expect(a.attachments).toHaveLength(1)
     expect(a.history.at(-1)?.summary).toBe('Attached trade-licence.pdf')
-    await rejects(addAttachment(agent, t.id, { name: 'huge.zip', size: 26 * 1024 * 1024, type: 'application/zip' }), 422)
+    await rejects(addAttachment(agent, t.id, { name: 'huge.zip', sizeBytes: 26 * 1024 * 1024, mimeType: 'application/zip' }), 422)
     const r = await removeAttachment(agent, t.id, a.attachments[0].id)
     expect(r.attachments).toHaveLength(0)
     expect(r.history.at(-1)?.summary).toBe('Removed trade-licence.pdf')

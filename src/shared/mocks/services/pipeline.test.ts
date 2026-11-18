@@ -9,6 +9,8 @@ import { APEX_ID, CREST_ID } from '@/shared/mocks/data/tenancy'
 import { lookupsFor } from '@/shared/mocks/data/lookups'
 import { restoreSnapshot, takeSnapshot } from '@/shared/mocks/persist/registry'
 import { moveLeadStage } from '@/shared/mocks/services/leads'
+import { companyDayOf } from '@/shared/mocks/selectors/company'
+import { addDaysIso } from '@/shared/lib/companyDay'
 
 /**
  * Pipeline transition rules (regression for "New → Interested doesn't move"). Every stage of each
@@ -76,9 +78,11 @@ describe.each(COMPANIES)('every stage → every other stage ($co)', ({ co, admin
     }
     if (action === 'next-step') {
       expect(await attempt(user, { id: lead.id, status: toKey })).toMatchObject({ ok: false, status: 422 })
-      expect(await attempt(user, { id: lead.id, status: toKey, nextStep: '  ' , nextFollowUpDate: new Date().toISOString() })).toMatchObject({ ok: false, status: 422 })
+      const when = addDaysIso(companyDayOf(co).today, 2)
+      expect(await attempt(user, { id: lead.id, status: toKey, nextStep: '  ', nextFollowUpDate: when })).toMatchObject({ ok: false, status: 422 })
+      // The follow-up is a company-local calendar date: a datetime is refused.
+      expect(await attempt(user, { id: lead.id, status: toKey, nextStep: 'Send the proposal', nextFollowUpDate: `${when}T09:00:00.000Z` })).toMatchObject({ ok: false, status: 422 })
       expect(lead.status).toBe(fromKey)
-      const when = new Date(Date.now() + 2 * 86_400_000).toISOString()
       expect(await attempt(user, { id: lead.id, status: toKey, nextStep: 'Send the proposal', nextFollowUpDate: when })).toEqual({ ok: true })
       expect(lead.status).toBe(toKey)
       expect(lead.nextStep).toBe('Send the proposal')
@@ -105,7 +109,7 @@ describe('who can move a lead (from the permission matrix)', () => {
     id,
     status: 'Interested',
     nextStep: 'Book a demo',
-    nextFollowUpDate: new Date(Date.now() + 86_400_000).toISOString(),
+    nextFollowUpDate: addDaysIso(companyDayOf(APEX_ID).today, 1),
   })
   const apexLead = (pred: (ownerId: string) => boolean) =>
     leads.find((l) => l.companyId === APEX_ID && l.status === 'New' && pred(l.ownerId)) ??
@@ -147,5 +151,50 @@ describe('who can move a lead (from the permission matrix)', () => {
   it('a lead of another company is not found (404), whatever the role', async () => {
     const crestLead = leads.find((l) => l.companyId === CREST_ID)!
     expect(await attempt(u('u1'), interested(crestLead.id))).toMatchObject({ ok: false, status: 404 })
+  })
+})
+
+describe('lead_status_history: every status change writes one row', () => {
+  it('stage move, automatic Contacted, quotation sent (→ Proposal) and create', async () => {
+    const { leadStatusHistory } = await import('@/shared/mocks/data/leadStatusHistory')
+    const { logActivity, createLead } = await import('@/shared/mocks/services/leads')
+    const { sendQuotation } = await import('@/shared/mocks/services/quotations')
+    const { quotations } = await import('@/shared/mocks/data/quotations')
+    const admin = u('u1')
+    const rowsFor = (leadId: string) => leadStatusHistory.filter((r) => r.leadId === leadId)
+
+    // Stage move (user, with the next step as the reason).
+    const lead = leads.find((l) => l.companyId === APEX_ID && l.status === 'New')!
+    const before = rowsFor(lead.id).length
+    await moveLeadStage(admin, { id: lead.id, status: 'Contacted' })
+    expect(rowsFor(lead.id).length).toBe(before + 1)
+    expect(rowsFor(lead.id).at(-1)).toMatchObject({ fromStatusId: 'New', toStatusId: 'Contacted', changedBy: 'u1', companyId: APEX_ID })
+    // Same status again: no row.
+    await moveLeadStage(admin, { id: lead.id, status: 'Contacted' })
+    expect(rowsFor(lead.id).length).toBe(before + 1)
+
+    // Automatic New → Contacted after the first outreach (system change).
+    const fresh = leads.find((l) => l.companyId === APEX_ID && l.status === 'New' && l.id !== lead.id)!
+    await logActivity(admin, { leadId: fresh.id, type: 'call', summary: 'First call' })
+    expect(rowsFor(fresh.id).at(-1)).toMatchObject({ fromStatusId: 'New', toStatusId: 'Contacted', changedBy: null })
+
+    // Sending a quotation moves an earlier-stage lead to Proposal.
+    const draft = quotations.find((q) => q.companyId === APEX_ID && q.status === 'draft')!
+    const qLead = leads.find((l) => l.id === draft.leadId)!
+    qLead.status = 'Contacted'
+    await sendQuotation(admin, draft.id)
+    expect(rowsFor(qLead.id).at(-1)).toMatchObject({ fromStatusId: 'Contacted', toStatusId: 'Proposal' })
+
+    // Create: the first row has no "from".
+    const l = lookupsFor(APEX_ID)
+    const created = await createLead(admin, {
+      company: 'History Test Trading',
+      contactName: 'Rana Saeed',
+      mobile: '0501234567',
+      email: 'rana@historytest.ae',
+      sourceType: l.sources.find((s) => s.active)!.key,
+      industry: l.industries.find((i) => i.active)!.key,
+    })
+    expect(rowsFor(created.id)).toEqual([expect.objectContaining({ fromStatusId: null, toStatusId: created.status, changedBy: 'u1' })])
   })
 })

@@ -1,6 +1,7 @@
 import { Crown } from 'lucide-react'
-import type { ContractStatus, CustomerStatus } from '@/modules/crm/types'
-import { CONTRACT_STATUS_TONE, CUSTOMER_STATUS_TONE } from '@/modules/crm/constants'
+import type { CustomerStatus } from '@/modules/crm/types'
+import type { ContractDisplayStatus } from '@/shared/domain/enums'
+import { CONTRACT_STATUS_LABEL, CONTRACT_STATUS_TONE, CUSTOMER_STATUS_LABEL, CUSTOMER_STATUS_TONE } from '@/modules/crm/constants'
 import { useAutomationRules } from '@/shared/hooks/useAutomationRules'
 import { cn } from '@/shared/lib/utils'
 import { Badge } from '@/shared/components/ui/Badge'
@@ -8,16 +9,17 @@ import { Badge } from '@/shared/components/ui/Badge'
 /** Customer status as a dot chip; `soft` gives the tinted pill for headers. */
 export function CustomerStatusBadge({ status, soft = false }: { status: CustomerStatus; soft?: boolean }) {
   return (
-    <Badge tone={CUSTOMER_STATUS_TONE[status]} variant={soft ? 'soft' : 'dot'} icon={soft && status === 'VIP' ? <Crown /> : undefined}>
-      {status}
+    <Badge tone={CUSTOMER_STATUS_TONE[status]} variant={soft ? 'soft' : 'dot'} icon={soft && status === 'vip' ? <Crown /> : undefined}>
+      {CUSTOMER_STATUS_LABEL[status]}
     </Badge>
   )
 }
 
-export function ContractStatusBadge({ status }: { status: ContractStatus }) {
+/** A contract's display status (`contractDisplayStatus(row)`: stored status, or expiring). */
+export function ContractStatusBadge({ status }: { status: ContractDisplayStatus }) {
   return (
     <Badge tone={CONTRACT_STATUS_TONE[status]} variant="dot">
-      {status}
+      {CONTRACT_STATUS_LABEL[status]}
     </Badge>
   )
 }

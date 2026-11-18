@@ -5,6 +5,7 @@ import { Activity, CalendarDays, Crosshair, Pencil, TrendingDown, Users } from '
 import { EditTargetsDrawer } from '@/modules/targets/components/EditTargetsDrawer'
 import { MonthSwitcher } from '@/modules/targets/components/MonthSwitcher'
 import { TargetProgress } from '@/modules/targets/components/TargetProgress'
+import { useEventsEnabled } from '@/modules/events/hooks/useEventsEnabled'
 import { useTargetsQuery } from '@/modules/targets/hooks/useTargets'
 import {
   completion,
@@ -152,18 +153,19 @@ function SalesTargets({ scope }: { scope: ReturnType<typeof scopeOf> }) {
 /* ---------------- Summary ---------------- */
 
 function Summary({ data }: { data: TargetsMonth }) {
+  const eventsOn = useEventsEnabled()
   const totals = useMemo(() => totalsOf(data.rows), [data.rows])
-  const overall = completion(totals.values, totals.actuals)
+  const overall = completion(totals.values, totals.actuals, eventsOn)
   const tone = paceTone(overall, data.elapsed)
-  const perAgent = data.rows.map((r) => ({ row: r, pct: completion(r.values, r.actuals) }))
+  const perAgent = data.rows.map((r) => ({ row: r, pct: completion(r.values, r.actuals, eventsOn) }))
   const onPace = perAgent.filter((a) => paceTone(a.pct, data.elapsed) === 'green').length
   const behind = perAgent.filter((a) => paceTone(a.pct, data.elapsed) === 'red' || paceTone(a.pct, data.elapsed) === 'amber')
   const actTarget = ACTIVITY_KINDS.reduce((s, k) => s + totals.values[k], 0)
   const actActual = ACTIVITY_KINDS.reduce((s, k) => s + totals.actuals[k], 0)
   const status = monthStatus(data)
   const single = data.rows.length === 1
-  const behindKinds = TARGET_KEYS.filter((k) => isBehind(k, totals.actuals[k], totals.values[k], data.elapsed))
-  const untracked = TARGET_KEYS.filter((k) => !isTracked(k))
+  const behindKinds = TARGET_KEYS.filter((k) => isBehind(k, totals.actuals[k], totals.values[k], data.elapsed, eventsOn))
+  const untracked = TARGET_KEYS.filter((k) => !isTracked(k, eventsOn))
 
   return (
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-[25rem_minmax(0,1fr)]">
@@ -239,8 +241,8 @@ function Summary({ data }: { data: TargetsMonth }) {
 }
 
 /** Kinds with no target ("No target") or not tracked yet ("n/a", events) are never behind. */
-function isBehind(kind: TargetKey, actual: number, target: number, elapsed: number): boolean {
-  if (!isTracked(kind) || !hasTarget(target)) return false
+function isBehind(kind: TargetKey, actual: number, target: number, elapsed: number, eventsOn: boolean): boolean {
+  if (!isTracked(kind, eventsOn) || !hasTarget(target)) return false
   const t = paceTone((actual / target) * 100, elapsed)
   return t === 'amber' || t === 'red'
 }
@@ -261,6 +263,7 @@ function monthStatus(data: TargetsMonth): { label: string; value: string; hint: 
 /* ---------------- Matrix ---------------- */
 
 function Matrix({ data, canEdit, onEdit }: { data: TargetsMonth; canEdit: boolean; onEdit: (userId: string) => void }) {
+  const eventsOn = useEventsEnabled()
   const { values: totalValues, actuals: totalActuals } = totalsOf(data.rows)
   const showTotals = data.rows.length > 1
 
@@ -281,7 +284,7 @@ function Matrix({ data, canEdit, onEdit }: { data: TargetsMonth; canEdit: boolea
                 Agent
               </th>
               {TARGET_KEYS.map((k) => (
-                <th key={k} scope="col" className="px-3 py-2.5 font-medium" title={isTracked(k) ? TARGET_SOURCES[k] : EVENTS_NA_NOTE}>
+                <th key={k} scope="col" className="px-3 py-2.5 font-medium" title={isTracked(k, eventsOn) ? TARGET_SOURCES[k] : EVENTS_NA_NOTE}>
                   {TARGET_LABELS[k]}
                 </th>
               ))}
@@ -368,8 +371,9 @@ function AgentRow({ row, elapsed, canEdit, onEdit }: { row: AgentTargetRow; elap
 }
 
 function OverallCell({ values, actuals, elapsed }: { values: TargetValues; actuals: TargetValues; elapsed: number }) {
-  if (!countedKinds(values).length) return <span className="text-xs text-subtle">No targets</span>
-  const pct = completion(values, actuals)
+  const eventsOn = useEventsEnabled()
+  if (!countedKinds(values, eventsOn).length) return <span className="text-xs text-subtle">No targets</span>
+  const pct = completion(values, actuals, eventsOn)
   const tone = paceTone(pct, elapsed)
   return (
     <div className="min-w-[6rem]">

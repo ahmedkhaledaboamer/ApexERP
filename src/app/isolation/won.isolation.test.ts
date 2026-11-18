@@ -116,11 +116,12 @@ function leadInScope(u: User, scope: Scope) {
 
 const serviceOf = (co: string) => services.find((s) => s.companyId === co && s.active)!
 let seq = 0
+/** A Won body in the API's snake_case. */
 const body = (co: string, pm: string, extra: Record<string, unknown> = {}) => ({
-  serviceIds: [serviceOf(co).id],
-  projectManagerId: pm,
-  startDate: '2026-12-07',
-  idempotencyKey: `won-iso-${++seq}`,
+  service_ids: [serviceOf(co).id],
+  project_manager_id: pm,
+  start_date: '2026-12-07',
+  idempotency_key: `won-iso-${++seq}`,
   ...extra,
 })
 
@@ -140,7 +141,7 @@ describe('Won flow per role, derived from PERMISSION_MATRIX (both companies)', (
         const pm = u.id
 
         // Preview: inside the scope with sales edit 200; view (read-only) and hidden 403.
-        const preview = await callApi(token, 'POST', `/leads/${lead.id}/won/preview`, { serviceIds: [serviceOf(co).id] })
+        const preview = await callApi(token, 'POST', `/leads/${lead.id}/won/preview`, { service_ids: [serviceOf(co).id] })
         const previewOk = scope !== 'hidden' && inScope(u, scope, lead.ownerId) && can(role, 'sales', 'edit')
         // The preview is a read of a write action: it needs the same right as the submit.
         expect(preview.status, `${where}: preview own-scope lead ${JSON.stringify(preview.body)}`).toBe(previewOk ? 200 : 403)
@@ -167,10 +168,10 @@ describe('Won flow per role, derived from PERMISSION_MATRIX (both companies)', (
         const canWin = scope !== 'hidden' && writable(scope) && inScope(u, scope, lead.ownerId)
         expect(win.status, `${where}: win own-scope lead ${JSON.stringify(win.body)}`).toBe(canWin ? 200 : 403)
         if (canWin) {
-          const customer = customers.find((c) => c.id === win.body.customerId)!
+          const customer = customers.find((c) => c.id === win.body.customer_id)!
           expect(customer.companyId).toBe(co)
-          expect(projects.filter((p) => win.body.projectIds.includes(p.id)).every((p) => p.companyId === co)).toBe(true)
-          expect(tasks.filter((t) => win.body.taskIds.includes(t.id)).every((t) => t.companyId === co)).toBe(true)
+          expect(projects.filter((p) => win.body.project_ids.includes(p.id)).every((p) => p.companyId === co)).toBe(true)
+          expect(tasks.filter((t) => win.body.task_ids.includes(t.id)).every((t) => t.companyId === co)).toBe(true)
         } else {
           expect(leads.find((l) => l.id === lead.id)?.customerId ?? null).toBeNull()
         }
@@ -200,9 +201,9 @@ describe('Won flow: spoofed company and error bodies over HTTP', () => {
       })
       const res = await getResponse(handlers, req)
       expect(res?.status).toBe(200)
-      const out = (await res!.json()) as { customerId: string; projectIds: string[] }
-      expect(customers.find((c) => c.id === out.customerId)?.companyId).toBe(co)
-      expect(projects.filter((p) => out.projectIds.includes(p.id)).every((p) => p.companyId === co)).toBe(true)
+      const out = (await res!.json()) as { customer_id: string; project_ids: string[] }
+      expect(customers.find((c) => c.id === out.customer_id)?.companyId).toBe(co)
+      expect(projects.filter((p) => out.project_ids.includes(p.id)).every((p) => p.companyId === co)).toBe(true)
       expect(
         JSON.stringify({
           leads: leads.filter((l) => l.companyId === them),
@@ -239,9 +240,9 @@ describe('Won flow: spoofed company and error bodies over HTTP', () => {
     const admin = userFor('co_apex', 'Company Admin')
     const { quotations } = await import('@/shared/mocks/data/quotations')
     const lead = winnable('co_apex')[0]
-    const q = quotations.find((x) => x.companyId === 'co_apex' && x.status === 'Draft')!
+    const q = quotations.find((x) => x.companyId === 'co_apex' && x.status === 'draft')!
     q.leadId = lead.id
-    const res = await callApi(tokenFor(admin), 'POST', `/leads/${lead.id}/won`, body('co_apex', admin.id, { quotationId: q.id }))
+    const res = await callApi(tokenFor(admin), 'POST', `/leads/${lead.id}/won`, body('co_apex', admin.id, { quotation_id: q.id }))
     expect(res.status).toBe(422)
     expect(res.body).toMatchObject({ code: 'quotation_not_accepted', step: 'validate' })
   })

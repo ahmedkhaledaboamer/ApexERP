@@ -252,10 +252,10 @@ describe('limit enforcement (402 LIMIT_REACHED, details in the body)', () => {
     const task = tasks.find((t) => t.companyId === CREST_ID)!
     const owner = crestAdmin()
     simulate(CREST_ID, 'storageMb', 51200 - 1)
-    const e = await apiError(addAttachment(owner, task.id, { name: 'big.pdf', size: 2 * 1024 * 1024, type: 'application/pdf' }))
+    const e = await apiError(addAttachment(owner, task.id, { name: 'big.pdf', sizeBytes: 2 * 1024 * 1024, mimeType: 'application/pdf' }))
     expect(e.status).toBe(402)
     expect((e as CodedApiError).details).toMatchObject({ limit: 'storageMb', max: 51200 })
-    const view = await addAttachment(owner, task.id, { name: 'small.pdf', size: 512 * 1024, type: 'application/pdf' })
+    const view = await addAttachment(owner, task.id, { name: 'small.pdf', sizeBytes: 512 * 1024, mimeType: 'application/pdf' })
     expect(view.attachments.some((a) => a.name === 'small.pdf')).toBe(true)
   })
 
@@ -273,11 +273,11 @@ describe('limit enforcement (402 LIMIT_REACHED, details in the body)', () => {
     expect(e.code).toBe('LIMIT_REACHED')
     expect((e as CodedApiError).details).toMatchObject({ limit: 'emailsPerMonth', current: 20000, max: 20000 })
 
-    const draft = quotations.find((q) => q.companyId === CREST_ID && q.status === 'Draft' && q.contactEmail.trim())
+    const draft = quotations.find((q) => q.companyId === CREST_ID && q.status === 'draft' && q.contactEmail.trim())
     if (draft) {
       const qe = await apiError(sendQuotation(crestAdmin(), draft.id))
       expect(qe.code).toBe('LIMIT_REACHED')
-      expect(quotations.find((q) => q.id === draft.id)!.status).toBe('Draft')
+      expect(quotations.find((q) => q.id === draft.id)!.status).toBe('draft')
     }
   })
 

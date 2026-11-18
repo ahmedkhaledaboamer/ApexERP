@@ -7,6 +7,7 @@ import { MonthSwitcher } from '@/modules/targets/components/MonthSwitcher'
 import { useResetTargets, useTargetDefaults, useTargetsQuery } from '@/modules/targets/hooks/useTargets'
 import { TargetNotTracked } from '@/modules/targets/components/TargetProgress'
 import { currentMonth, isTracked, monthLabel, shiftMonth } from '@/modules/targets/lib'
+import { useEventsEnabled } from '@/modules/events/hooks/useEventsEnabled'
 import { TARGET_KEYS, TARGET_LABELS, TARGET_SOURCES, type AgentTargetRow, type TargetValues } from '@/modules/targets/types'
 import { cn } from '@/shared/lib/utils'
 import { Avatar } from '@/shared/components/ui/Avatar'
@@ -22,6 +23,7 @@ const MAX_MONTHS_AHEAD = 3
 
 /** Per-agent targets for a month: which agents follow the defaults and which have their own. */
 export function AgentOverridesCard({ canEdit: canEditSettings }: { canEdit: boolean }) {
+  const eventsOn = useEventsEnabled()
   const thisMonth = currentMonth()
   const [month, setMonth] = useState(thisMonth)
   const query = useTargetsQuery(month)
@@ -85,9 +87,9 @@ export function AgentOverridesCard({ canEdit: canEditSettings }: { canEdit: bool
                   Agent
                 </th>
                 {TARGET_KEYS.map((k) => (
-                  <th key={k} scope="col" className="px-3 py-2.5 text-end align-top font-medium" title={isTracked(k) ? TARGET_SOURCES[k] : undefined}>
+                  <th key={k} scope="col" className="px-3 py-2.5 text-end align-top font-medium" title={isTracked(k, eventsOn) ? TARGET_SOURCES[k] : undefined}>
                     {TARGET_LABELS[k]}
-                    {!isTracked(k) && (
+                    {!isTracked(k, eventsOn) && (
                       <span className="mt-0.5 block font-normal">
                         <TargetNotTracked />
                       </span>
@@ -152,7 +154,7 @@ export function AgentOverridesCard({ canEdit: canEditSettings }: { canEdit: bool
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-5 py-3 text-xs text-muted">
         <span>
           <span className="font-medium text-ink-2">—</span> means no target: the kind is left out of completion and shows “No target”.
-          {TARGET_KEYS.some((k) => !isTracked(k)) && ' Events attended targets can be set now; they show n/a and aren’t counted until Events is enabled.'}
+          {TARGET_KEYS.some((k) => !isTracked(k, eventsOn)) && ' Events attended targets can be set now; they show n/a and aren’t counted without the Events module.'}
         </span>
         <Link
           to={month === thisMonth ? PATHS.salesTargets : `${PATHS.salesTargets}?month=${month}`}

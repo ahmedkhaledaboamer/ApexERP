@@ -1,5 +1,5 @@
 import { formatDistanceToNowStrict } from 'date-fns'
-import { ArrowRightLeft, CalendarClock, CirclePlus, Clock, Flag, Link2, MessageSquare, Paperclip, Pencil, UserRound, Users } from 'lucide-react'
+import { ArrowRightLeft, CalendarClock, CirclePlus, Clock, Flag, Link2, ListChecks, MessageSquare, OctagonAlert, Paperclip, Pencil, UserRound, Users } from 'lucide-react'
 import type { User } from '@/shared/types'
 import type { TaskEvent, TaskEventKind } from '@/modules/tasks/types'
 import { fmtDate } from '@/shared/lib/utils'
@@ -16,6 +16,8 @@ const ICON: Record<TaskEventKind, typeof Clock> = {
   follower: Users,
   hours: Clock,
   link: Link2,
+  blocked: OctagonAlert,
+  subtask: ListChecks,
 }
 
 /** Activity history, newest first. */

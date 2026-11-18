@@ -6,7 +6,7 @@ import type { Quotation } from '@/modules/quotations/types'
 import { newQuotationPath, quotationPath } from '@/app/paths'
 import { useQuotationsQuery } from '@/modules/quotations/hooks/useQuotations'
 import { AWAITING_STATUSES, daysUntil, OPEN_STATUSES, QUOTATION_STATUSES } from '@/modules/quotations/lib/totals'
-import { QUOTATION_STATUS_TONE, QuotationStatusBadge } from '@/modules/quotations/components/QuotationStatusBadge'
+import { QUOTATION_STATUS_LABEL, QUOTATION_STATUS_TONE, QuotationStatusBadge } from '@/modules/quotations/components/QuotationStatusBadge'
 import { ValidUntil } from '@/modules/quotations/components/ValidUntil'
 import { can, scopeOf, SCOPE_LABELS } from '@/shared/lib/permissions'
 import { fmtCompactMoney, fmtDate, fmtMoney } from '@/shared/lib/utils'
@@ -174,9 +174,9 @@ function Kpis({ data, loading }: { data: Quotation[]; loading: boolean }) {
   const sum = (list: Quotation[]) => list.reduce((s, q) => s + q.totals.total, 0)
 
   const open = data.filter((q) => OPEN_STATUSES.includes(q.status))
-  const accepted = data.filter((q) => q.status === 'Accepted')
+  const accepted = data.filter((q) => q.status === 'accepted')
   const acceptedMonth = accepted.filter((q) => thisMonth(q.decidedAt))
-  const decided = data.filter((q) => q.status === 'Accepted' || q.status === 'Rejected' || q.status === 'Expired')
+  const decided = data.filter((q) => q.status === 'accepted' || q.status === 'rejected' || q.status === 'expired')
   const rate = decided.length ? (accepted.length / decided.length) * 100 : 0
   const expiring = data.filter((q) => AWAITING_STATUSES.includes(q.status) && daysUntil(q.validUntil) <= 7)
 
@@ -237,7 +237,7 @@ function Facets({ table, data }: { table: Table<Quotation>; data: Quotation[] })
         'Status',
         QUOTATION_STATUSES.map((s) => ({
           value: s,
-          label: s,
+          label: QUOTATION_STATUS_LABEL[s],
           icon: <span className={`size-2 rounded-full ${DOT[QUOTATION_STATUS_TONE[s]]}`} aria-hidden />,
           count: count((q) => q.status === s),
         })),
@@ -334,7 +334,7 @@ function buildColumns(handlers: RowHandlers | null) {
 /** Row menu: open, and "Win deal" on an accepted quotation whose lead isn't a customer yet. */
 function RowActions({ quotation: q, onOpen, onWin }: { quotation: Quotation } & RowHandlers) {
   const readOnly = useReadOnly()
-  const canWin = !readOnly && q.status === 'Accepted' && !q.customerId
+  const canWin = !readOnly && q.status === 'accepted' && !q.customerId
   return (
     <span onClick={(e) => e.stopPropagation()} className="inline-flex">
       <Menu

@@ -31,6 +31,7 @@ import { DepartmentMembersTab } from '@/modules/departments/components/Departmen
 import { useDepartmentActivation } from '@/modules/departments/components/useDepartmentActivation'
 import { ApiError } from '@/shared/lib/apiError'
 import { PRIORITY_STYLES } from '@/shared/lib/constants'
+import { TASK_PRIORITY_LABEL, TASK_STATUS_LABEL, type TaskPriority, type TaskStatus } from '@/modules/tasks/enums'
 import { cn, fmtCompactMoney, fmtDate } from '@/shared/lib/utils'
 import { Avatar } from '@/shared/components/ui/Avatar'
 import { Badge } from '@/shared/components/ui/Badge'
@@ -316,14 +317,14 @@ function TaskGroup({ title, tasks, tone }: { title: string; tasks: DepartmentTas
                   ) : (
                     'No lead'
                   )}
-                  <span className="text-subtle"> · {t.status}</span>
+                  <span className="text-subtle"> · {TASK_STATUS_LABEL[t.status as TaskStatus] ?? t.status}</span>
                 </p>
               </div>
               <span className="flex items-center gap-1.5 text-xs text-ink-2">
                 <Avatar name={t.ownerName} size="xs" />
                 {t.ownerName}
               </span>
-              <span className={cn('text-xs font-medium', PRIORITY_STYLES[t.priority as Priority] ?? 'text-muted')}>{t.priority}</span>
+              <span className={cn('text-xs font-medium', PRIORITY_STYLES[(TASK_PRIORITY_LABEL[t.priority as TaskPriority] ?? t.priority) as Priority] ?? 'text-muted')}>{TASK_PRIORITY_LABEL[t.priority as TaskPriority] ?? t.priority}</span>
               <span className={cn('num flex w-28 items-center justify-end gap-1 text-xs', t.overdue ? 'font-medium text-danger-600 dark:text-danger-500' : 'text-muted')}>
                 <CalendarClock className="size-3.5" aria-hidden />
                 {fmtDate(t.dueDate)}

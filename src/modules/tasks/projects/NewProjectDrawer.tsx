@@ -5,7 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { format, parseISO } from 'date-fns'
 import { ListChecks } from 'lucide-react'
 import { projectPath } from '@/app/paths'
-import { PROJECT_STATUSES, type ProjectInput } from '@/modules/tasks/types'
+import { PROJECT_STATUSES, PROJECT_STATUS_LABEL, type ProjectInput } from '@/modules/tasks/types'
 import { projectSchema, type ProjectValues } from '@/modules/tasks/projectSchemas'
 import { useCreateProject } from '@/modules/tasks/hooks/useTasks'
 import { useCustomersQuery, useUsersQuery } from '@/modules/crm/hooks/useCrm'
@@ -56,7 +56,7 @@ export function NewProjectDrawer({ open, onClose }: { open: boolean; onClose: ()
       managerId: me?.id ?? '',
       startDate: start,
       endDate: suggestedEnd(start, 20),
-      status: 'Planned',
+      status: 'planned',
       estimatedHours: 0,
       generateTasks: true,
     })
@@ -174,7 +174,7 @@ export function NewProjectDrawer({ open, onClose }: { open: boolean; onClose: ()
             <SelectInput id="pr-status" invalid={!!errors.status} {...register('status')}>
               {PROJECT_STATUSES.map((s) => (
                 <option key={s} value={s}>
-                  {s}
+                  {PROJECT_STATUS_LABEL[s]}
                 </option>
               ))}
             </SelectInput>

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { CalendarRange, Check, ChevronDown, UserCog } from 'lucide-react'
-import { PROJECT_STATUSES, type ProjectStatus, type ProjectUpdateInput } from '@/modules/tasks/types'
+import { PROJECT_STATUSES, PROJECT_STATUS_LABEL, type ProjectStatus, type ProjectUpdateInput } from '@/modules/tasks/types'
 import { projectDatesSchema, type ProjectDatesValues } from '@/modules/tasks/projectSchemas'
 import { useUpdateProject } from '@/modules/tasks/hooks/useTasks'
 import { useUsersQuery } from '@/modules/crm/hooks/useCrm'
@@ -42,17 +42,17 @@ function usePatch(p: ProjectDetail) {
 export function StatusControl({ project: p }: { project: ProjectDetail }) {
   const { patch, pending, readOnly } = usePatch(p)
   const [confirm, setConfirm] = useState<string | null>(null)
-  const open = p.taskCount - p.doneCount
+  const open = p.tasks.filter((t) => t.status !== 'done' && t.status !== 'cancelled').length
 
   if (!p.canManage || readOnly) return <ProjectStatusBadge status={p.status} />
 
   function pick(s: ProjectStatus) {
     if (s === p.status) return
-    if (s === 'Completed' && open > 0) {
+    if (s === 'completed' && open > 0) {
       setConfirm(`${open} task${open === 1 ? ' is' : 's are'} still open.`)
       return
     }
-    patch({ status: s }, `Status: ${s}`, {
+    patch({ status: s }, `Status: ${PROJECT_STATUS_LABEL[s]}`, {
       onError: (e) => {
         if (e instanceof ApiError && e.status === 409) setConfirm(e.message)
       },
@@ -69,7 +69,7 @@ export function StatusControl({ project: p }: { project: ProjectDetail }) {
             type="button"
             {...props}
             disabled={pending}
-            aria-label={`Status: ${p.status}. Change status`}
+            aria-label={`Status: ${PROJECT_STATUS_LABEL[p.status]}. Change status`}
             className="inline-flex items-center gap-0.5 rounded-md focus-visible:shadow-[var(--shadow-focus)] focus-visible:outline-none disabled:opacity-60"
           >
             <ProjectStatusBadge status={p.status} />
@@ -91,7 +91,7 @@ export function StatusControl({ project: p }: { project: ProjectDetail }) {
                   pick(s)
                 }}
               >
-                {s}
+                {PROJECT_STATUS_LABEL[s]}
               </MenuItem>
             ))}
           </>
@@ -110,7 +110,7 @@ export function StatusControl({ project: p }: { project: ProjectDetail }) {
             </Button>
             <Button write
               loading={pending}
-              onClick={() => patch({ status: 'Completed', force: true }, 'Project completed', { onSuccess: () => setConfirm(null) })}
+              onClick={() => patch({ status: 'completed', force: true }, 'Project completed', { onSuccess: () => setConfirm(null) })}
             >
               Complete anyway
             </Button>

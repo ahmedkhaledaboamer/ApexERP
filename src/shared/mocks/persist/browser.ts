@@ -84,7 +84,8 @@ export async function startMockPersistence(worker: SetupWorker): Promise<void> {
     if (!READ_ONLY.has(request.method.toUpperCase())) scheduleSave()
   })
   window.addEventListener('pagehide', () => void saveNow())
-  window.__apexDevReset = resetDemoData
+  // Dev / test helper only: a production build drops it.
+  if (import.meta.env.DEV || import.meta.env.MODE === 'test') window.__apexDevReset = resetDemoData
 }
 
 /** Deletes the saved mock DB and reloads: both synthetic companies reseed. */

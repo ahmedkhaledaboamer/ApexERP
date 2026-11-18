@@ -44,6 +44,7 @@ import { daysBetweenIso } from '@/shared/lib/companyDay'
 import { delay, fail, ownerName } from '@/shared/mocks/server'
 import { TARGET_KEYS, TARGET_LABELS, targetsFor, type TargetKey } from '@/shared/mocks/data/targets'
 import { isTracked } from '@/modules/targets/lib'
+import { eventsAttendedBy, eventsEnabledIn } from '@/shared/mocks/selectors/events'
 import { nextScheduleId, reportSchedules } from '@/shared/mocks/data/reportSchedules'
 import { REPORT_IDS } from '@/modules/reports/lib/reportCatalog'
 import type {
@@ -69,6 +70,8 @@ import type {
   TargetReport,
   TargetRow,
 } from '@/modules/reports/types'
+import { isParkedType } from '@/shared/domain/leadStatus'
+import { followUpStateOn } from '@/shared/domain/followUp'
 
 /* ------------------------------------------------------------------------------------------
  * Scope: a report shows data according to the viewer's permissions (spec: Reports).
@@ -259,14 +262,14 @@ function reachOf(co: string, status: string, stages: string[]): number {
   if (at >= 0) return at
   const s = statusOf(co, status)
   if (!s) return 0
-  if (s.kind === 'won') return stages.length - 1
+  if (s.type === 'won') return stages.length - 1
   const contacted = Math.max(0, stages.indexOf(SYSTEM_STATUS.contacted))
-  if (s.kind === 'parked') return contacted
-  if (s.kind === 'lost') return status === SYSTEM_STATUS.lost ? Math.max(contacted, stages.indexOf(SYSTEM_STATUS.interested)) : contacted
+  if (isParkedType(s.type)) return contacted
+  if (s.type === 'lost') return status === SYSTEM_STATUS.lost ? Math.max(contacted, stages.indexOf(SYSTEM_STATUS.interested)) : contacted
   let reach = 0
   stages.forEach((k, i) => {
     const o = statusOf(co, k)
-    if (o && o.kind === 'open' && o.order < s.order) reach = i
+    if (o && o.type === 'open' && o.order < s.order) reach = i
   })
   return reach
 }
@@ -425,11 +428,11 @@ function reachedProposal(l: LeadRow): boolean {
   if (isWonStatus(l.companyId, l.status)) return true
   const s = statusOf(l.companyId, l.status)
   const proposal = statusOf(l.companyId, SYSTEM_STATUS.proposal)
-  return !!s && !!proposal && s.kind === 'open' && s.order >= proposal.order
+  return !!s && !!proposal && s.type === 'open' && s.order >= proposal.order
 }
 
-/** Kinds with no data source yet (same as services/targets): partnerships and events stay at the paced mock level. */
-const NOT_TRACKED: TargetKey[] = ['partnerships', 'events']
+/** Kinds with no data source yet: partnerships stay at the paced mock level. Events attended come from the Events module. */
+const NOT_TRACKED: TargetKey[] = ['partnerships']
 
 const ACTIVITY_FOR_TARGET: Partial<Record<TargetKey, ActivityType[]>> = {
   calls: ['call'],
@@ -454,7 +457,13 @@ function targetReport(ctx: Ctx): TargetReport {
     const goals = targetsFor(userId, key)
     const mineLeads = scoped(leads, ctx.user).filter((l) => l.ownerId === userId)
     const mineActs = activities.filter((a) => a.userId === userId && inMonth(a.at))
+    const eventsOn = eventsEnabledIn(ctx.user.companyId)
     const cells = TARGET_KEYS.map((k, keyIndex) => {
+      // Events attended: real counts from the Events module only (no pacing); n/a without the module.
+      if (k === 'events') {
+        const actual = eventsOn ? eventsAttendedBy(ctx.user.companyId, userId, key) : 0
+        return { key: k, label: TARGET_LABELS[k], target: goals[k], actual, pct: goals[k] && eventsOn ? Math.round((actual / goals[k]) * 100) : 0 }
+      }
       const real = NOT_TRACKED.includes(k)
         ? 0
         : k === 'leads'
@@ -465,12 +474,11 @@ function targetReport(ctx: Ctx): TargetReport {
       // Like the dashboard, pace the mock towards a realistic month-to-date level.
       const factor = 0.6 + ((agentIndex * 13 + keyIndex * 7) % 55) / 100
       const paced = Math.round(goals[k] * (elapsed / 100) * factor)
-      // Events (until EVENTS_ENABLED) have no actuals at all: 0, shown as "n/a" by the client.
-      const actual = isTracked(k) ? Math.max(real, paced) : 0
-      return { key: k, label: TARGET_LABELS[k], target: goals[k], actual, pct: goals[k] && isTracked(k) ? Math.round((actual / goals[k]) * 100) : 0 }
+      const actual = Math.max(real, paced)
+      return { key: k, label: TARGET_LABELS[k], target: goals[k], actual, pct: goals[k] ? Math.round((actual / goals[k]) * 100) : 0 }
     })
-    // A target of 0 means "no target", and untracked kinds (events) are n/a: neither counts toward the overall.
-    const counted = cells.filter((c) => c.target > 0 && isTracked(c.key))
+    // A target of 0 means "no target", and untracked kinds (events without the module) are n/a: neither counts toward the overall.
+    const counted = cells.filter((c) => c.target > 0 && isTracked(c.key, eventsOn))
     const overall = counted.length ? Math.round(counted.reduce((s, c) => s + Math.min(100, c.pct), 0) / counted.length) : 0
     return { userId, name: ownerName(userId), cells, overall }
   })
@@ -479,9 +487,10 @@ function targetReport(ctx: Ctx): TargetReport {
 }
 
 function overdue(ctx: Ctx, q: Partial<SalesReportQuery>): { followUps: OverdueFollowUp[]; tasks: OverdueTask[] } {
-  const today = startOfDay(new Date())
+  // Follow-ups are company-local calendar dates; overdue = before the company's today.
+  const today = companyDayOf(ctx.user.companyId).today
   const followUps = ctx.leads
-    .filter((l) => !isClosedStatus(l.companyId, l.status) && l.nextFollowUpDate && isBefore(new Date(l.nextFollowUpDate), today))
+    .filter((l) => !isClosedStatus(l.companyId, l.status) && followUpStateOn(l.nextFollowUpDate, today) === 'overdue')
     .map((l) => ({
       leadId: l.id,
       company: l.company,
@@ -489,7 +498,7 @@ function overdue(ctx: Ctx, q: Partial<SalesReportQuery>): { followUps: OverdueFo
       ownerId: l.ownerId,
       ownerName: ownerName(l.ownerId),
       dueDate: l.nextFollowUpDate as string,
-      daysOverdue: differenceInCalendarDays(today, new Date(l.nextFollowUpDate as string)),
+      daysOverdue: daysBetweenIso(l.nextFollowUpDate as string, today),
       nextStep: l.nextStep,
     }))
     .sort((a, b) => b.daysOverdue - a.daysOverdue)
@@ -522,10 +531,11 @@ function overdueTaskRows(ctx: Ctx, q: Partial<SalesReportQuery>): OverdueTask[] 
     .map((t) => ({
       taskId: t.id,
       title: t.title,
-      linkType: t.linkView?.type ?? null,
-      linkId: t.linkView?.id ?? null,
-      linkLabel: t.linkView?.label ?? null,
-      linkAvailable: t.linkView?.available ?? false,
+      // The related link (lead, customer, event), else the task's project.
+      linkType: t.linkView?.type ?? (t.projectId ? ('project' as const) : null),
+      linkId: t.linkView?.id ?? t.projectId,
+      linkLabel: t.linkView?.label ?? t.projectName,
+      linkAvailable: t.linkView?.available ?? !!t.projectId,
       projectId: t.projectId,
       projectName: t.projectName,
       ownerId: t.ownerId,

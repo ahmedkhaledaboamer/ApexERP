@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient, type QueryKey } from '@tanstack/react-query'
 import * as api from '@/modules/tasks/api/tasksApi'
-import type { ProjectInput, ProjectUpdateInput, TaskFilter, TaskInput, TaskStatus, TaskUpdateInput, TaskView } from '@/modules/tasks/types'
+import type { ProjectInput, ProjectUpdateInput, TaskFilter, TaskInput, TaskStatus, TaskUpdateInput, TaskView, TimeEntryInput } from '@/modules/tasks/types'
 
 export const taskKeys = {
   all: ['tasks'] as const,
@@ -51,12 +51,11 @@ export function useUpdateTask() {
   })
 }
 
-/** A board / calendar move: a status (Blocked needs `blockedReason`) or a due date. */
+/** A board / calendar move: a status or a due date. */
 export interface TaskMove {
   id: string
   status?: TaskStatus
   dueDate?: string | null
-  blockedReason?: string
 }
 
 /**
@@ -77,7 +76,7 @@ export function useMoveTask() {
           ? t
           : {
               ...t,
-              ...(move.status !== undefined ? { status: move.status, completedAt: move.status === 'Done' ? new Date().toISOString() : null } : {}),
+              ...(move.status !== undefined ? { status: move.status, completedAt: move.status === 'done' ? new Date().toISOString() : null } : {}),
               ...(move.dueDate !== undefined ? { dueDate: move.dueDate } : {}),
             }
       qc.setQueriesData({ queryKey: taskKeys.all }, (data: unknown) => {
@@ -101,7 +100,26 @@ export function useAddTaskComment(id: string) {
 
 export function useAddTaskAttachment(id: string) {
   const done = useInvalidate()
-  return useMutation({ mutationFn: (file: { name: string; size: number; type: string }) => api.addTaskAttachment(id, file), onSuccess: done })
+  return useMutation({ mutationFn: (file: { name: string; sizeBytes: number; mimeType: string }) => api.addTaskAttachment(id, file), onSuccess: done })
+}
+
+/** Block (with a reason) or unblock a task. */
+export function useBlockTask() {
+  const done = useInvalidate()
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string | null }) => (reason === null ? api.unblockTask(id) : api.blockTask(id, reason)),
+    onSuccess: done,
+  })
+}
+
+export function useAddTimeEntry(id: string) {
+  const done = useInvalidate()
+  return useMutation({ mutationFn: (input: TimeEntryInput) => api.addTimeEntry(id, input), onSuccess: done })
+}
+
+export function useRemoveTimeEntry(id: string) {
+  const done = useInvalidate()
+  return useMutation({ mutationFn: (entryId: string) => api.removeTimeEntry(id, entryId), onSuccess: done })
 }
 
 export function useRemoveTaskAttachment(id: string) {

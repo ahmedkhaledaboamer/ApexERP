@@ -9,11 +9,11 @@ import { restoreSnapshot, takeSnapshot } from '@/shared/mocks/persist/registry'
 import { companyTeamIds } from '@/shared/mocks/selectors/company'
 import { dueThisWeek, overdueTasks, todayIsoFor } from '@/shared/mocks/selectors/tasks'
 import { alertsFor } from '@/shared/mocks/services/alerts'
-import { createTask, getAssignableUsers, getTask, getTasks, updateTask } from '@/shared/mocks/services/tasks'
+import { blockTask, createTask, getAssignableUsers, getTask, getTasks, unblockTask, updateTask } from '@/shared/mocks/services/tasks'
 import { addDaysIso } from '@/shared/lib/companyDay'
 
 /**
- * Task rules the screens rely on: company-timezone days (with the mock clock), the Blocked reason,
+ * Task rules the screens rely on: company-timezone days (with the mock clock), the blocked flag,
  * per-task edit rights (canEdit), the assignable owners list and scope-aware link chips.
  */
 
@@ -92,10 +92,12 @@ describe('days are the company’s (timezone + week start), at the mock clock', 
     freeze('2026-11-18T22:30:00Z')
     const t = await createTask(admin, { title: 'Reminder probe', dueDate: '2026-11-19' })
     const now = new Date()
-    const alert = () => alertsFor(admin, now).find((a) => a.id === `task:${t.id}`)
-    expect(alert()?.body).toContain('Due today') // already the 19th in Dubai
+    // Stored once by the reminder tick that GET /alerts runs (task-due, with the task id).
+    const reminder = (id: string) => alertsFor(admin, now).find((a) => a.type === 'task' && a.taskId === id)
+    expect(reminder(t.id)?.body).toContain('Due today') // already the 19th in Dubai
     companyById('co_apex')!.regional.timezone = 'UTC'
-    expect(alert()?.body).toContain('Due tomorrow')
+    const t2 = await createTask(admin, { title: 'Reminder probe UTC', dueDate: '2026-11-19' })
+    expect(reminder(t2.id)?.body).toContain('Due tomorrow')
     // Overdue alerts too: the 18th is overdue in Dubai at this instant.
     companyById('co_apex')!.regional.timezone = 'Asia/Dubai'
     const late = await createTask(admin, { title: 'Late probe', dueDate: '2026-11-18' })
@@ -105,27 +107,54 @@ describe('days are the company’s (timezone + week start), at the mock clock', 
   })
 })
 
-describe('Blocked needs a reason on the server', () => {
-  it('moving to Blocked without a reason is a 422; with one it is stored as a comment', async () => {
-    const t = await createTask(admin, { title: 'Needs docs' })
-    expect(await rejects(updateTask(admin, t.id, { status: 'Blocked' }), 422)).toContain('blocked')
-    await rejects(updateTask(admin, t.id, { status: 'Blocked', blockedReason: '  ' }), 422)
-    await rejects(updateTask(admin, t.id, { status: 'Blocked', blockedReason: 'x'.repeat(281) }), 422)
-    expect((await getTask(admin, t.id)).status).toBe('To do')
+describe('Blocked is a flag with a required reason (POST /tasks/:id/block)', () => {
+  it('blocking without a reason is a 422; with one it is stored as a comment and the status stays', async () => {
+    const t = await createTask(admin, { title: 'Needs docs', status: 'in_progress' })
+    expect(await rejects(blockTask(admin, t.id, {}), 422)).toContain('blocked')
+    await rejects(blockTask(admin, t.id, { reason: '  ' }), 422)
+    await rejects(blockTask(admin, t.id, { reason: 'ab' }), 422)
+    await rejects(blockTask(admin, t.id, { reason: 'x'.repeat(281) }), 422)
+    expect((await getTask(admin, t.id)).blocked).toBe(false)
 
-    const next = await updateTask(admin, t.id, { status: 'Blocked', blockedReason: 'Waiting for the trade licence' })
-    expect(next.status).toBe('Blocked')
+    const next = await blockTask(admin, t.id, { reason: 'Waiting for the trade licence' })
+    expect(next.status).toBe('in_progress')
+    expect(next.blocked).toBe(true)
+    expect(next.blockedReason).toBe('Waiting for the trade licence')
+    expect(next.blockedAt).not.toBeNull()
     expect(next.comments.at(-1)?.body).toBe('Blocked: Waiting for the trade licence')
     expect(next.history.at(-1)?.summary).toContain('Waiting for the trade licence')
-    // Already Blocked: other edits need no new reason.
-    expect((await updateTask(admin, t.id, { title: 'Needs the licence' })).title).toBe('Needs the licence')
-    expect((await updateTask(admin, t.id, { status: 'Blocked' })).status).toBe('Blocked')
+    // Other edits and status moves keep the flag; blocking twice is a 409.
+    expect((await updateTask(admin, t.id, { title: 'Needs the licence' })).blocked).toBe(true)
+    expect((await updateTask(admin, t.id, { status: 'review' })).blockedReason).toBe('Waiting for the trade licence')
+    await rejects(blockTask(admin, t.id, { reason: 'Again and again' }), 409)
   })
 
-  it('creating a task as Blocked needs a reason too', async () => {
-    await rejects(createTask(admin, { title: 'Blocked from the start', status: 'Blocked' }), 422)
-    const t = await createTask(admin, { title: 'Blocked from the start', status: 'Blocked', blockedReason: 'Waiting for the bank' })
-    expect(t.comments.map((c) => c.body)).toEqual(['Blocked: Waiting for the bank'])
+  it('the old Blocked status is refused: it is not a status any more', async () => {
+    const t = await createTask(admin, { title: 'Old client' })
+    await rejects(updateTask(admin, t.id, { status: 'Blocked' as never }), 422)
+    await rejects(createTask(admin, { title: 'Blocked from the start', status: 'Blocked' as never }), 422)
+  })
+
+  it('unblocking clears both fields and posts “Unblocked”; closing a task clears the flag too', async () => {
+    const t = await createTask(admin, { title: 'Waits on the bank' })
+    await blockTask(admin, t.id, { reason: 'Waiting for the bank' })
+    const open = await unblockTask(admin, t.id)
+    expect(open).toMatchObject({ blocked: false, blockedAt: null, blockedReason: null, status: 'todo' })
+    expect(open.comments.at(-1)?.body).toBe('Unblocked')
+    expect(open.history.at(-1)?.summary).toBe('Unblocked')
+    await rejects(unblockTask(admin, t.id), 409)
+
+    await blockTask(admin, t.id, { reason: 'Waiting for the bank again' })
+    const done = await updateTask(admin, t.id, { status: 'done' })
+    expect(done).toMatchObject({ blocked: false, blockedAt: null, blockedReason: null })
+    await rejects(blockTask(admin, t.id, { reason: 'Too late now' }), 422)
+  })
+
+  it('who may block: the same people who may change the task', async () => {
+    const t = await createTask(admin, { title: 'Admin only', ownerId: admin.id })
+    await rejects(blockTask(agent, t.id, { reason: 'Not mine to block' }), 404)
+    const crest = await createTask(crestAdmin, { title: 'Crest task' })
+    await rejects(blockTask(admin, crest.id, { reason: 'Another company' }), 404)
   })
 })
 
@@ -147,7 +176,7 @@ describe('canEdit on every task mirrors what PATCH accepts', () => {
       const list = await getTasks(agent, { includeDone: true })
       expect(list.length).toBeGreaterThan(0)
       expect(list.every((t) => t.canEdit === false)).toBe(true)
-      expect(await rejects(updateTask(agent, list[0].id, { status: 'Done' }), 403)).toContain('Your role (Sales Agent) can view tasks')
+      expect(await rejects(updateTask(agent, list[0].id, { status: 'done' }), 403)).toContain('Your role (Sales Agent) can view tasks')
     } finally {
       PERMISSION_MATRIX['Sales Agent'].tasks = saved
     }
@@ -215,8 +244,12 @@ describe('link chips are only links when the viewer could open the record', () =
     expect(t.linkView?.available).toBe(true)
   })
 
-  it('a project chip follows the projects scope', async () => {
-    const t = tasks.find((x) => x.companyId === 'co_apex' && x.link?.type === 'project')!
-    expect((await getTask(admin, t.id)).linkView?.available).toBe(true)
+  it('a project task has no project link: the project is its own field (projectId + projectName)', async () => {
+    const t = tasks.find((x) => x.companyId === 'co_apex' && !!x.projectId)!
+    const view = await getTask(admin, t.id)
+    expect(view.link).toBeNull()
+    expect(view.linkView).toBeNull()
+    expect(view.projectName).toBeTruthy()
+    expect(tasks.some((x) => (x.link?.type as string) === 'project')).toBe(false)
   })
 })

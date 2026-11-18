@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { PROJECT_STATUSES, TASK_PRIORITIES, type ProjectStatus, type TaskPriority } from '@/modules/tasks/types'
+import { PROJECT_STATUSES, TASK_PRIORITIES } from '@/modules/tasks/types'
 
 const date = (msg: string) => z.string().regex(/^\d{4}-\d{2}-\d{2}$/, msg)
 
@@ -12,7 +12,7 @@ export const projectSchema = z
     managerId: z.string().min(1, 'Pick a project manager.'),
     startDate: date('Pick a start date.'),
     endDate: date('Pick an end date.'),
-    status: z.enum(PROJECT_STATUSES as [ProjectStatus, ...ProjectStatus[]]),
+    status: z.enum(PROJECT_STATUSES),
     estimatedHours: z.coerce.number({ invalid_type_error: 'Enter hours.' }).min(0, 'Hours can’t be negative.').max(100_000, 'That’s too many hours.'),
     generateTasks: z.boolean(),
   })
@@ -35,7 +35,7 @@ export const quickTaskSchema = z.object({
   title: z.string().trim().min(1, 'Name the task.').max(200, 'Keep it under 200 characters.'),
   ownerId: z.string().min(1, 'Pick an owner.'),
   dueDate: z.union([z.literal(''), date('Pick a valid date.')]),
-  priority: z.enum(TASK_PRIORITIES as [TaskPriority, ...TaskPriority[]]),
+  priority: z.enum(TASK_PRIORITIES),
 })
 
 export type QuickTaskValues = z.infer<typeof quickTaskSchema>

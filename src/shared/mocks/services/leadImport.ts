@@ -33,8 +33,10 @@ import {
   domainOf,
   findDuplicates,
   insertLead,
+  isCampaignOf,
   normalizeCompany,
   ownerProblem,
+  UNKNOWN_CAMPAIGN,
 } from '@/shared/mocks/services/leads'
 
 /**
@@ -134,7 +136,8 @@ function checkFields(companyId: string, country: CountryCode, r: ImportLeadRow):
   let followUp: string | null = null
   if (!isClosedStatus(companyId, status)) {
     if (r.nextFollowUpDate && DATE_RE.test(r.nextFollowUpDate)) {
-      followUp = new Date(`${r.nextFollowUpDate}T09:00:00`).toISOString()
+      // A company-local calendar date, stored as is.
+      followUp = r.nextFollowUpDate
     } else {
       if (r.nextFollowUpDate) warnings.push(`Follow-up date “${r.nextFollowUpDate}” not understood.`)
       warnings.push('No follow-up date; set to tomorrow.')
@@ -206,6 +209,7 @@ export async function runImport(user: User, req: ImportRequest): Promise<ImportR
   if (rows.length > MAX_ROWS) return fail(`Import up to ${MAX_ROWS.toLocaleString()} rows at a time.`, 413)
 
   const co = tenantOf(user)
+  if (req.campaignId && !isCampaignOf(co, req.campaignId)) return fail(UNKNOWN_CAMPAIGN, 422)
   const country = countryOf(user)
   const override = canOverrideDuplicates(user)
   const ownScope = scopeOf(user.role, 'sales') === 'own'
@@ -257,6 +261,7 @@ export async function runImport(user: User, req: ImportRequest): Promise<ImportR
       nextStep: r.nextStep,
       companyServices: r.companyServices,
       recommendedServiceId: check.serviceId,
+      campaignId: req.campaignId || null,
       doNotContact: r.doNotContact,
       note: r.notes,
     }

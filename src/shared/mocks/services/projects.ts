@@ -2,7 +2,7 @@ import { isValid, parseISO } from 'date-fns'
 import type { User } from '@/shared/types'
 import type { AuditChange, AuditEntry } from '@/modules/settings/types'
 import type { Project, ProjectInput, ProjectRow, ProjectStatus, ProjectUpdateInput, Task, TaskView } from '@/modules/tasks/types'
-import { PROJECT_STATUSES } from '@/modules/tasks/types'
+import { PROJECT_STATUSES, PROJECT_STATUS_LABEL, isOpenTaskStatus } from '@/modules/tasks/types'
 import { planProject } from '@/modules/won/plan'
 import { can, scopeOf } from '@/shared/lib/permissions'
 import { customers, leads, users } from '@/shared/mocks/db'
@@ -135,7 +135,7 @@ export async function createProject(user: User, body: ProjectCreateBody): Promis
   if (!validDate(input.startDate)) problems.push('Pick a start date.')
   if (!validDate(input.endDate)) problems.push('Pick an end date.')
   if (validDate(input.startDate) && validDate(input.endDate) && input.endDate < input.startDate) problems.push('The end date can’t be before the start date.')
-  if (!PROJECT_STATUSES.includes(input.status)) problems.push('Pick a valid status.')
+  if (!PROJECT_STATUSES.includes(input.status)) problems.push(`Status must be one of ${PROJECT_STATUSES.join(', ')}.`)
   const hoursErr = checkHours(input.estimatedHours)
   if (hoursErr) problems.push(hoursErr)
   if (problems.length) return fail(problems.join(' '), 422)
@@ -160,6 +160,8 @@ export async function createProject(user: User, body: ProjectCreateBody): Promis
     serviceId: service!.id,
     leadId: input.leadId ?? null,
     quotationId: null,
+    contractId: null,
+    projectTemplateId: plan?.hasTemplate ? service!.id : null,
     managerId: input.managerId,
     startDate: input.startDate,
     endDate: input.endDate,
@@ -173,24 +175,29 @@ export async function createProject(user: User, body: ProjectCreateBody): Promis
   projects.push(project)
 
   const created: Tenant<Task>[] = []
-  for (const p of plan?.tasks ?? []) {
+  for (const [k, p] of (plan?.tasks ?? []).entries()) {
     const taskId = nextTaskId()
     const t: Tenant<Task> = {
       companyId: co,
       id: taskId,
       title: p.title,
-      description: `${p.role} · from the ${service!.name} template`,
+      description: `${p.role ?? 'No role'} · from the ${service!.name} template`,
       ownerId: p.ownerId,
       followerIds: p.ownerId === input.managerId ? [] : [input.managerId],
       priority: p.priority,
       dueDate: p.dueDate,
-      status: 'To do',
-      link: { type: 'project', id },
+      status: 'todo',
+      link: null,
       projectId: id,
+      parentTaskId: null,
       estimatedHours: p.hours,
-      loggedHours: 0,
       templateTaskId: p.templateTaskId,
       dayOffset: p.dayOffset,
+      sortOrder: k + 1,
+      blockedAt: null,
+      blockedReason: null,
+      reminderSentAt: null,
+      overdueNotifiedAt: null,
       attachments: [],
       comments: [],
       history: [{ id: `${taskId}-h0`, kind: 'created', userId: user.id, at: now, summary: `Created from the ${service!.name} template` }],
@@ -240,7 +247,7 @@ export async function updateProject(user: User, id: string, input: ProjectUpdate
   }
   if (input.startDate !== undefined && !validDate(input.startDate)) problems.push('Pick a valid start date.')
   if (input.endDate !== undefined && !validDate(input.endDate)) problems.push('Pick a valid end date.')
-  if (input.status !== undefined && !PROJECT_STATUSES.includes(input.status)) problems.push('Pick a valid status.')
+  if (input.status !== undefined && !PROJECT_STATUSES.includes(input.status)) problems.push(`Status must be one of ${PROJECT_STATUSES.join(', ')}.`)
   const hoursErr = checkHours(input.estimatedHours)
   if (hoursErr) problems.push(hoursErr)
   const start = input.startDate ?? p.startDate
@@ -248,8 +255,8 @@ export async function updateProject(user: User, id: string, input: ProjectUpdate
   if (!problems.length && end < start) problems.push('The end date can’t be before the start date.')
   if (problems.length) return fail(problems.join(' '), 422)
 
-  if (input.status === 'Completed' && p.status !== 'Completed') {
-    const open = tasksForProject(p.id).filter((t) => t.status !== 'Done').length
+  if (input.status === 'completed' && p.status !== 'completed') {
+    const open = tasksForProject(p.id).filter((t) => isOpenTaskStatus(t.status)).length
     if (open && !input.force) {
       return fail(`${open} task${open === 1 ? ' is' : 's are'} still open. Finish ${open === 1 ? 'it' : 'them'} first, or complete the project anyway.`, 409)
     }
@@ -262,14 +269,14 @@ export async function updateProject(user: User, id: string, input: ProjectUpdate
     ;(p as Project)[key] = value
   }
   set('name', input.name?.trim())
-  set('status', input.status as ProjectStatus | undefined)
+  set('status', input.status as ProjectStatus | undefined, (v) => PROJECT_STATUS_LABEL[v as ProjectStatus] ?? String(v))
   set('managerId', input.managerId, userName)
   set('startDate', input.startDate)
   set('endDate', input.endDate)
   set('estimatedHours', input.estimatedHours)
 
   if (changes.length) {
-    const forced = input.force && input.status === 'Completed' && tasksForProject(p.id).some((t) => t.status !== 'Done')
+    const forced = input.force && input.status === 'completed' && tasksForProject(p.id).some((t) => isOpenTaskStatus(t.status))
     recordAudit(user, {
       action: 'update',
       entity: 'project',

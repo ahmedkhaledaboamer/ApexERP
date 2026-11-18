@@ -20,7 +20,8 @@ export interface WonInput {
 
 export interface WonPreviewTask {
   title: string
-  role: string
+  /** Template role; null when the template task has none (unassigned role → the project manager). */
+  role: string | null
   ownerId: string
   ownerName: string
   /** True when the role couldn't be resolved to a person and fell back to the project manager. */

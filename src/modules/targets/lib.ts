@@ -1,6 +1,5 @@
 import { addMonths, format, isValid, parse } from 'date-fns'
 import { TARGET_KEYS, type TargetKey, type TargetValues } from '@/modules/targets/types'
-import { EVENTS_ENABLED } from '@/shared/lib/features'
 
 /** Helpers shared by the targets page and its components. */
 
@@ -36,24 +35,25 @@ export function pctOf(actual: number, target: number): number {
 }
 
 /**
- * Whether a kind is counted at all. Events attended isn't until the Events module is enabled
- * (EVENTS_ENABLED): it shows "n/a" and is left out of completion and pace even with a target.
+ * Whether a kind is counted at all. Events attended is counted only when the company's plan includes
+ * the Events module (`eventsOn`: eventsEnabledFor(entitlements.modules), or the server's own check):
+ * otherwise it shows "n/a" and is left out of completion and pace even with a target.
  */
-export function isTracked(kind: TargetKey): boolean {
-  return kind !== 'events' || EVENTS_ENABLED
+export function isTracked(kind: TargetKey, eventsOn: boolean): boolean {
+  return kind !== 'events' || eventsOn
 }
 
 /** Kinds that count towards completion: tracked and with a target. */
-export function countedKinds(values: TargetValues): TargetKey[] {
-  return TARGET_KEYS.filter((k) => isTracked(k) && hasTarget(values[k]))
+export function countedKinds(values: TargetValues, eventsOn: boolean): TargetKey[] {
+  return TARGET_KEYS.filter((k) => isTracked(k, eventsOn) && hasTarget(values[k]))
 }
 
 /**
  * Overall completion: the average across counted kinds (tracked, with a target), each capped at
  * 100%, so one high-volume kind (calls) can't hide a missed one (proposals).
  */
-export function completion(values: TargetValues, actuals: TargetValues): number {
-  const kinds = countedKinds(values)
+export function completion(values: TargetValues, actuals: TargetValues, eventsOn: boolean): number {
+  const kinds = countedKinds(values, eventsOn)
   if (!kinds.length) return 0
   return (kinds.reduce((s, k) => s + Math.min(1, actuals[k] / values[k]), 0) / kinds.length) * 100
 }

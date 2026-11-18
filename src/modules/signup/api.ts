@@ -17,6 +17,11 @@ import type {
 } from '@/modules/signup/types'
 import type { Plan } from '@/modules/billing/types'
 import { http } from '@/shared/lib/axios'
+import { emailConnectionMapper, onboardingMapper, signupMapper } from '@/shared/api/mappers'
+
+/** Public sign-up speaks snake_case (signup_id, company_name…); mapped both ways. */
+const fromApi = <T,>(data: unknown) => signupMapper.fromApi(data) as T
+const toApi = (body: object) => signupMapper.toApi(body as never)
 import { globalStorage } from '@/shared/lib/storage'
 
 /* ---------------- Public sign-up (no auth) ---------------- */
@@ -40,54 +45,52 @@ const pub = () => ({ headers: { 'X-Client-Id': clientId() } })
 const enc = encodeURIComponent
 
 export async function checkSubdomain(subdomain: string, signal?: AbortSignal): Promise<SubdomainAvailability> {
-  return (
-    await http.get<SubdomainAvailability>('/public/signup/availability', { ...pub(), params: { subdomain }, signal })
-  ).data
+  return fromApi<SubdomainAvailability>((await http.get<unknown>('/public/signup/availability', { ...pub(), params: { subdomain }, signal })).data)
 }
 
 export async function startSignup(input: SignupStartInput): Promise<SignupStarted> {
-  return (await http.post<SignupStarted>('/public/signup', input, pub())).data
+  return fromApi<SignupStarted>((await http.post<unknown>('/public/signup', toApi(input), pub())).data)
 }
 
 export async function resendSignupCode(signupId: string): Promise<SignupStarted> {
-  return (await http.post<SignupStarted>(`/public/signup/${enc(signupId)}/resend`, {}, pub())).data
+  return fromApi<SignupStarted>((await http.post<unknown>(`/public/signup/${enc(signupId)}/resend`, {}, pub())).data)
 }
 
 export async function verifySignup(signupId: string, code: string): Promise<SignupVerified> {
-  return (await http.post<SignupVerified>(`/public/signup/${enc(signupId)}/verify`, { code }, pub())).data
+  return fromApi<SignupVerified>((await http.post<unknown>(`/public/signup/${enc(signupId)}/verify`, { code }, pub())).data)
 }
 
 /** GET /public/plans: the active plan catalog (data, not code). */
 export async function getPlans(): Promise<Plan[]> {
-  return (await http.get<Plan[]>('/public/plans', pub())).data
+  return fromApi<Plan[]>((await http.get<unknown>('/public/plans', pub())).data)
 }
 
 export async function checkout(input: CheckoutInput): Promise<CheckoutResult> {
-  return (await http.post<CheckoutResult>('/public/checkout', input, pub())).data
+  return fromApi<CheckoutResult>((await http.post<unknown>('/public/checkout', toApi(input), pub())).data)
 }
 
 export async function completeSignup(signupId: string, input: SignupCompleteInput): Promise<SignupCompleted> {
-  return (await http.post<SignupCompleted>(`/public/signup/${enc(signupId)}/complete`, input, pub())).data
+  return (await http.post<SignupCompleted>(`/public/signup/${enc(signupId)}/complete`, toApi(input), pub())).data
 }
 
 export async function contactSales(input: ContactSalesInput): Promise<ContactSalesResult> {
-  return (await http.post<ContactSalesResult>('/public/contact-sales', input, pub())).data
+  return fromApi<ContactSalesResult>((await http.post<unknown>('/public/contact-sales', toApi(input), pub())).data)
 }
 
 /* ---------------- Onboarding (signed in, per company) ---------------- */
 
 export async function getOnboardingState(): Promise<OnboardingState> {
-  return (await http.get<OnboardingState>('/onboarding')).data
+  return onboardingMapper.fromApi((await http.get<unknown>('/onboarding')).data)
 }
 
 /** Marks a manual item (lists, email) done or not done. */
 export async function setOnboardingItem(id: OnboardingItemId, done: boolean): Promise<OnboardingState> {
-  return (await http.patch<OnboardingState>(`/onboarding/items/${enc(id)}`, { done })).data
+  return onboardingMapper.fromApi((await http.patch<unknown>(`/onboarding/items/${enc(id)}`, { done })).data)
 }
 
 /** Hides or restores the checklist for the whole company. */
 export async function setOnboardingDismissed(dismissed: boolean): Promise<OnboardingState> {
-  return (await http.patch<OnboardingState>('/onboarding', { dismissed })).data
+  return onboardingMapper.fromApi((await http.patch<unknown>('/onboarding', { dismissed })).data)
 }
 
 
@@ -97,7 +100,7 @@ export interface EmailConnectionInput {
 }
 
 export async function connectEmail(input: EmailConnectionInput): Promise<EmailConnection> {
-  return (await http.post<EmailConnection>('/settings/email-connection', input)).data
+  return emailConnectionMapper.fromApi((await http.post<unknown>('/settings/email-connection', emailConnectionMapper.toApi(input as never))).data)
 }
 
 /* ---------------- Hooks ---------------- */

@@ -1,22 +1,24 @@
-import { isBefore, isSameDay, startOfDay } from 'date-fns'
 import { CalendarClock } from 'lucide-react'
 import type { LeadStatus } from '@/shared/types'
 import { useLookups } from '@/shared/hooks/useLookups'
-import { cn, fmtDate, toDate } from '@/shared/lib/utils'
+import { cn, fmtDate } from '@/shared/lib/utils'
+import { followUpStateOn, type FollowUpState } from '@/shared/domain/followUp'
+import { companyTodayIso } from '@/modules/leads/lib/followUp'
 
-export type FollowUpState = 'overdue' | 'today' | 'upcoming' | 'none'
+export type { FollowUpState }
 
 /**
- * Where a follow-up date stands. Pass `closedKeys` (useLookups().closedStatusKeys) to ignore
- * won / lost / parked leads; the server already clears their follow-up date.
+ * Where a follow-up date (a company-local yyyy-MM-dd) stands today in the company's timezone. Pass
+ * `closedKeys` (useLookups().closedStatusKeys) to ignore won / lost / parked leads; the server
+ * already clears their follow-up date. `today` defaults to the tenant's today.
  */
-export function followUpState(date: string | null, status: LeadStatus, closedKeys?: readonly string[]): FollowUpState {
-  const d = toDate(date)
-  if (!d || closedKeys?.includes(status)) return 'none'
-  const now = new Date()
-  if (isSameDay(d, now)) return 'today'
-  if (isBefore(d, startOfDay(now))) return 'overdue'
-  return 'upcoming'
+export function followUpState(
+  date: string | null,
+  status: LeadStatus,
+  closedKeys?: readonly string[],
+  today: string = companyTodayIso(),
+): FollowUpState {
+  return followUpStateOn(date, today, !!closedKeys?.includes(status))
 }
 
 /** Next follow-up date with overdue / today emphasis. */

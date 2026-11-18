@@ -15,8 +15,9 @@ const ADMIN_EMAIL: Record<Co, string> = { co_apex: 'omar@apexaora.ae', co_crest:
 const dial = (co: Co) => (co === APEX ? '+971 50 555 0177' : '+966 55 555 0177')
 const salesDept = (co: Co) => departments.find((d) => d.companyId === co && /sales/i.test(d.name))!.id
 let n = 0
-const newUser = (co: Co) => ({ name: 'Limit Probe', email: `limit${++n}-${co}@example.org`, mobile: dial(co), role: 'Sales Agent', title: 'Rep', departmentId: salesDept(co), managerId: null })
-const newLead = (co: Co) => ({ company: `Limit Probe ${++n} Co`, contactName: 'Probe Person', mobile: dial(co), email: `lead${n}@limit-probe.example`, sourceType: 'Website', industry: 'Logistics' })
+const newUser = (co: Co) => ({ name: 'Limit Probe', email: `limit${++n}-${co}@example.org`, mobile: dial(co), role: 'Sales Agent', title: 'Rep', department_id: salesDept(co), manager_id: null })
+/** POST /leads body in the API's snake_case (leads columns). */
+const newLead = (co: Co) => ({ company_name: `Limit Probe ${++n} Co`, contact_name: 'Probe Person', phone: dial(co), email: `lead${n}@limit-probe.example`, source_id: 'Website', industry_id: 'Logistics' })
 const newTask = () => ({ title: `Write probe ${++n}` })
 
 /** The other company still reads and writes normally. */

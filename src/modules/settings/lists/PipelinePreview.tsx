@@ -2,13 +2,14 @@ import { Eye } from 'lucide-react'
 import { cn } from '@/shared/lib/utils'
 import { Badge, DOT } from '@/shared/components/ui/Badge'
 import { Card, CardBody, CardHeader } from '@/shared/components/ui/Card'
-import { KIND_LABEL, type DraftStatus } from './draft'
+import { LEAD_STATUS_TYPE_LABEL } from '@/shared/domain/leadStatus'
+import type { DraftStatus } from './draft'
 
 /** Live preview of the pipeline board from the statuses being edited (active open statuses, in order). */
 export function PipelinePreview({ statuses }: { statuses: DraftStatus[] }) {
   const active = statuses.filter((s) => s.active)
-  const open = active.filter((s) => s.kind === 'open')
-  const off = active.filter((s) => s.kind !== 'open')
+  const open = active.filter((s) => s.type === 'open')
+  const off = active.filter((s) => s.type !== 'open')
   const inactive = statuses.filter((s) => !s.active)
 
   return (
@@ -56,7 +57,7 @@ export function PipelinePreview({ statuses }: { statuses: DraftStatus[] }) {
                 <span className="me-1 text-xs text-muted">Off the board</span>
                 {off.map((s) => (
                   <Badge key={s._id} tone={s.tone} variant="dot">
-                    {s.label.trim() || 'Untitled'} · {KIND_LABEL[s.kind]}
+                    {s.label.trim() || 'Untitled'} · {LEAD_STATUS_TYPE_LABEL[s.type]}
                   </Badge>
                 ))}
               </div>

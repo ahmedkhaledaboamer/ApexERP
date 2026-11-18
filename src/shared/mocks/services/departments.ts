@@ -1,4 +1,6 @@
-import { isBefore, isSameMonth, startOfDay, startOfMonth } from 'date-fns'
+import { isSameMonth, startOfMonth } from 'date-fns'
+import { followUpStateOn } from '@/shared/domain/followUp'
+import { companyDayOf } from '@/shared/mocks/selectors/company'
 import type { User } from '@/shared/types'
 import { departmentSubtree, scopeOf } from '@/shared/lib/permissions'
 import type {
@@ -160,7 +162,8 @@ function figuresOf(d: Tenant<Department>): DepartmentFigures {
   const owned = leads.filter((l) => ids.has(l.ownerId))
   const open = owned.filter((l) => !isClosedStatus(co, l.status))
   const now = new Date()
-  const today = startOfDay(now)
+  // Follow-ups are company-local calendar dates: compare with the company's today.
+  const companyToday = companyDayOf(co).today
   // Targets: members with at least one activity target (sales agents today).
   let pctSum = 0
   let counted = 0
@@ -179,7 +182,7 @@ function figuresOf(d: Tenant<Department>): DepartmentFigures {
     openLeads: open.length,
     openPipelineValue: open.reduce((s, l) => s + l.value, 0),
     wonThisMonth: owned.filter((l) => isWonStatus(co, l.status) && isSameMonth(new Date(l.stageChangedAt), now)).length,
-    overdueFollowUps: open.filter((l) => l.nextFollowUpDate && isBefore(new Date(l.nextFollowUpDate), today)).length,
+    overdueFollowUps: open.filter((l) => followUpStateOn(l.nextFollowUpDate, companyToday) === 'overdue').length,
     targetsCompletion: counted ? Math.round((pctSum / counted) * 100) : null,
     membersWithTargets: counted,
   }

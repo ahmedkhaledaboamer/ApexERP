@@ -63,7 +63,7 @@ export function ProjectFiles({ project: p }: { project: ProjectDetail }) {
             <tr key={`${f.taskId}-${f.id}`}>
               <td className="max-w-[18rem] px-4 py-2.5">
                 <span className="flex min-w-0 items-center gap-2">
-                  <FileIcon type={f.type} />
+                  <FileIcon type={f.mimeType} />
                   <span className="truncate text-ink" title={f.name}>
                     {f.name}
                   </span>
@@ -75,9 +75,9 @@ export function ProjectFiles({ project: p }: { project: ProjectDetail }) {
                 </button>
               </td>
               <td className="px-3 py-2.5">
-                <Badge variant="outline">{typeLabel(f.type, f.name)}</Badge>
+                <Badge variant="outline">{typeLabel(f.mimeType, f.name)}</Badge>
               </td>
-              <td className="num px-3 py-2.5 text-end whitespace-nowrap text-ink-2">{fmtBytes(f.size)}</td>
+              <td className="num px-3 py-2.5 text-end whitespace-nowrap text-ink-2">{fmtBytes(f.sizeBytes)}</td>
               <td className="px-3 py-2.5">
                 <span className="flex items-center gap-2 whitespace-nowrap text-ink-2">
                   <Avatar name={nameOf(f.uploadedBy)} size="xs" />

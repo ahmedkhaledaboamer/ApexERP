@@ -1,6 +1,11 @@
 /** Quotations (spec: Sales > Proposal). Money is AED; totals are always computed by the server. */
 
-export type QuotationStatus = 'Draft' | 'Sent' | 'Viewed' | 'Accepted' | 'Rejected' | 'Expired'
+/**
+ * quotations.status: draft | sent | viewed | accepted | rejected | expired (labels and tones in
+ * shared/domain/enums.ts). viewed = the client opened the document / link; expired = past
+ * valid_until while still sent or viewed (set by the server, never for accepted / rejected).
+ */
+export type QuotationStatus = import('@/shared/domain/enums').QuotationStatus
 
 /** Billing unit; set from the service's pricing type (Fixed → project, Monthly → month, Hourly → hour). */
 export type QuotationUnit = 'project' | 'month' | 'hour'
@@ -47,7 +52,7 @@ export interface QuotationRecord {
   contactName: string
   contactEmail: string
   title: string
-  /** Stored status. Sent/Viewed quotations past `validUntil` read as Expired. */
+  /** Stored status. The server marks sent / viewed quotations past `validUntil` (company day) expired. */
   status: QuotationStatus
   items: QuotationItem[]
   /** VAT percent; the workspace rate (Settings > Company) by default. */
@@ -65,6 +70,10 @@ export interface QuotationRecord {
   sentAt: string | null
   /** When it was marked Accepted or Rejected. */
   decidedAt: string | null
+  /** When the client first opened the shared document (status sent → viewed). */
+  viewedAt: string | null
+  /** quotations.accepted_at: when it was accepted (set by the Won flow at the latest). */
+  acceptedAt?: string | null
 }
 
 /** A quotation as the API returns it. */
@@ -93,4 +102,4 @@ export interface QuotationInput {
 
 export type QuotationUpdateInput = Partial<Omit<QuotationInput, 'leadId'>>
 
-export type QuotationDecision = 'Accepted' | 'Rejected'
+export type QuotationDecision = import('@/shared/domain/enums').QuotationDecision

@@ -1,5 +1,5 @@
 import type { ListOption, StatusOption } from '@/modules/settings/types'
-import { automationRulesFor, lookupsFor, SYSTEM_STATUS } from '@/shared/mocks/data/lookups'
+import { automationRulesFor, lookupsFor } from '@/shared/mocks/data/lookups'
 
 /**
  * Server-side checks and labels over the live lookup store (Settings > Fixed lists).
@@ -47,10 +47,10 @@ export const orderedStatuses = (companyId: string): StatusOption[] => byOrder(lo
 export const orderedSources = (companyId: string): ListOption[] => byOrder(lookupsFor(companyId).sources)
 export const orderedIndustries = (companyId: string) => byOrder(lookupsFor(companyId).industries)
 
-/** Where leads go after too many unanswered attempts: Cold, or the first active parked status. */
+/** Where leads go after too many unanswered attempts: the first active `cold` status, else the first active `parked` one. */
 export function coldStatusKey(companyId: string): string | undefined {
-  if (isActiveStatus(companyId, SYSTEM_STATUS.cold)) return SYSTEM_STATUS.cold
-  return byOrder(lookupsFor(companyId).statuses).find((s) => s.kind === 'parked' && s.active)?.key
+  const list = byOrder(lookupsFor(companyId).statuses).filter((s) => s.active)
+  return (list.find((s) => s.type === 'cold') ?? list.find((s) => s.type === 'parked'))?.key
 }
 
 /**
@@ -59,7 +59,7 @@ export function coldStatusKey(companyId: string): string | undefined {
  */
 export function isReopenEligible(companyId: string, lead: { status: string; stageChangedAt: string }, now = Date.now()): boolean {
   const s = lookupsFor(companyId).statuses.find((x) => x.key === lead.status)
-  if (s?.kind !== 'lost') return false
+  if (s?.type !== 'lost') return false
   return now - new Date(lead.stageChangedAt).getTime() >= automationRulesFor(companyId).lostReopenDays * 86_400_000
 }
 

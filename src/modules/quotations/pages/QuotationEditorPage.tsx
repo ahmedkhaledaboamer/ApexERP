@@ -19,13 +19,14 @@ import {
 } from 'lucide-react'
 import type { User } from '@/shared/types'
 import type { LeadRow } from '@/modules/leads/types'
-import type { Quotation, QuotationItem, QuotationStatus } from '@/modules/quotations/types'
+import type { Quotation, QuotationDecision, QuotationItem, QuotationStatus } from '@/modules/quotations/types'
 import { customerPath, leadPath, PATHS, quotationPath } from '@/app/paths'
 import { useLeadsQuery } from '@/modules/leads/hooks/useLeads'
 import { useServicesQuery } from '@/modules/services/hooks/useServices'
 import {
   useCreateQuotation,
   useDuplicateQuotation,
+  useMarkQuotationViewed,
   useQuotationQuery,
   useSendQuotation,
   useSetQuotationStatus,
@@ -243,6 +244,7 @@ function QuotationEditor({ quotation, initialLeadId, user }: EditorProps) {
   const send = useSendQuotation()
   const decide = useSetQuotationStatus()
   const duplicate = useDuplicateQuotation()
+  const markViewed = useMarkQuotationViewed()
   const region = useRegion()
   const tenant = useTenant()
   const branding = useBranding()
@@ -254,8 +256,8 @@ function QuotationEditor({ quotation, initialLeadId, user }: EditorProps) {
 
   const canEdit = can(user.role, 'sales', 'edit')
   const canCreate = can(user.role, 'sales', 'create')
-  const status: QuotationStatus = quotation?.status ?? 'Draft'
-  const editable = quotation ? status === 'Draft' && canEdit : canCreate
+  const status: QuotationStatus = quotation?.status ?? 'draft'
+  const editable = quotation ? status === 'draft' && canEdit : canCreate
 
   const [form, setForm] = useState<FormState>(() => (quotation ? fromQuotation(quotation) : emptyForm(initialLeadId, FIELD_FALLBACK)))
   const [baseline, setBaseline] = useState(() => JSON.stringify(form))
@@ -439,18 +441,30 @@ function QuotationEditor({ quotation, initialLeadId, user }: EditorProps) {
     }
   }
 
-  function markAs(next: 'Accepted' | 'Rejected') {
+  function markAs(next: QuotationDecision) {
     if (!quotation) return
     decide.mutate(
       { id: quotation.id, status: next },
       {
         onSuccess: (q) => {
-          toast.success(`${q.number} marked ${next.toLowerCase()}`)
-          if (next === 'Accepted' && !(lead && lookups.isWon(lead.status) && q.customerId)) setWinPrompt(q)
+          toast.success(`${q.number} marked ${next}`)
+          if (next === 'accepted' && !(lead && lookups.isWon(lead.status) && q.customerId)) setWinPrompt(q)
         },
         onError: (e) => toast.error('Status not changed', e.message),
       },
     )
+  }
+
+  /** Shows the document as the client sees it; the server records the view (sent → viewed). */
+  function openAsCustomer() {
+    if (!quotation) return
+    setTab('preview')
+    markViewed.mutate(quotation.id, {
+      onSuccess: (q) => {
+        if (quotation.status === 'sent' && q.status === 'viewed') toast.success(`${q.number} marked viewed`, 'Opened the way the client sees it.')
+      },
+      onError: (e) => toast.error('Couldn’t open as customer', e.message),
+    })
   }
 
   function duplicateIt() {
@@ -706,25 +720,25 @@ function QuotationEditor({ quotation, initialLeadId, user }: EditorProps) {
                         )}
                       </>
                     )}
-                    {quotation && canEdit && (status === 'Sent' || status === 'Viewed') && (
+                    {quotation && canEdit && (status === 'sent' || status === 'viewed') && (
                       <div className="grid grid-cols-2 gap-2">
-                        <Button write onClick={() => markAs('Accepted')} loading={decide.isPending && decide.variables?.status === 'Accepted'} disabled={decide.isPending}>
+                        <Button write onClick={() => markAs('accepted')} loading={decide.isPending && decide.variables?.status === 'accepted'} disabled={decide.isPending}>
                           <CheckCircle2 />
                           Accepted
                         </Button>
-                        <Button write variant="secondary" onClick={() => markAs('Rejected')} loading={decide.isPending && decide.variables?.status === 'Rejected'} disabled={decide.isPending}>
+                        <Button write variant="secondary" onClick={() => markAs('rejected')} loading={decide.isPending && decide.variables?.status === 'rejected'} disabled={decide.isPending}>
                           <XCircle />
                           Rejected
                         </Button>
                       </div>
                     )}
-                    {quotation && canEdit && status === 'Accepted' && !(lead && lookups.isWon(lead.status) && quotation.customerId) && (
+                    {quotation && canEdit && status === 'accepted' && !(lead && lookups.isWon(lead.status) && quotation.customerId) && (
                       <Button write className="w-full" onClick={() => openWon(quotation.leadId, quotation.id)}>
                         <Trophy />
                         Win deal
                       </Button>
                     )}
-                    {quotation && status === 'Expired' && (
+                    {quotation && status === 'expired' && (
                       <p className="flex items-start gap-1.5 rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-700 dark:bg-warning-500/10 dark:text-warning-500">
                         <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
                         This quotation lapsed on {fmtDate(quotation.validUntil)}. Duplicate it to send a fresh one.
@@ -742,6 +756,19 @@ function QuotationEditor({ quotation, initialLeadId, user }: EditorProps) {
                         Print / PDF
                       </Button>
                     </div>
+                    {quotation && status !== 'draft' && (
+                      <Button
+                        id="quotation-open-as-customer"
+                        variant="ghost"
+                        className="w-full"
+                        onClick={openAsCustomer}
+                        loading={markViewed.isPending}
+                        title="Shows the document the way the client sees it from the shared link; a sent quotation is marked viewed."
+                      >
+                        <Eye />
+                        Open as customer
+                      </Button>
+                    )}
                   </div>
                 </CardBody>
               </Card>
@@ -1016,12 +1043,12 @@ function TimelineCard({ quotation: q }: { quotation: Quotation }) {
     { label: `Created by ${q.createdByName}`, at: q.createdAt, tone: 'bg-subtle' },
     { label: `Sent to ${q.contactEmail}`, at: q.sentAt, tone: 'bg-accent-500' },
   ]
-  if (q.status === 'Viewed') events.push({ label: 'Viewed by the client', at: null, tone: 'bg-brand-500' })
+  if (q.viewedAt || q.status === 'viewed') events.push({ label: 'Viewed by the client', at: q.viewedAt, tone: 'bg-brand-500' })
   if (q.decidedAt) {
     events.push({
-      label: q.status === 'Accepted' ? 'Accepted' : 'Rejected',
+      label: q.status === 'accepted' ? 'Accepted' : 'Rejected',
       at: q.decidedAt,
-      tone: q.status === 'Accepted' ? 'bg-success-500' : 'bg-danger-500',
+      tone: q.status === 'accepted' ? 'bg-success-500' : 'bg-danger-500',
     })
   }
   const days = daysUntil(q.validUntil)
@@ -1047,7 +1074,7 @@ function TimelineCard({ quotation: q }: { quotation: Quotation }) {
           <span className="text-muted">Valid until</span>
           <ValidUntil date={q.validUntil} status={q.status} />
         </div>
-        {q.status === 'Draft' && days < 0 && (
+        {q.status === 'draft' && days < 0 && (
           <p className="mt-2 text-xs text-danger-600 dark:text-danger-500">Move the validity date forward before sending.</p>
         )}
       </CardBody>

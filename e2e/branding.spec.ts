@@ -71,6 +71,9 @@ async function uploadAndCrop(page: Page, kind: 'logoLight' | 'logoDark' | 'favic
 }
 
 test('Apex admin brands the workspace; it shows everywhere at once; Management, Crest, audit, reset', async ({ page }) => {
+  // One long end-to-end scenario (~15 checks across several pages and two companies): it can pass the default
+  // 60 s on a busy machine while every step is correct, so it gets more time rather than being split.
+  test.setTimeout(150_000)
   await openBranding(page, APEX_ADMIN)
   await expect(sidebarLogo(page)).toBeVisible()
 
@@ -238,7 +241,7 @@ test('invalid files are refused with a clear message, before anything is uploade
     const r = await fetch('/api/settings/branding', {
       method: 'PATCH',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ logoLight: `data:image/png;base64,${btoa('not a png')}` }),
+      body: JSON.stringify({ logo_light: `data:image/png;base64,${btoa('not a png')}` }),
     })
     return { status: r.status, body: await r.json() }
   })

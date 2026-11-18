@@ -25,7 +25,7 @@ function FileIcon({ type, name }: { type: string; name: string }) {
   return <File className={`${cls} text-muted`} aria-hidden />
 }
 
-/** Mocked upload: only the file's name, size and type are sent and stored. */
+/** Mocked upload: only the file's name, size (sizeBytes) and MIME type (mimeType) are sent and stored. */
 export function TaskAttachments({
   taskId,
   attachments,
@@ -45,14 +45,14 @@ export function TaskAttachments({
 
   async function onFiles(files: FileList | null) {
     for (const f of Array.from(files ?? [])) {
-      const meta = { name: f.name, size: f.size, type: f.type || 'application/octet-stream' }
+      const meta = { name: f.name, sizeBytes: f.size, mimeType: f.type || 'application/octet-stream' }
       const parsed = taskAttachmentSchema.safeParse(meta)
       if (!parsed.success) {
         toast.error(`Couldn’t attach ${f.name}`, parsed.error.issues[0]?.message)
         continue
       }
       try {
-        await add.mutateAsync(parsed.data)
+        await add.mutateAsync({ name: parsed.data.name, sizeBytes: parsed.data.sizeBytes, mimeType: parsed.data.mimeType || 'application/octet-stream' })
       } catch (e) {
         toast.error(`Couldn’t attach ${f.name}`, (e as Error).message)
       }
@@ -71,13 +71,13 @@ export function TaskAttachments({
         <ul className="divide-y divide-line rounded-lg border border-line">
           {attachments.map((a) => (
             <li key={a.id} className="flex items-center gap-2.5 px-3 py-2">
-              <FileIcon type={a.type} name={a.name} />
+              <FileIcon type={a.mimeType} name={a.name} />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[0.8125rem] text-ink" title={a.name}>
                   {a.name}
                 </p>
                 <p className="truncate text-xs text-muted">
-                  <span className="num">{fmtBytes(a.size)}</span> · {a.type || 'file'} · {nameOf(a.uploadedBy)}, {fmtDate(a.uploadedAt, 'd MMM')}
+                  <span className="num">{fmtBytes(a.sizeBytes)}</span> · {a.mimeType || 'file'} · {nameOf(a.uploadedBy)}, {fmtDate(a.uploadedAt, 'd MMM')}
                 </p>
               </div>
               {canEdit && (

@@ -13,7 +13,9 @@ import { quotations } from '@/shared/mocks/data/quotations'
 import { projectTemplateFor, services } from '@/shared/mocks/data/services'
 import { nextProjectId, nextTaskId, notifications, projects, pushNotification, tasks } from '@/shared/mocks/data/tasks'
 import { isWonStatus, statusOf, SYSTEM_STATUS } from '@/shared/mocks/data/lookups'
+import { QUOTATION_STATUS_LABEL } from '@/shared/domain/enums'
 import { auditLog, recordAudit } from '@/shared/mocks/data/audit'
+import { leadStatusHistory, recordLeadStatusChange } from '@/shared/mocks/data/leadStatusHistory'
 import { companyTeamIds, companyUsers, companyWeekend, userInCompany } from '@/shared/mocks/selectors/company'
 import { LimitReachedError, subOf, subPlan, usedOf } from '@/shared/mocks/services/billing'
 import { CodedApiError, findInTenant, stamp, type Tenant } from '@/shared/mocks/tenant'
@@ -163,8 +165,8 @@ function checkQuotation(co: Co, lead: LeadRow, quotationId: string | null | unde
   const q = quotationIn(co, quotationId)
   if (!q) return { ok: false, status: 404, message: 'That quotation doesn’t exist.' }
   if (q.leadId !== lead.id) return { ok: false, status: 422, message: `Quotation ${q.number} belongs to another lead.` }
-  if (q.status !== 'Accepted') {
-    return { ok: false, status: 422, code: 'quotation_not_accepted', message: `Quotation ${q.number} is ${q.status}, not Accepted. Accept it first, or win without a quotation.` }
+  if (q.status !== 'accepted') {
+    return { ok: false, status: 422, code: 'quotation_not_accepted', message: `Quotation ${q.number} is ${QUOTATION_STATUS_LABEL[q.status]}, not Accepted. Accept it first, or win without a quotation.` }
   }
   return { ok: true, quote: q }
 }
@@ -193,7 +195,7 @@ export async function previewWon(
 ): Promise<WonPreview> {
   const lead = await leadFor(user, leadId)
   const co: Co = { companyId: lead.companyId }
-  const accepted = quotations.filter((x) => x.companyId === lead.companyId && x.leadId === leadId && x.status === 'Accepted')
+  const accepted = quotations.filter((x) => x.companyId === lead.companyId && x.leadId === leadId && x.status === 'accepted')
   const quotationId = q.quotationId === undefined ? (accepted[0]?.id ?? null) : q.quotationId
   const quote = quotationIn(co, quotationId)
   // Only an accepted quotation of this lead feeds services and the contract; anything else is a blocking problem.
@@ -259,7 +261,7 @@ function quoteTotal(q: (typeof quotations)[number]): number {
 /* ---------------- The transaction ---------------- */
 
 /** Every store the Won flow writes to. Snapshotted before, restored on failure. */
-const STORES = { leads, customers, contracts, projects, tasks, notifications, activities, auditLog } as const
+const STORES = { leads, customers, contacts, quotations, contracts, projects, tasks, notifications, activities, auditLog, leadStatusHistory } as const
 
 function snapshot() {
   return Object.fromEntries(Object.entries(STORES).map(([k, arr]) => [k, structuredClone(arr)])) as { [K in keyof typeof STORES]: (typeof STORES)[K] }
@@ -275,8 +277,9 @@ function restore(snap: ReturnType<typeof snapshot>) {
  * Test-only failpoints: make a step throw to prove the rollback. `failWith` picks the error (default
  * a plain Error → 500; `limit` → 402 LIMIT_REACHED, `module` → 403 module_not_in_plan, `read_only` →
  * 423 workspace_read_only), the same errors the plan checks raise. Unit tests pass them as `hooks`;
- * browser tests set `window.__apexWonFailAt` (a step) and optionally `window.__apexWonFailWith`
- * before the app loads, like `__apexMoveFailureRate`. The real backend has no failpoints.
+ * browser tests set the window failpoint globals (a step, and optionally the error kind) before the
+ * app loads, like the move-failure hook. They are read only in dev and tests, so a production build
+ * drops them. The real backend has no failpoints.
  */
 export type WonFailKind = 'error' | 'limit' | 'module' | 'read_only'
 export interface WonTestHooks {
@@ -290,6 +293,7 @@ const FAIL_KINDS: WonFailKind[] = ['error', 'limit', 'module', 'read_only']
 /** Hooks from the arguments, else the browser-test globals. */
 function failpoints(hooks: WonTestHooks): WonTestHooks {
   if (hooks.failAt) return hooks
+  if (!(import.meta.env.DEV || import.meta.env.MODE === 'test')) return {}
   const g = globalThis as { __apexWonFailAt?: unknown; __apexWonFailWith?: unknown }
   const failAt = WON_STEPS.find((s) => s === g.__apexWonFailAt)
   const failWith = FAIL_KINDS.find((k) => k === g.__apexWonFailWith)
@@ -353,13 +357,15 @@ export async function winLead(user: User, leadId: string, input: WonInput, hooks
     const now = new Date().toISOString()
     const plans = planAll(co, serviceIds, input.projectManagerId, input.startDate)
 
-    // 1. Lead → Won.
+    // 1. Lead → Won (leads.won_at + a lead_status_history row).
     check('lead')
     const prevStatus = lead.status
     lead.status = wonKey
     lead.stageChangedAt = now
+    lead.wonAt = now
     lead.nextFollowUpDate = null
     lead.nextStep = ''
+    recordLeadStatusChange(lead, prevStatus, wonKey, { changedBy: user.id, reason: 'Won (Won flow)', at: now })
 
     // 2. Customer: link an existing one or create it from the lead (contacts, notes and activities
     //    stay on the lead id, which the customer references, so nothing is retyped).
@@ -374,6 +380,13 @@ export async function winLead(user: User, leadId: string, input: WonInput, hooks
     const customerServicesBefore = [...customer.serviceIds]
     customer.serviceIds = [...new Set([...customer.serviceIds, ...serviceIds])]
     lead.customerId = customer.id
+    // contacts.customer_id: the lead's contacts now also belong to the customer (they keep lead_id).
+    for (const k of contacts) if (k.companyId === co.companyId && k.leadId === lead.id) k.customerId = customer.id
+    // The accepted quotation gets customer_id and accepted_at.
+    if (quoteCheck.quote) {
+      quoteCheck.quote.customerId = customer.id
+      quoteCheck.quote.acceptedAt = quoteCheck.quote.acceptedAt ?? quoteCheck.quote.decidedAt ?? now
+    }
 
     // 3. Contract from the accepted quotation's recurring lines.
     check('contract')
@@ -390,8 +403,10 @@ export async function winLead(user: User, leadId: string, input: WonInput, hooks
         billing: c.billing,
         startDate: c.startDate,
         renewalDate: c.renewalDate,
-        status: 'Active',
+        status: 'active',
         ownerId: lead.ownerId,
+        quotationId,
+        createdBy: user.id,
       }
       contracts.push(contract)
       contractId = contract.id
@@ -412,10 +427,12 @@ export async function winLead(user: User, leadId: string, input: WonInput, hooks
         serviceId: plan.serviceId,
         leadId,
         quotationId,
+        contractId,
+        projectTemplateId: plan.hasTemplate ? plan.serviceId : null,
         managerId: input.projectManagerId,
         startDate: plan.startDate,
         endDate: plan.endDate,
-        status: 'Planned',
+        status: 'planned',
         estimatedHours: plan.estimatedHours,
         createdAt: now,
         createdBy: user.id,
@@ -423,23 +440,28 @@ export async function winLead(user: User, leadId: string, input: WonInput, hooks
       })
       projectIds.push(id)
       projectAudit.push({ id, name: `${plan.serviceName} — ${customer.name}`, tasks: plan.tasks.length })
-      for (const p of plan.tasks) {
+      for (const [k, p] of plan.tasks.entries()) {
         const t: Tenant<Task> = {
           companyId: co.companyId,
           id: nextTaskId(),
           title: p.title,
-          description: `${p.role} · from the ${plan.serviceName} template`,
+          description: `${p.role ?? 'No role'} · from the ${plan.serviceName} template`,
           ownerId: p.ownerId,
           followerIds: p.ownerId === input.projectManagerId ? [] : [input.projectManagerId],
           priority: p.priority,
           dueDate: p.dueDate,
-          status: 'To do',
-          link: { type: 'project', id },
+          status: 'todo',
+          link: null,
           projectId: id,
+          parentTaskId: null,
           estimatedHours: p.hours,
-          loggedHours: 0,
           templateTaskId: p.templateTaskId,
           dayOffset: p.dayOffset,
+          sortOrder: k + 1,
+          blockedAt: null,
+          blockedReason: null,
+          reminderSentAt: null,
+          overdueNotifiedAt: null,
           attachments: [],
           comments: [],
           history: [{ id: `${id}-${p.templateTaskId}-h0`, kind: 'created', userId: user.id, at: now, summary: `Created by the Won flow for ${lead.company}` }],

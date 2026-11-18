@@ -1,11 +1,11 @@
 import type { Activity, ActivityType, Lead, LeadStatus, Note, User } from '@/shared/types'
+import { recordLeadStatusChange } from '@/shared/mocks/data/leadStatusHistory'
 import type { CountryCode } from '@/modules/tenancy/types'
 import { ApiError } from '@/shared/lib/apiError'
 import { OUTREACH_TYPES } from '@/shared/lib/constants'
 import { automationRulesFor, isClosedStatus, isWonFlowStatus, statusOf, SYSTEM_STATUS, USE_WON_FLOW } from '@/shared/mocks/data/lookups'
 import {
   coldStatusKey,
-  DAY_MS,
   isActiveIndustry,
   isActiveLossReason,
   isActiveSource,
@@ -22,9 +22,12 @@ import { activities, CREST_SEED_LEAD_BASE, contacts, leads, notes, users } from 
 import { tasksForLink } from '@/shared/mocks/selectors/tasks'
 import { delay, fail, ownerName } from '@/shared/mocks/server'
 import { services as catalog } from '@/shared/mocks/data/services'
+import { campaigns } from '@/shared/mocks/data/marketing'
 import { CodedApiError, findInTenant, scoped, stamp, tenantOf, type Tenant, type TenantOwned } from '@/shared/mocks/tenant'
 import { assertCapacity, noteUsage } from '@/shared/mocks/services/billing'
 import { registerMap } from '@/shared/mocks/persist/registry'
+import { companyDayOf } from '@/shared/mocks/selectors/company'
+import { followUpInDays, isIsoDate } from '@/shared/domain/followUp'
 import type {
   LeadRow,
   LeadDetail,
@@ -102,11 +105,14 @@ const MOVE_FAILURE_RATE = 0.08
 
 /**
  * The failure rate in effect: 0 under unit tests (deterministic), else MOVE_FAILURE_RATE. Browser
- * tests set `window.__apexMoveFailureRate` (0 = never fail, 1 = always fail) before the app loads.
+ * tests set the move-failure window global (0 = never fail, 1 = always fail) before the app loads;
+ * it is read only in dev and tests, so a production build drops the hook.
  */
 function moveFailureRate(): number {
-  const override = (globalThis as { __apexMoveFailureRate?: unknown }).__apexMoveFailureRate
-  if (typeof override === 'number') return override
+  if (import.meta.env.DEV || import.meta.env.MODE === 'test') {
+    const override = (globalThis as { __apexMoveFailureRate?: unknown }).__apexMoveFailureRate
+    if (typeof override === 'number') return override
+  }
   return import.meta.env.MODE === 'test' ? 0 : MOVE_FAILURE_RATE
 }
 
@@ -136,10 +142,11 @@ export async function getLead(user: User, id: string): Promise<LeadDetail> {
 }
 
 /**
- * Moves a lead to a stage, enforcing what the target status `requires` (from the lookups).
- * A Won-flow status (kind won or requires "convert") is refused with 409 `use_won_flow`: only the
- * atomic Won flow (services/won.ts) sets it. Moving to No response schedules the next follow-up
- * `noResponseFollowUpDays` later; closed (won/lost/parked) statuses clear the follow-up.
+ * Moves a lead to a stage, enforcing the target status's flags (from the lookups, never its name):
+ * `requiresLossReason` → a reason from the list; `requiresNextStep` → a next step and its follow-up
+ * date (yyyy-MM-dd). A `won` status is refused with 409 `use_won_flow`: only the atomic Won flow
+ * (services/won.ts) sets it. Moving to No response schedules the next follow-up
+ * `noResponseFollowUpDays` after the company's today; closed (won/lost/cold/parked) statuses clear it.
  */
 export async function moveLeadStage(user: User, input: MoveLeadInput): Promise<LeadRow> {
   const lead = await leadFor(user, input.id, true)
@@ -149,39 +156,47 @@ export async function moveLeadStage(user: User, input: MoveLeadInput): Promise<L
   const target = statusOf(co, input.status)
   if (!target || !target.active) return fail('Pick a status from the list.', 422)
   // Winning creates the customer, contract, projects and tasks atomically: only POST /leads/:id/won does
-  // that. Same rule as the client's moveActionFor: kind won OR requires convert.
-  if (target.kind === 'won' || target.requires === 'convert') throw new CodedApiError(USE_WON_FLOW, 409, 'use_won_flow')
-  if (target.requires === 'loss-reason') {
+  // that. Same rule as the client's moveActionFor: status type won.
+  if (target.type === 'won') throw new CodedApiError(USE_WON_FLOW, 409, 'use_won_flow')
+  if (target.requiresLossReason) {
     if (!input.lossReason?.trim()) return fail('A reason is required to close this lead.', 422)
     if (!isActiveLossReason(co, input.lossReason)) return fail('Pick a loss reason from the list.', 422)
   }
-  if (target.requires === 'next-step' && (!input.nextStep?.trim() || !input.nextFollowUpDate)) {
+  if (target.requiresNextStep && (!input.nextStep?.trim() || !input.nextFollowUpDate)) {
     return fail('Record the next step and its date first.', 422)
   }
+  if (input.nextFollowUpDate && !isIsoDate(input.nextFollowUpDate)) return fail(FOLLOW_UP_DATE_FORMAT, 422)
   if (Math.random() < moveFailureRate()) {
     return fail(`The server didn’t save the move for ${lead.company}. It’s back where it was.`, 503)
   }
 
   const wasClosed = isClosedStatus(co, lead.status)
   const now = Date.now()
+  // Follow-ups are company-local calendar dates: "+N days" counts from the company's today.
+  const today = companyDayOf(co).today
+  recordLeadStatusChange(lead, lead.status, input.status, {
+    changedBy: user.id,
+    reason: input.lossReason ?? input.nextStep ?? null,
+    at: new Date(now).toISOString(),
+  })
   lead.status = input.status
   lead.stageChangedAt = new Date(now).toISOString()
-  if (target.kind !== 'open') lead.nextFollowUpDate = null
-  if (target.requires === 'loss-reason') {
+  if (target.type !== 'open') lead.nextFollowUpDate = null
+  if (target.requiresLossReason) {
     lead.lossReason = input.lossReason ?? ''
-  } else if (target.requires === 'next-step') {
+  } else if (target.requiresNextStep) {
     lead.nextStep = input.nextStep ?? ''
   }
   // (Won is refused above: customer conversion happens only in the atomic Won flow, services/won.ts.)
-  if (target.kind === 'open') {
+  if (target.type === 'open') {
     if (input.status === SYSTEM_STATUS.noResponse) {
       // Spec: "No response: the system sets a follow-up two days later."
-      lead.nextFollowUpDate = new Date(now + automationRulesFor(co).noResponseFollowUpDays * DAY_MS).toISOString()
+      lead.nextFollowUpDate = followUpInDays(today, automationRulesFor(co).noResponseFollowUpDays)
     } else if (input.nextFollowUpDate) {
       lead.nextFollowUpDate = input.nextFollowUpDate
     } else if (wasClosed || !lead.nextFollowUpDate) {
       // Reopened (or never scheduled): the next contact is due tomorrow.
-      lead.nextFollowUpDate = new Date(now + DAY_MS).toISOString()
+      lead.nextFollowUpDate = followUpInDays(today, 1)
     }
     if (wasClosed) lead.lossReason = ''
   }
@@ -230,6 +245,7 @@ export async function logActivity(
 
   const rules = automationRulesFor(co)
   if (lead.status === SYSTEM_STATUS.new && isActiveStatus(co, SYSTEM_STATUS.contacted)) {
+    recordLeadStatusChange(lead, lead.status, SYSTEM_STATUS.contacted, { changedBy: null, reason: 'First contact logged', at: activity.at })
     lead.status = SYSTEM_STATUS.contacted
     lead.stageChangedAt = activity.at
   } else if (lead.status === SYSTEM_STATUS.noResponse) {
@@ -239,13 +255,14 @@ export async function logActivity(
     ).length
     const cold = coldStatusKey(co)
     if (cold && attempts >= rules.attemptsBeforeCold) {
+      recordLeadStatusChange(lead, lead.status, cold, { changedBy: null, reason: `${attempts} attempts with no reply` })
       lead.status = cold
       lead.stageChangedAt = new Date().toISOString()
       lead.nextFollowUpDate = null
       view.autoStatus = { from: SYSTEM_STATUS.noResponse, to: cold, label: statusLabelOf(co, cold), attempts }
     } else {
-      // Each unanswered attempt schedules the next one `noResponseFollowUpDays` later.
-      lead.nextFollowUpDate = new Date(Date.now() + rules.noResponseFollowUpDays * DAY_MS).toISOString()
+      // Each unanswered attempt schedules the next one `noResponseFollowUpDays` after the company's today.
+      lead.nextFollowUpDate = followUpInDays(companyDayOf(co).today, rules.noResponseFollowUpDays)
     }
   }
   return delay(view)
@@ -293,8 +310,9 @@ export async function getLeadTasks(user: User, id: string): Promise<TaskView[]> 
       title: t.title,
       ownerId: t.ownerId,
       dueDate: t.dueDate ?? '',
-      status: t.status === 'Blocked' ? 'In progress' : t.status,
-      priority: t.priority === 'Urgent' ? 'High' : t.priority,
+      // Legacy shape: three statuses and three priorities (labels).
+      status: t.status === 'done' ? 'Done' : t.status === 'todo' ? 'To do' : 'In progress',
+      priority: t.priority === 'low' ? 'Low' : t.priority === 'medium' ? 'Medium' : 'High',
       ownerName: ownerName(t.ownerId),
     }))
   return delay(list)
@@ -479,6 +497,9 @@ export function ownerProblem(user: User, ownerId: string): string | null {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
+/** next_follow_up_date is a company-local calendar date, never a datetime. */
+export const FOLLOW_UP_DATE_FORMAT = 'Set the follow-up as a calendar date (yyyy-MM-dd).'
+
 /** An ACTIVE catalog service of the company. Other companies' services don't exist here. */
 export const isActiveService = (companyId: string, id: string) =>
   catalog.some((s) => s.id === id && s.companyId === companyId && s.active)
@@ -574,7 +595,7 @@ function replaceContacts(companyId: string, leadId: string, list: ContactInput[]
   })
 }
 
-/** 422 `use_won_flow`: create, update and import never set a Won-flow status (kind won / requires convert). */
+/** 422 `use_won_flow`: create, update and import never set a Won status (status type won). */
 export function wonFlowRefusal(): CodedApiError {
   return new CodedApiError(USE_WON_FLOW, 422, 'use_won_flow')
 }
@@ -617,9 +638,8 @@ export function insertLead(user: User, input: LeadCreateInput, opts: InsertOptio
       stageChangedAt: now,
       ownerId: input.ownerId || autoOwnerFor(user),
       value: Math.max(0, Number(input.value) || 0),
-      nextFollowUpDate: isClosedStatus(co, status)
-        ? null
-        : (input.nextFollowUpDate ?? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()),
+      // A company-local calendar date; tomorrow (company time) when none is given.
+      nextFollowUpDate: isClosedStatus(co, status) ? null : (input.nextFollowUpDate || followUpInDays(companyDayOf(co).today, 1)),
       createdAt: now,
       doNotContact: !!input.doNotContact,
       nextStep: input.nextStep?.trim() ?? '',
@@ -630,10 +650,12 @@ export function insertLead(user: User, input: LeadCreateInput, opts: InsertOptio
       recommendedServiceId: input.recommendedServiceId || null,
       recommendedServiceText: null,
       score: 25,
+      campaignId: input.campaignId || null,
     },
     user,
   )
   leads.push(lead)
+  recordLeadStatusChange(lead, null, lead.status, { changedBy: user.id, reason: 'Created', at: lead.createdAt })
   if (input.website?.trim()) leadWebsites.set(id, input.website.trim())
   replaceContacts(co, id, list)
   if (input.note?.trim()) {
@@ -642,6 +664,12 @@ export function insertLead(user: User, input: LeadCreateInput, opts: InsertOptio
     )
   }
   return lead
+}
+
+/** leads.campaign_id must be a campaign of the lead's company (another company's id = unknown, 422). */
+export const UNKNOWN_CAMPAIGN = 'That campaign doesn’t exist.'
+export function isCampaignOf(companyId: string, campaignId: string): boolean {
+  return campaigns.some((c) => c.companyId === companyId && c.id === campaignId)
 }
 
 function isFullInput(input: QuickAddInput | LeadCreateInput): input is LeadCreateInput {
@@ -672,6 +700,7 @@ export async function createLead(user: User, raw: QuickAddInput | LeadCreateInpu
   const list = cleanContacts(country, input.contacts)
   const problem = validateLeadFields(co, country, { ...input, contacts: list }) ?? serviceFieldsProblem(co, input)
   if (problem) return fail(problem, 422)
+  if (input.nextFollowUpDate && !isIsoDate(input.nextFollowUpDate)) return fail(FOLLOW_UP_DATE_FORMAT, 422)
   if (isFullInput(raw)) {
     if (list.length === 0) return fail('Add at least one contact.', 422)
     if (list.some((c) => !c.name)) return fail('Every contact needs a name.', 422)
@@ -683,6 +712,7 @@ export async function createLead(user: User, raw: QuickAddInput | LeadCreateInpu
     const ownerErr = ownerProblem(user, input.ownerId)
     if (ownerErr) return fail(ownerErr, 403)
   }
+  if (input.campaignId && !isCampaignOf(co, input.campaignId)) return fail(UNKNOWN_CAMPAIGN, 422)
 
   const matches = findDuplicates(co, { company: input.company, emails: list.map((c) => c.email), website: input.website })
   if (matches.length > 0) {
@@ -704,7 +734,7 @@ export async function createLead(user: User, raw: QuickAddInput | LeadCreateInpu
 /** Lead fields a PATCH may set (LeadUpdateInput minus contacts/website/doNotContact/force, handled separately). */
 const LEAD_UPDATE_FIELDS = [
   'company', 'contactName', 'contactEmail', 'mobile', 'industry', 'subIndustry', 'sourceType', 'sourceDetail', 'ownerId',
-  'value', 'nextFollowUpDate', 'nextStep', 'companyServices', 'serviceIds', 'recommendedServiceId',
+  'value', 'nextFollowUpDate', 'nextStep', 'companyServices', 'serviceIds', 'recommendedServiceId', 'campaignId',
 ] as const satisfies readonly (keyof LeadUpdateInput)[]
 
 export async function updateLead(user: User, id: string, input: LeadUpdateInput): Promise<LeadRow> {
@@ -720,6 +750,7 @@ export async function updateLead(user: User, id: string, input: LeadUpdateInput)
     Object.entries(rawFields).filter(([k]) => (LEAD_UPDATE_FIELDS as readonly string[]).includes(k)),
   ) as typeof rawFields
   if (fields.company !== undefined && !fields.company.trim()) return fail('Company is required.', 422)
+  if (fields.nextFollowUpDate != null && !isIsoDate(fields.nextFollowUpDate)) return fail(FOLLOW_UP_DATE_FORMAT, 422)
   if (fields.mobile && !isMobile(fields.mobile, country)) {
     return fail(`Use the ${MOBILE_RULES[country].countryName} mobile format ${MOBILE_RULES[country].example}.`, 422)
   }
@@ -737,6 +768,8 @@ export async function updateLead(user: User, id: string, input: LeadUpdateInput)
   if (sub && !subUnchanged && !isActiveSubIndustry(co, industry, sub)) return fail(`${sub} isn’t a sub-industry of ${industry}.`, 422)
   const serviceProblem = serviceFieldsProblem(co, fields, lead)
   if (serviceProblem) return fail(serviceProblem, 422)
+  if (fields.campaignId && fields.campaignId !== lead.campaignId && !isCampaignOf(co, fields.campaignId)) return fail(UNKNOWN_CAMPAIGN, 422)
+  if (fields.campaignId === '') fields.campaignId = null
   if (fields.ownerId && fields.ownerId !== lead.ownerId) {
     const scope = scopeOf(user.role, 'sales')
     if (scope === 'own') return fail('Only managers can reassign leads.', 403)

@@ -133,6 +133,8 @@ export const asAdmin = (co: Co, method: string, path: string, opts?: ApiOptions)
 
 /** Keys that must never appear in a response. `token` is allowed only in a session payload (auth responses). */
 const SECRET_KEY = /^(password|passwordHash|hash|salt|secret|clientSecret|apiSecret|privateKey|accessToken|refreshToken|apiKey|cvc|cvv|cardNumber|pan|otpSecret|totpSecret|recoveryCodes?)$/i
+/** The key without underscores, so snake_case keys (password_hash, recovery_codes, two_factor_secret…) are checked too. */
+const bare = (k: string) => k.replace(/_/g, '')
 const SESSION_TOKEN_KEY = /^token$/i
 
 /** Luhn check: a 13–19 digit run that passes it looks like a card number. */
@@ -170,7 +172,7 @@ const SESSION_PATHS = [
  */
 const ALLOWED_SECRET_KEYS: Record<string, string[]> = {
   'POST /security/2fa/setup': ['secret'],
-  'POST /security/2fa/verify': ['recoveryCodes'],
+  'POST /security/2fa/verify': ['recovery_codes'],
 }
 
 /**
@@ -201,8 +203,8 @@ export function secretsIn(body: unknown, where: string): string[] {
     }
     if (v && typeof v === 'object') {
       for (const [k, x] of Object.entries(v)) {
-        if (SECRET_KEY.test(k) && x !== null && x !== undefined && x !== '' && !(path === '$' && allowed.includes(k))) out.push(`${path}.${k}: secret field`)
-        if (SESSION_TOKEN_KEY.test(k) && !sessionCall && typeof x === 'string') out.push(`${path}.${k}: token outside an auth response`)
+        if (SECRET_KEY.test(bare(k)) && x !== null && x !== undefined && x !== '' && !(path === '$' && allowed.includes(k))) out.push(`${path}.${k}: secret field`)
+        if (SESSION_TOKEN_KEY.test(bare(k)) && !sessionCall && typeof x === 'string') out.push(`${path}.${k}: token outside an auth response`)
         walk(x, `${path}.${k}`)
       }
     }

@@ -8,6 +8,7 @@ import type { SalesReport, TargetCell, TargetRow } from '@/modules/reports/types
 import { ReportCard } from './ReportCard'
 import { SubHeading } from './chartKit'
 import { isTracked } from '@/modules/targets/lib'
+import { useEventsEnabled } from '@/modules/events/hooks/useEventsEnabled'
 import { TargetNotTracked } from '@/modules/targets/components/TargetProgress'
 
 /** Green at target, brand while on pace, amber when behind the month's pace. */
@@ -20,18 +21,18 @@ function tone(pct: number, elapsed: number) {
 /** A target of 0 means "no target": the kind is left out of the overall figure. */
 const hasTarget = (cell: TargetCell | undefined) => !!cell && cell.target > 0
 
-/** Counts toward completion: has a target and is tracked (events are n/a until EVENTS_ENABLED). */
-const isCounted = (cell: TargetCell | undefined) => hasTarget(cell) && isTracked(cell!.key)
+/** Counts toward completion: has a target and is tracked (events are n/a without the Events module). */
+const isCounted = (cell: TargetCell | undefined, eventsOn: boolean) => hasTarget(cell) && isTracked(cell!.key, eventsOn)
 
 /** Average completion across counted kinds, each capped at 100; null when there are none. */
-function overallOf(cells: TargetCell[]): number | null {
-  const set = cells.filter(isCounted)
+function overallOf(cells: TargetCell[], eventsOn: boolean): number | null {
+  const set = cells.filter((c) => isCounted(c, eventsOn))
   if (!set.length) return null
   return Math.round(set.reduce((s, c) => s + Math.min(100, c.pct), 0) / set.length)
 }
 
-function ProgressCell({ cell, elapsed }: { cell: TargetCell; elapsed: number }) {
-  if (!isTracked(cell.key)) {
+function ProgressCell({ cell, elapsed, eventsOn }: { cell: TargetCell; elapsed: number; eventsOn: boolean }) {
+  if (!isTracked(cell.key, eventsOn)) {
     return (
       <div className="min-w-24">
         <TargetNotTracked />
@@ -68,10 +69,11 @@ type Row = Omit<TargetRow, 'overall'> & { overall: number | null }
 export function TargetsReport({ data }: { data: SalesReport }) {
   const t = data.targets
   const kinds = t.rows[0]?.cells ?? []
+  const eventsOn = useEventsEnabled()
   // Recomputed here so kinds without a target never drag the overall figure down.
   const rows = useMemo<Row[]>(
-    () => t.rows.map((r) => ({ ...r, overall: overallOf(r.cells) })).sort((a, b) => (b.overall ?? -1) - (a.overall ?? -1)),
-    [t.rows],
+    () => t.rows.map((r) => ({ ...r, overall: overallOf(r.cells, eventsOn) })).sort((a, b) => (b.overall ?? -1) - (a.overall ?? -1)),
+    [t.rows, eventsOn],
   )
   const columns = useMemo<ColumnDef<Row>[]>(
     () => [
@@ -89,9 +91,9 @@ export function TargetsReport({ data }: { data: SalesReport }) {
       ...kinds.map<ColumnDef<Row>>((k, i) => ({
         id: k.key,
         header: k.label,
-        accessorFn: (r) => (isCounted(r.cells[i]) ? r.cells[i].pct : -1),
-        enableSorting: isTracked(k.key),
-        cell: ({ row }) => <ProgressCell cell={row.original.cells[i]} elapsed={t.elapsed} />,
+        accessorFn: (r) => (isCounted(r.cells[i], eventsOn) ? r.cells[i].pct : -1),
+        enableSorting: isTracked(k.key, eventsOn),
+        cell: ({ row }) => <ProgressCell cell={row.original.cells[i]} elapsed={t.elapsed} eventsOn={eventsOn} />,
       })),
       {
         id: 'overall',
@@ -104,7 +106,7 @@ export function TargetsReport({ data }: { data: SalesReport }) {
         },
       },
     ],
-    [t, kinds],
+    [t, kinds, eventsOn],
   )
   const table = useDataTable({ id: 'reports-targets', data: rows, columns, defaultPageSize: 25, defaultSorting: [{ id: 'overall', desc: true }] })
 
@@ -117,7 +119,7 @@ export function TargetsReport({ data }: { data: SalesReport }) {
         ) : (
           <>
             <SubHeading
-              hint={`${t.elapsed}% of the month elapsed${kinds.some((k) => !isTracked(k.key)) ? ' · events attended excluded (n/a until Events is enabled)' : ''}`}
+              hint={`${t.elapsed}% of the month elapsed${kinds.some((k) => !isTracked(k.key, eventsOn)) ? ' · events attended excluded (n/a without the Events module)' : ''}`}
             >
               {t.monthLabel} · overall completion
             </SubHeading>

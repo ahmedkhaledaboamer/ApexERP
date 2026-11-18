@@ -19,6 +19,7 @@ import { diff, recordAudit } from '@/shared/mocks/data/audit'
 import { delay, fail } from '@/shared/mocks/server'
 import { scoped, tenantOf } from '@/shared/mocks/tenant'
 import { isTracked } from '@/modules/targets/lib'
+import { eventsAttendedBy, eventsEnabledIn } from '@/shared/mocks/selectors/events'
 
 /**
  * Monthly activity targets per sales agent. Actuals are calculated from logged activities
@@ -28,10 +29,10 @@ import { isTracked } from '@/modules/targets/lib'
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/
 
 /**
- * Kinds with no data source yet; their actual stays 0 (events: until EVENTS_ENABLED). Every
- * completion figure leaves them out (see isTracked in modules/targets/lib).
+ * Kinds with no data source for the company; their actual stays 0 (events: without the Events module
+ * in the plan). Every completion figure leaves them out (see isTracked in modules/targets/lib).
  */
-const NOT_TRACKED: TargetKey[] = TARGET_KEYS.filter((k) => !isTracked(k))
+const notTracked = (companyId: string): TargetKey[] => TARGET_KEYS.filter((k) => !isTracked(k, eventsEnabledIn(companyId)))
 
 const TYPES_FOR: Partial<Record<TargetKey, ActivityType[]>> = {
   calls: ['call'],
@@ -104,12 +105,15 @@ function actualsFor(companyId: string, userId: string, month: Date, values: Targ
         ? owned.filter((l) => atProposal(l.status)).length
         : owned.filter((l) => (atProposal(l.status) || isWonStatus(companyId, l.status)) && isSameMonth(new Date(l.stageChangedAt), month)).length
     }
-    return 0 // Partnerships and events aren't modelled yet.
+    return 0 // Partnerships aren't modelled yet.
   }
 
+  const untracked = notTracked(companyId)
   return Object.fromEntries(
     TARGET_KEYS.map((key) => {
-      if (NOT_TRACKED.includes(key)) return [key, 0]
+      if (untracked.includes(key)) return [key, 0]
+      // Events attended: real counts only (selectors/events.ts), no synthetic baseline.
+      if (key === 'events') return [key, eventsAttendedBy(companyId, userId, monthKey)]
       const pace = 0.55 + (hash(`${userId}:${key}:${monthKey}`) % 61) / 100
       const baseline = Math.round(values[key] * elapsed * pace)
       return [key, baseline + real(key)]

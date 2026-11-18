@@ -7,6 +7,7 @@ import {
   duplicateQuotation,
   getQuotation,
   getQuotations,
+  markQuotationViewed,
   sendQuotation,
   setQuotationStatus,
   updateQuotation,
@@ -79,6 +80,12 @@ export function useSetQuotationStatus() {
     mutationFn: ({ id, status }: { id: string; status: QuotationDecision }) => setQuotationStatus(id, status),
     onSuccess: sync,
   })
+}
+
+/** "Open as customer": records that the client viewed the document (sent → viewed). */
+export function useMarkQuotationViewed() {
+  const sync = useSync()
+  return useMutation({ mutationFn: (id: string) => markQuotationViewed(id), onSuccess: sync })
 }
 
 export function useDuplicateQuotation() {

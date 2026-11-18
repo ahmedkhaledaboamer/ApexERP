@@ -14,6 +14,7 @@ import { tokenFor } from '@/shared/mocks/server'
 import { REPORT_IDS } from '@/modules/reports/lib/reportCatalog'
 import { customSheet, sheetsFor } from '@/modules/reports/lib/reportSheets'
 import type { CustomReport, SalesReport } from '@/modules/reports/types'
+import { reportMapper } from '@/shared/api/mappers'
 import { callApi } from './helpers'
 
 /**
@@ -73,7 +74,7 @@ const MODULE_COVERAGE: Record<ModuleKey, string> = {
   reports: 'sales report + report builder + their Excel exports',
   settings: 'workspace data export gate (Settings edit)',
   services: 'not checked here',
-  marketing: 'not checked here',
+  marketing: 'checked in marketing.isolation.test.ts (campaigns, bulk email, cost-per-lead report per role)',
   accounting: 'not checked here',
   hr: 'not checked here',
   departments: 'not checked here',
@@ -174,10 +175,16 @@ function expectedTasks(u: User, scope: Scope): Set<string> | null {
     t.followerIds.includes(u.id) ||
     t.createdBy === u.id ||
     (!!t.projectId && projects.some((p) => p.id === t.projectId && p.managerId === u.id))
+  const sees = (t: (typeof tasks)[number]) => (scope === 'full' || scope === 'view' ? true : scope === 'own' ? involved(t) : involved(t) || team.has(t.ownerId))
+  // A sub-task has the same scope as its parent (selectors/tasks.ts canSeeTask).
+  const parentOf = (t: (typeof tasks)[number]) => (t.parentTaskId ? tasks.find((p) => p.id === t.parentTaskId && p.companyId === t.companyId) : undefined)
   return new Set(
     tasks
       .filter((t) => t.companyId === u.companyId)
-      .filter((t) => (scope === 'full' || scope === 'view' ? true : scope === 'own' ? involved(t) : involved(t) || team.has(t.ownerId)))
+      .filter((t) => {
+        const parent = parentOf(t)
+        return sees(t) || (!!parent && sees(parent))
+      })
       .map((t) => t.id),
   )
 }
@@ -243,7 +250,7 @@ async function checkLeads(u: User, token: string): Promise<void> {
   if (!want) {
     expect(list.status, `${where}: GET /leads`).toBe(403)
     expect((await callApi(token, 'GET', `/leads/${sameCo[0].id}`)).status, `${where}: GET a lead`).toBe(403)
-    expect((await callApi(token, 'PATCH', `/leads/${sameCo[0].id}`, { nextStep: 'x' })).status, `${where}: PATCH a lead`).toBe(403)
+    expect((await callApi(token, 'PATCH', `/leads/${sameCo[0].id}`, { next_step: 'x' })).status, `${where}: PATCH a lead`).toBe(403)
     expect((await callApi(token, 'POST', '/leads', quickAdd(u))).status, `${where}: POST /leads`).toBe(403)
     return
   }
@@ -255,13 +262,14 @@ async function checkLeads(u: User, token: string): Promise<void> {
   const outside = sameCo.find((l) => !want.has(l.id))
   if (outside) {
     expect((await callApi(token, 'GET', `/leads/${outside.id}`)).status, `${where}: GET out-of-scope lead`).toBe(403)
-    expect((await callApi(token, 'PATCH', `/leads/${outside.id}`, { nextStep: 'x' })).status, `${where}: PATCH out-of-scope lead`).toBe(403)
+    expect((await callApi(token, 'PATCH', `/leads/${outside.id}`, { next_step: 'x' })).status, `${where}: PATCH out-of-scope lead`).toBe(403)
   }
   const inside = sameCo.find((l) => want.has(l.id))
   if (inside) {
     expect((await callApi(token, 'GET', `/leads/${inside.id}`)).status, `${where}: GET own-scope lead`).toBe(200)
-    const patch = await callApi(token, 'PATCH', `/leads/${inside.id}`, { nextStep: 'Isolation check' })
+    const patch = await callApi(token, 'PATCH', `/leads/${inside.id}`, { next_step: 'Isolation check' })
     expect(patch.status, `${where}: PATCH in-scope lead`).toBe(writable(scope) ? 200 : 403)
+    if (writable(scope)) expect(patch.body.next_step, `${where}: PATCH answers the leads columns`).toBe('Isolation check')
   }
 
   const created = await callApi(token, 'POST', '/leads', quickAdd(u))
@@ -270,10 +278,12 @@ async function checkLeads(u: User, token: string): Promise<void> {
     return
   }
   expect(created.status, `${where}: POST /leads ${JSON.stringify(created.body)}`).toBe(200)
-  const owner = users.find((x) => x.id === created.body.ownerId)
+  // The API speaks the leads columns: owner_id, company_name…
+  const owner = users.find((x) => x.id === created.body.owner_id)
   expect(owner?.companyId, `${where}: new lead's owner`).toBe(u.companyId)
-  if (scope === 'own') expect(created.body.ownerId).toBe(u.id)
-  if (scope === 'team') expect(teamOf(u).has(created.body.ownerId), `${where}: new lead assigned outside the team`).toBe(true)
+  expect(created.body.company_name, `${where}: company_name`).toMatch(/^Isolation Probe /)
+  if (scope === 'own') expect(created.body.owner_id).toBe(u.id)
+  if (scope === 'team') expect(teamOf(u).has(created.body.owner_id), `${where}: new lead assigned outside the team`).toBe(true)
   const after = await callApi(token, 'GET', '/leads')
   expect((after.body as { id: string }[]).some((l) => l.id === created.body.id), `${where}: own new lead visible`).toBe(true)
 }
@@ -281,13 +291,14 @@ async function checkLeads(u: User, token: string): Promise<void> {
 let probe = 0
 function quickAdd(u: User) {
   probe++
+  // POST /leads in the API's snake_case (leads columns).
   return {
-    company: `Isolation Probe ${probe} ${u.id}`,
-    contactName: 'Probe Contact',
-    mobile: '',
+    company_name: `Isolation Probe ${probe} ${u.id}`,
+    contact_name: 'Probe Contact',
+    phone: '',
     email: '',
-    sourceType: orderedSources(u.companyId).find((s) => s.active)!.key,
-    industry: orderedIndustries(u.companyId).find((i) => i.active)!.key,
+    source_id: orderedSources(u.companyId).find((s) => s.active)!.key,
+    industry_id: orderedIndustries(u.companyId).find((i) => i.active)!.key,
   }
 }
 
@@ -297,10 +308,14 @@ async function checkTasks(u: User, token: string): Promise<Set<string> | null> {
   const where = `${u.id} (${roleOf(u)}, tasks=${scope})`
   const sameCo = tasks.filter((t) => t.companyId === u.companyId)
   const otherCo = tasks.find((t) => t.companyId !== u.companyId)!
-  const list = await callApi(token, 'GET', '/tasks?includeDone=true')
+  const list = await callApi(token, 'GET', '/tasks?include_done=true')
 
   expect((await callApi(token, 'GET', `/tasks/${otherCo.id}`)).status, `${where}: other company's task`).toBe(404)
   expect((await callApi(token, 'PATCH', `/tasks/${otherCo.id}`, { title: 'x' })).status, `${where}: PATCH other company's task`).toBe(404)
+  // The new task actions (block / unblock / time entries) answer like the task itself: 404 across companies.
+  expect((await callApi(token, 'POST', `/tasks/${otherCo.id}/block`, { reason: 'Isolation probe' })).status, `${where}: block other company's task`).toBe(404)
+  expect((await callApi(token, 'POST', `/tasks/${otherCo.id}/unblock`)).status, `${where}: unblock other company's task`).toBe(404)
+  expect((await callApi(token, 'POST', `/tasks/${otherCo.id}/time-entries`, { entry_date: TO, hours: 1 })).status, `${where}: log hours on other company's task`).toBe(404)
 
   if (!want) {
     expect(list.status, `${where}: GET /tasks`).toBe(403)
@@ -332,6 +347,21 @@ async function checkTasks(u: User, token: string): Promise<Set<string> | null> {
     const patch = await callApi(token, 'PATCH', `/tasks/${inside.id}`, { title: inside.title })
     expect(patch.status, `${where}: PATCH visible task`).toBe(writable(scope) ? 200 : 403)
   }
+  if (outside) {
+    expect((await callApi(token, 'POST', `/tasks/${outside.id}/block`, { reason: 'Isolation probe' })).status, `${where}: block out-of-scope task`).toBe(404)
+    expect((await callApi(token, 'POST', `/tasks/${outside.id}/time-entries`, { entry_date: TO, hours: 1 })).status, `${where}: hours on out-of-scope task`).toBe(404)
+  }
+  // Block → unblock and log hours on an open visible task: allowed exactly when PATCH is (the same edit rule).
+  const openInside = sameCo.find((t) => want.has(t.id) && t.status !== 'done' && t.status !== 'cancelled' && !t.blockedAt)
+  if (openInside) {
+    const block = await callApi(token, 'POST', `/tasks/${openInside.id}/block`, { reason: 'Isolation probe' })
+    expect(block.status, `${where}: block visible task`).toBe(writable(scope) ? 200 : 403)
+    expect((await callApi(token, 'POST', `/tasks/${openInside.id}/block`, {})).status, `${where}: block without a reason`).toBe(writable(scope) ? 422 : 403)
+    if (block.status === 200) expect((await callApi(token, 'POST', `/tasks/${openInside.id}/unblock`)).status, `${where}: unblock visible task`).toBe(200)
+    else expect((await callApi(token, 'POST', `/tasks/${openInside.id}/unblock`)).status, `${where}: unblock visible task`).toBe(403)
+    const hours = await callApi(token, 'POST', `/tasks/${openInside.id}/time-entries`, { entry_date: TO, hours: 0.5, description: 'Isolation probe' })
+    expect(hours.status, `${where}: log hours on visible task`).toBe(writable(scope) ? 200 : 403)
+  }
   const created = await callApi(token, 'POST', '/tasks', { title: 'Isolation probe' })
   expect(created.status, `${where}: POST /tasks`).toBe(writable(scope) ? 200 : 403)
   return want
@@ -345,7 +375,7 @@ async function checkProjects(u: User, token: string): Promise<void> {
   const otherCo = projects.find((p) => p.companyId !== u.companyId)!
   const customer = customers.find((c) => c.companyId === u.companyId)!
   const service = services.find((x) => x.companyId === u.companyId && x.active)!
-  const body = () => ({ name: `Isolation project ${u.id}`, customerId: customer.id, serviceId: service.id, managerId: u.id, startDate: TO, endDate: TO, status: 'Planned', estimatedHours: 0, generateTasks: false })
+  const body = () => ({ name: `Isolation project ${u.id}`, customer_id: customer.id, service_id: service.id, manager_id: u.id, start_date: TO, end_date: TO, status: 'planned', estimated_hours: 0, generate_tasks: false })
 
   // Another company's project answers exactly like a missing one: 404, or 403 for everything when Tasks is hidden.
   const missing = want ? 404 : 403
@@ -358,7 +388,7 @@ async function checkProjects(u: User, token: string): Promise<void> {
   if (!want) {
     expect(list.status, `${where}: GET /projects`).toBe(403)
     expect((await callApi(token, 'GET', `/projects/${sameCo[0].id}`)).status, `${where}: GET a project`).toBe(403)
-    expect((await callApi(token, 'PATCH', `/projects/${sameCo[0].id}`, { status: 'On hold' })).status, `${where}: PATCH a project`).toBe(403)
+    expect((await callApi(token, 'PATCH', `/projects/${sameCo[0].id}`, { status: 'on_hold' })).status, `${where}: PATCH a project`).toBe(403)
     expect((await callApi(token, 'POST', '/projects', body())).status, `${where}: POST /projects`).toBe(403)
     return
   }
@@ -368,14 +398,14 @@ async function checkProjects(u: User, token: string): Promise<void> {
   const outside = sameCo.find((p) => !want.has(p.id))
   if (outside) {
     expect((await callApi(token, 'GET', `/projects/${outside.id}`)).status, `${where}: GET out-of-scope project`).toBe(403)
-    expect((await callApi(token, 'PATCH', `/projects/${outside.id}`, { status: 'On hold' })).status, `${where}: PATCH out-of-scope project`).toBe(403)
+    expect((await callApi(token, 'PATCH', `/projects/${outside.id}`, { status: 'on_hold' })).status, `${where}: PATCH out-of-scope project`).toBe(403)
   }
 
   const visible = sameCo.filter((x) => want.has(x.id))
   for (const p of visible) {
     const detail = await callApi(token, 'GET', `/projects/${p.id}`)
     expect(detail.status, `${where}: GET ${p.id}`).toBe(200)
-    expect(detail.body.canManage, `${where}: ${p.id} canManage`).toBe(expectedManage(u, scope, p))
+    expect(detail.body.can_manage, `${where}: ${p.id} canManage`).toBe(expectedManage(u, scope, p))
     // Every task of the project (whoever owns it).
     const projectTasks = tasks.filter((t) => t.projectId === p.id)
     expect(sorted((detail.body.tasks as { id: string }[]).map((t) => t.id)), `${where}: ${p.id} tasks`).toEqual(sorted(projectTasks.map((t) => t.id)))
@@ -387,22 +417,22 @@ async function checkProjects(u: User, token: string): Promise<void> {
   if (readOnly) {
     expect((await callApi(token, 'PATCH', `/projects/${readOnly.id}`, { name: readOnly.name })).status, `${where}: PATCH read-only project`).toBe(403)
     const other = users.find((x) => x.companyId === u.companyId && x.active && x.id !== readOnly.managerId)!
-    expect((await callApi(token, 'PATCH', `/projects/${readOnly.id}`, { managerId: other.id })).status, `${where}: manager change on read-only project`).toBe(403)
-    expect((await callApi(token, 'PATCH', `/projects/${readOnly.id}`, { status: 'On hold' })).status, `${where}: status on read-only project`).toBe(403)
+    expect((await callApi(token, 'PATCH', `/projects/${readOnly.id}`, { manager_id: other.id })).status, `${where}: manager change on read-only project`).toBe(403)
+    expect((await callApi(token, 'PATCH', `/projects/${readOnly.id}`, { status: 'on_hold' })).status, `${where}: status on read-only project`).toBe(403)
   }
   if (manageable) {
     expect((await callApi(token, 'PATCH', `/projects/${manageable.id}`, { name: manageable.name })).status, `${where}: PATCH ${manageable.id}`).toBe(200)
-    const status = await callApi(token, 'PATCH', `/projects/${manageable.id}`, { status: 'On hold' })
+    const status = await callApi(token, 'PATCH', `/projects/${manageable.id}`, { status: 'on_hold' })
     expect(status.status, `${where}: status On hold`).toBe(200)
-    expect(status.body.status).toBe('On hold')
-    const open = tasks.filter((t) => t.projectId === manageable.id && t.status !== 'Done').length
-    expect((await callApi(token, 'PATCH', `/projects/${manageable.id}`, { status: 'Completed' })).status, `${where}: complete with open tasks`).toBe(open ? 409 : 200)
+    expect(status.body.status).toBe('on_hold')
+    const open = tasks.filter((t) => t.projectId === manageable.id && t.status !== 'done' && t.status !== 'cancelled').length
+    expect((await callApi(token, 'PATCH', `/projects/${manageable.id}`, { status: 'completed' })).status, `${where}: complete with open tasks`).toBe(open ? 409 : 200)
     const foreign = users.find((x) => x.companyId !== u.companyId && x.active)!
-    expect((await callApi(token, 'PATCH', `/projects/${manageable.id}`, { managerId: foreign.id })).status, `${where}: another company's manager`).toBe(422)
+    expect((await callApi(token, 'PATCH', `/projects/${manageable.id}`, { manager_id: foreign.id })).status, `${where}: another company's manager`).toBe(422)
     const next = users.find((x) => x.companyId === u.companyId && x.active && x.id !== manageable.managerId)!
-    const moved = await callApi(token, 'PATCH', `/projects/${manageable.id}`, { managerId: next.id })
+    const moved = await callApi(token, 'PATCH', `/projects/${manageable.id}`, { manager_id: next.id })
     expect(moved.status, `${where}: manager change`).toBe(200)
-    expect(moved.body.managerId).toBe(next.id)
+    expect(moved.body.manager_id).toBe(next.id)
   }
 
   const created = await callApi(token, 'POST', '/projects', body())
@@ -428,7 +458,9 @@ async function checkReportsAndExports(u: User, token: string, visibleTasks: Set<
   }
   expect(res.status, `${where}: GET /reports/sales ${JSON.stringify(res.body)}`).toBe(200)
   expect(custom.status, `${where}: POST /reports/custom`).toBe(200)
-  const report = res.body as SalesReport
+  // The API speaks snake_case (kpis.leads_created…); the screens and the Excel export read the mapped shape.
+  expect(typeof res.body.kpis.leads_created, `${where}: snake_case report`).toBe('number')
+  const report = reportMapper.fromApi(res.body) as SalesReport
   expect(report.scope, `${where}: report scope`).toBe(scope)
 
   const leadIds = expectedLeads(u, scope)!
@@ -448,7 +480,7 @@ async function checkReportsAndExports(u: User, token: string, visibleTasks: Set<
     if (scope === 'own') expect(t.ownerId).toBe(u.id)
   }
 
-  const builder = custom.body as CustomReport
+  const builder = reportMapper.fromApi(custom.body) as CustomReport
   expect(builder.total, `${where}: report builder total`).toBe(created)
   for (const r of builder.rows) expect(owners.has(r.key), `${where}: report builder owner ${r.key}`).toBe(true)
 
@@ -538,14 +570,14 @@ describe('scopes from PERMISSION_MATRIX hold in the mock API', () => {
       const u = userFor(co, 'Company Admin')
       const token = tokenFor(u)
       const l = await callApi(token, 'GET', '/leads')
-      const t = await callApi(token, 'GET', '/tasks?includeDone=true')
+      const t = await callApi(token, 'GET', '/tasks?include_done=true')
       const r = await callApi(token, 'GET', `/reports/sales?from=${FROM}&to=${TO}`)
       const foreignLeads = new Set(leads.filter((x) => x.companyId !== co).map((x) => x.id))
       const foreignTasks = new Set(tasks.filter((x) => x.companyId !== co).map((x) => x.id))
       const foreignUsers = new Set(users.filter((x) => x.companyId !== co).map((x) => x.id))
       expect((l.body as { id: string }[]).filter((x) => foreignLeads.has(x.id))).toEqual([])
       expect((t.body as { id: string }[]).filter((x) => foreignTasks.has(x.id))).toEqual([])
-      const report = r.body as SalesReport
+      const report = reportMapper.fromApi(r.body) as SalesReport
       expect(report.owners.filter((o) => foreignUsers.has(o.id))).toEqual([])
       expect(report.overdueFollowUps.filter((f) => foreignLeads.has(f.leadId))).toEqual([])
       expect(report.overdueTasks.filter((x) => foreignTasks.has(x.taskId))).toEqual([])

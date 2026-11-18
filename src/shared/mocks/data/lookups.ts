@@ -6,6 +6,7 @@ import {
   type StatusOption,
 } from '@/modules/settings/types'
 import { SYSTEM_STATUS } from '@/shared/lib/systemStatus'
+import { isClosedType } from '@/shared/domain/leadStatus'
 import { IMPORTED_LOSS_REASON } from '@/modules/leads/lossReason'
 import { perTenant } from '@/shared/mocks/tenant'
 
@@ -18,17 +19,17 @@ import { perTenant } from '@/shared/mocks/tenant'
 const opt = (label: string, order: number): ListOption => ({ key: label, label, active: true, order })
 
 const STATUS_SEED: Omit<StatusOption, 'order' | 'active'>[] = [
-  { key: 'New', label: 'New', probability: 10, kind: 'open', requires: 'none', tone: 'blue', color: '#3b82f6', system: true },
-  { key: 'Contacted', label: 'Contacted', probability: 20, kind: 'open', requires: 'none', tone: 'sky', color: '#0ea5e9', system: true },
-  { key: 'No response', label: 'No response', probability: 10, kind: 'open', requires: 'none', tone: 'amber', color: '#f59e0b', system: true },
-  { key: 'Call later', label: 'Call later', probability: 15, kind: 'open', requires: 'none', tone: 'amber', color: '#fbbf24', system: true },
-  { key: 'Interested', label: 'Interested', probability: 40, kind: 'open', requires: 'next-step', tone: 'brand', color: '#8b5cf6', system: true },
-  { key: 'Meeting', label: 'Meeting', probability: 50, kind: 'open', requires: 'next-step', tone: 'pink', color: '#ec4899', system: true },
-  { key: 'Proposal', label: 'Proposal', probability: 70, kind: 'open', requires: 'none', tone: 'teal', color: '#14b8a6', system: true },
-  { key: 'Cold', label: 'Cold', probability: 5, kind: 'parked', requires: 'none', tone: 'neutral', color: '#94a3b8', system: true },
-  { key: 'Won', label: 'Won', probability: 100, kind: 'won', requires: 'convert', tone: 'green', color: '#10b981', system: true },
-  { key: 'Lost', label: 'Lost', probability: 0, kind: 'lost', requires: 'loss-reason', tone: 'red', color: '#ef4444', system: true },
-  { key: 'Not interested', label: 'Not interested', probability: 0, kind: 'lost', requires: 'loss-reason', tone: 'neutral', color: '#a1a1ab', system: true },
+  { key: 'New', label: 'New', probability: 10, type: 'open', requiresNextStep: false, requiresLossReason: false, tone: 'blue', color: '#3b82f6', system: true },
+  { key: 'Contacted', label: 'Contacted', probability: 20, type: 'open', requiresNextStep: false, requiresLossReason: false, tone: 'sky', color: '#0ea5e9', system: true },
+  { key: 'No response', label: 'No response', probability: 10, type: 'open', requiresNextStep: false, requiresLossReason: false, tone: 'amber', color: '#f59e0b', system: true },
+  { key: 'Call later', label: 'Call later', probability: 15, type: 'open', requiresNextStep: false, requiresLossReason: false, tone: 'amber', color: '#fbbf24', system: true },
+  { key: 'Interested', label: 'Interested', probability: 40, type: 'open', requiresNextStep: true, requiresLossReason: false, tone: 'brand', color: '#8b5cf6', system: true },
+  { key: 'Meeting', label: 'Meeting', probability: 50, type: 'open', requiresNextStep: true, requiresLossReason: false, tone: 'pink', color: '#ec4899', system: true },
+  { key: 'Proposal', label: 'Proposal', probability: 70, type: 'open', requiresNextStep: false, requiresLossReason: false, tone: 'teal', color: '#14b8a6', system: true },
+  { key: 'Cold', label: 'Cold', probability: 5, type: 'cold', requiresNextStep: false, requiresLossReason: false, tone: 'neutral', color: '#94a3b8', system: true },
+  { key: 'Won', label: 'Won', probability: 100, type: 'won', requiresNextStep: false, requiresLossReason: false, tone: 'green', color: '#10b981', system: true },
+  { key: 'Lost', label: 'Lost', probability: 0, type: 'lost', requiresNextStep: false, requiresLossReason: true, tone: 'red', color: '#ef4444', system: true },
+  { key: 'Not interested', label: 'Not interested', probability: 0, type: 'lost', requiresNextStep: false, requiresLossReason: true, tone: 'neutral', color: '#a1a1ab', system: true },
 ]
 
 const INDUSTRY_SEED: Record<string, string[]> = {
@@ -73,7 +74,8 @@ function seedLookups(companyId: string): Lookups {
   if (companyId === 'co_crest') {
     return {
       statuses,
-      sources: ['Website', 'Referral', 'Tender Portal', 'LinkedIn', 'Trade Show', 'Cold Outreach'].map(opt),
+      // 'Event': the source of leads registered at an event (Events module).
+      sources: ['Website', 'Referral', 'Tender Portal', 'LinkedIn', 'Trade Show', 'Event', 'Cold Outreach'].map(opt),
       industries: industriesSeed(CREST_INDUSTRY_SEED),
       lossReasons: lossReasonsSeed(['Price too high', 'Lost the tender', 'Chose a competitor', 'Project postponed', 'No budget this year']),
       tags: ['Hot', 'Tender', 'Government', 'Vision 2030', 'Key account'].map(opt),
@@ -127,40 +129,39 @@ export function statusOf(companyId: string, key: string): StatusOption | undefin
   return lookupsFor(companyId).statuses.find((s) => s.key === key)
 }
 
-/** Status keys whose leads are out of the active pipeline (won, lost, parked). */
+/** Status keys whose leads are out of the active pipeline (won, lost, cold, parked). */
 export function closedStatusKeys(companyId: string): string[] {
-  return lookupsFor(companyId).statuses.filter((s) => s.kind !== 'open').map((s) => s.key)
+  return lookupsFor(companyId).statuses.filter((s) => isClosedType(s.type)).map((s) => s.key)
 }
 
 export function isClosedStatus(companyId: string, key: string): boolean {
-  return (statusOf(companyId, key)?.kind ?? 'open') !== 'open'
+  return isClosedType(statusOf(companyId, key)?.type ?? 'open')
 }
 
 export function isWonStatus(companyId: string, key: string): boolean {
-  return statusOf(companyId, key)?.kind === 'won'
+  return statusOf(companyId, key)?.type === 'won'
 }
 
 /**
- * A status only the Won flow (POST /leads/:id/won) may set: kind `won` or `requires: 'convert'`.
+ * A status only the Won flow (POST /leads/:id/won) may set: type `won`.
  * The same rule as the client's `moveActionFor(...) === 'won'` (modules/leads/lib/transitions.ts).
  */
 export function isWonFlowStatus(companyId: string, key: string): boolean {
-  const s = statusOf(companyId, key)
-  return !!s && (s.kind === 'won' || s.requires === 'convert')
+  return statusOf(companyId, key)?.type === 'won'
 }
 
 /** The 422 message every non-Won-flow write answers when asked to set a Won-flow status. */
 export const USE_WON_FLOW = 'Use the Won flow to win a lead: it creates the customer, contract and projects together (POST /leads/:id/won).'
 
 export function isLostStatus(companyId: string, key: string): boolean {
-  return statusOf(companyId, key)?.kind === 'lost'
+  return statusOf(companyId, key)?.type === 'lost'
 }
 
 export function probabilityOf(companyId: string, key: string): number {
   return statusOf(companyId, key)?.probability ?? 0
 }
 
-/** The status key a kind maps to by default (e.g. where "Cold" leads go). */
-export function firstStatusOfKind(companyId: string, kind: StatusOption['kind']): string | undefined {
-  return [...lookupsFor(companyId).statuses].sort((a, b) => a.order - b.order).find((s) => s.kind === kind && s.active)?.key
+/** The first active status of a type (e.g. where "cold" leads go). */
+export function firstStatusOfType(companyId: string, type: StatusOption['type']): string | undefined {
+  return [...lookupsFor(companyId).statuses].sort((a, b) => a.order - b.order).find((s) => s.type === type && s.active)?.key
 }

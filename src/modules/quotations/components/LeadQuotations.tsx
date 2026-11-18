@@ -17,7 +17,7 @@ export function LeadQuotations({ leadId, canEdit }: { leadId: string; canEdit: b
   const query = useQuotationsQuery(leadId)
   const openWon = useOpenWonDialog()
   const list = query.data ?? []
-  const open = list.filter((q) => q.status === 'Draft' || q.status === 'Sent' || q.status === 'Viewed').length
+  const open = list.filter((q) => q.status === 'draft' || q.status === 'sent' || q.status === 'viewed').length
 
   const newButton = canEdit ? (
     <Button write size="sm" onClick={() => navigate(newQuotationPath({ leadId }))}>
@@ -91,7 +91,7 @@ export function LeadQuotations({ leadId, canEdit }: { leadId: string; canEdit: b
                 <span className="num ms-12 text-[0.8125rem] font-semibold text-ink sm:ms-0">{fmtAmount(q.totals.total, q.currency)}</span>
                 <ChevronRight className="hidden size-4 text-subtle transition-transform group-hover:translate-x-0.5 sm:block rtl:-scale-x-100 rtl:group-hover:-translate-x-0.5" aria-hidden />
               </Link>
-              {canEdit && q.status === 'Accepted' && !q.customerId && (
+              {canEdit && q.status === 'accepted' && !q.customerId && (
                 <Can module="sales" action="edit">
                   <div className="pe-4">
                     <Button write size="xs" variant="secondary" onClick={() => openWon(leadId, q.id)} aria-label={`Win deal from ${q.number}`}>

@@ -1,12 +1,11 @@
 import { Link } from 'react-router-dom'
 import { Building2, CalendarDays, FolderKanban, Target } from 'lucide-react'
 import type { TaskLinkType, TaskLinkView } from '@/modules/tasks/types'
-import { EVENTS_ENABLED } from '@/shared/lib/features'
 import { cn } from '@/shared/lib/utils'
 import { Tooltip } from '@/shared/components/ui/Kbd'
 import { LINK_LABEL, linkHref } from './taskMeta'
 
-export function LinkTypeIcon({ type, className }: { type: TaskLinkType; className?: string }) {
+export function LinkTypeIcon({ type, className }: { type: TaskLinkType | 'project'; className?: string }) {
   const cls = cn('size-3.5 shrink-0', className)
   if (type === 'lead') return <Target className={cls} aria-hidden />
   if (type === 'customer') return <Building2 className={cls} aria-hidden />
@@ -18,16 +17,16 @@ const CHIP =
   'inline-flex h-[1.375rem] max-w-full min-w-0 items-center gap-1 rounded-md px-1.5 text-xs font-medium ring-1 ring-inset whitespace-nowrap'
 
 /**
- * Linked record chip (lead / customer / project / event). Opens the record; events and records
- * you can't open show as a disabled chip with the reason in a tooltip.
+ * Record chip: the task's one related link (lead / customer / event) or, as a separate chip, its
+ * project. Opens the record; records you can't open (or events without the Events module) show as a disabled chip with the
+ * reason in a tooltip.
  */
 export function LinkChip({ link, className, maxWidthClass = 'max-w-48' }: { link: TaskLinkView | null; className?: string; maxWidthClass?: string }) {
   if (!link) return null
   const href = linkHref(link.type, link.id)
   const label = `${LINK_LABEL[link.type]}: ${link.label}`
   if (!link.available || !href) {
-    const reason =
-      link.type === 'event' && !EVENTS_ENABLED ? 'Events module isn’t enabled yet' : `This ${link.type} isn’t available to you`
+    const reason = `This ${link.type} isn’t available to you`
     return (
       <Tooltip label={reason}>
         <span

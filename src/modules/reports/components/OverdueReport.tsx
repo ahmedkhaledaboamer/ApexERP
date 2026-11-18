@@ -4,7 +4,7 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import type { ColumnDef } from '@tanstack/react-table'
 import { CheckCircle2 } from 'lucide-react'
 import { leadPath } from '@/app/paths'
-import type { TaskLinkType, TaskPriority } from '@/modules/tasks/types'
+import { TASK_PRIORITY_LABEL, TASK_STATUS_LABEL, type TaskLinkType, type TaskPriority } from '@/modules/tasks/types'
 import { cn, fmtDate } from '@/shared/lib/utils'
 import { DataTable, useDataTable } from '@/shared/components/data-table'
 import { Avatar } from '@/shared/components/ui/Avatar'
@@ -24,13 +24,13 @@ function Days({ n }: { n: number }) {
 }
 
 const TASK_PRIORITY_STYLES: Record<TaskPriority, string> = {
-  Low: 'text-muted',
-  Medium: 'text-accent-700 dark:text-accent-300',
-  High: 'text-warning-700 dark:text-warning-500',
-  Urgent: 'text-danger-600 dark:text-danger-500',
+  low: 'text-muted',
+  medium: 'text-accent-700 dark:text-accent-300',
+  high: 'text-warning-700 dark:text-warning-500',
+  urgent: 'text-danger-600 dark:text-danger-500',
 }
 
-const LINK_TYPE_LABEL: Record<TaskLinkType, string> = {
+const LINK_TYPE_LABEL: Record<TaskLinkType | 'project', string> = {
   project: 'Project',
   lead: 'Lead',
   customer: 'Customer',
@@ -100,7 +100,7 @@ export function OverdueReport({ data }: { data: SalesReport }) {
         cell: ({ row }) => (
           <span className="block min-w-0">
             <span className="block truncate font-medium">{row.original.title}</span>
-            <span className="block truncate text-xs text-muted">{row.original.status}</span>
+            <span className="block truncate text-xs text-muted">{TASK_STATUS_LABEL[row.original.status]}</span>
           </span>
         ),
       },
@@ -124,7 +124,7 @@ export function OverdueReport({ data }: { data: SalesReport }) {
         header: 'Priority',
         meta: { width: 100 },
         cell: ({ row }) => (
-          <span className={cn('text-[0.8125rem] font-medium', TASK_PRIORITY_STYLES[row.original.priority])}>{row.original.priority}</span>
+          <span className={cn('text-[0.8125rem] font-medium', TASK_PRIORITY_STYLES[row.original.priority])}>{TASK_PRIORITY_LABEL[row.original.priority]}</span>
         ),
       },
       { accessorKey: 'ownerName', header: 'Owner', meta: { width: 180 }, cell: ({ getValue }) => <Owner name={getValue<string>()} /> },

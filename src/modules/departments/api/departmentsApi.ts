@@ -11,48 +11,61 @@ import type {
   OrgNode,
 } from '@/modules/departments/types'
 
+import {
+  DEPARTMENT_QUERY,
+  departmentDetailMapper,
+  departmentGoalMapper,
+  departmentInputMapper,
+  departmentMemberMapper,
+  departmentRowMapper,
+  moveMembersMapper,
+  orgNodeMapper,
+} from '@/shared/api/mappers'
+
+/** Departments API: the departments columns on the wire (head_user_id, cost_center_code, is_active…), mapped both ways. */
+
 const enc = encodeURIComponent
 
 export async function getDepartments(includeInactive = false): Promise<DepartmentRow[]> {
-  return (await http.get<DepartmentRow[]>('/departments', { params: includeInactive ? { includeInactive: true } : {} })).data
+  return departmentRowMapper.fromApiList((await http.get<unknown>('/departments', { params: includeInactive ? { [DEPARTMENT_QUERY.includeInactive]: true } : {} })).data)
 }
 
 export async function getOrgChart(): Promise<OrgNode[]> {
-  return (await http.get<OrgNode[]>('/departments/org-chart')).data
+  return orgNodeMapper.fromApiList((await http.get<unknown>('/departments/org-chart')).data)
 }
 
 export async function getDepartment(id: string): Promise<DepartmentDetail> {
-  return (await http.get<DepartmentDetail>(`/departments/${enc(id)}`)).data
+  return departmentDetailMapper.fromApi((await http.get<unknown>(`/departments/${enc(id)}`)).data)
 }
 
 export async function createDepartment(input: DepartmentInput): Promise<DepartmentRow> {
-  return (await http.post<DepartmentRow>('/departments', input)).data
+  return departmentRowMapper.fromApi((await http.post<unknown>('/departments', departmentInputMapper.toApi(input))).data)
 }
 
 export async function updateDepartment(id: string, input: DepartmentUpdateInput): Promise<DepartmentRow> {
-  return (await http.patch<DepartmentRow>(`/departments/${enc(id)}`, input)).data
+  return departmentRowMapper.fromApi((await http.patch<unknown>(`/departments/${enc(id)}`, departmentInputMapper.toApi(input))).data)
 }
 
 export async function setDepartmentActive(id: string, active: boolean): Promise<DepartmentRow> {
-  return (await http.post<DepartmentRow>(`/departments/${enc(id)}/${active ? 'reactivate' : 'deactivate'}`)).data
+  return departmentRowMapper.fromApi((await http.post<unknown>(`/departments/${enc(id)}/${active ? 'reactivate' : 'deactivate'}`)).data)
 }
 
 export async function moveMembers(input: MoveMembersInput): Promise<{ moved: number }> {
-  return (await http.post<{ moved: number }>('/departments/move-members', input)).data
+  return moveMembersMapper.fromApi((await http.post<unknown>('/departments/move-members', moveMembersMapper.toApi(input))).data)
 }
 
 export async function setMemberManager(deptId: string, userId: string, managerId: string | null): Promise<DepartmentMember> {
-  return (await http.patch<DepartmentMember>(`/departments/${enc(deptId)}/members/${enc(userId)}`, { managerId })).data
+  return departmentMemberMapper.fromApi((await http.patch<unknown>(`/departments/${enc(deptId)}/members/${enc(userId)}`, departmentMemberMapper.toApi({ managerId }))).data)
 }
 
 export async function addGoal(deptId: string, input: GoalInput): Promise<DepartmentGoal> {
-  return (await http.post<DepartmentGoal>(`/departments/${enc(deptId)}/goals`, input)).data
+  return departmentGoalMapper.fromApi((await http.post<unknown>(`/departments/${enc(deptId)}/goals`, departmentGoalMapper.toApi(input as never))).data)
 }
 
 export async function updateGoal(deptId: string, goalId: string, input: Partial<GoalInput>): Promise<DepartmentGoal> {
-  return (await http.patch<DepartmentGoal>(`/departments/${enc(deptId)}/goals/${enc(goalId)}`, input)).data
+  return departmentGoalMapper.fromApi((await http.patch<unknown>(`/departments/${enc(deptId)}/goals/${enc(goalId)}`, departmentGoalMapper.toApi(input as never))).data)
 }
 
 export async function deleteGoal(deptId: string, goalId: string): Promise<{ id: string }> {
-  return (await http.delete<{ id: string }>(`/departments/${enc(deptId)}/goals/${enc(goalId)}`)).data
+  return departmentGoalMapper.fromApi((await http.delete<unknown>(`/departments/${enc(deptId)}/goals/${enc(goalId)}`)).data)
 }

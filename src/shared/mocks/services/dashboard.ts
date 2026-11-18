@@ -4,8 +4,6 @@ import {
   addWeeks,
   differenceInCalendarDays,
   format,
-  isBefore,
-  isSameDay,
   startOfDay,
   startOfMonth,
   startOfWeek,
@@ -17,7 +15,6 @@ import {
 } from 'date-fns'
 import type { DashboardPeriod, DashboardSummary, SeriesPoint, TargetLine, User } from '@/shared/types'
 import { scopeOf } from '@/shared/lib/permissions'
-import { toDate } from '@/shared/lib/utils'
 import { activities } from '@/shared/mocks/db'
 import { TARGET_KEYS, TARGET_LABELS } from '@/shared/mocks/data/targets'
 import { delay, fail } from '@/shared/mocks/server'
@@ -26,6 +23,8 @@ import { visibleLeads } from '@/shared/mocks/services/leads'
 import { targetTotalsFor } from '@/shared/mocks/services/targets'
 import { dueThisWeek, isOverdue, myTasks, overdueTasks, toTaskView } from '@/shared/mocks/selectors/tasks'
 import { scoped, tenantOf } from '@/shared/mocks/tenant'
+import { companyDayOf } from '@/shared/mocks/selectors/company'
+import { followUpStateOn } from '@/shared/domain/followUp'
 
 export const DASHBOARD_PERIODS: DashboardPeriod[] = ['30d', 'quarter', 'ytd', '12m']
 
@@ -108,6 +107,7 @@ function taskFigures(user: User): DashboardSummary['tasks'] {
       dueDate: t.dueDate,
       priority: t.priority,
       status: t.status,
+      blocked: t.blocked,
       overdue: t.overdue,
       linkLabel: t.linkView?.label ?? t.projectName,
       ownerName: t.ownerName,
@@ -131,20 +131,20 @@ export async function getDashboardSummary(user: User, period: DashboardPeriod = 
   const scopedIds = new Set(inScope.map((l) => l.id))
   const scopedActivities = activities.filter((a) => scopedIds.has(a.leadId))
   const now = new Date()
-  const today = startOfDay(now)
   const scale = Math.max(0.15, inScope.length / 30)
 
-  // Open = statuses of kind "open" (parked Cold leads are out of the active pipeline).
+  // Open = statuses of type "open" (cold / parked leads are out of the active pipeline).
   const open = inScope.filter((l) => !isClosedStatus(co, l.status))
   const won = inScope.filter((l) => isWonStatus(co, l.status))
 
+  // Follow-ups are company-local calendar dates: "today" is the company's today (timezone, mock clock).
+  const companyToday = companyDayOf(co).today
   let dueToday = 0
   let overdue = 0
   for (const l of open) {
-    const d = toDate(l.nextFollowUpDate)
-    if (!d) continue
-    if (isSameDay(d, now)) dueToday++
-    else if (isBefore(d, today)) overdue++
+    const state = followUpStateOn(l.nextFollowUpDate, companyToday)
+    if (state === 'today') dueToday++
+    else if (state === 'overdue') overdue++
   }
 
   const inRange = (iso: string, from: Date, to: Date) => {
@@ -193,8 +193,8 @@ export async function getDashboardSummary(user: User, period: DashboardPeriod = 
   const closedCount = wonInPeriod + lostInPeriod
 
   // Targets: summed over the agents in scope; actuals come from logged activities (see services/targets).
-  // Kinds not tracked yet (events, until EVENTS_ENABLED) come back with actual 0; clients show
-  // them as "n/a" and leave them out of the gauge (isTracked in modules/targets/lib).
+  // Kinds not tracked for the company (events, without the Events module) come back with actual 0;
+  // clients show them as "n/a" and leave them out of the gauge (isTracked in modules/targets/lib).
   const totals = targetTotalsFor(user, now)
   const targets: TargetLine[] = TARGET_KEYS.map((key) => ({
     key,

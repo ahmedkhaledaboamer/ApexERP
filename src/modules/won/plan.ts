@@ -78,7 +78,10 @@ export interface PlanContext {
  * Only people of the project manager's company are considered.
  * Among several matches, picks the one with the fewest tasks assigned so far (`load`).
  */
-export function resolveRoleOwner(role: DeliveryRole, ctx: PlanContext): { ownerId: string; fallback: boolean } {
+export function resolveRoleOwner(role: DeliveryRole | null | undefined, ctx: PlanContext): { ownerId: string; fallback: boolean } {
+  // A template task without a role (the design's project_template_tasks has no role column yet:
+  // Design gap default_role_id) stays unassigned-role and goes to the project manager.
+  if (!role) return { ownerId: ctx.projectManagerId, fallback: true }
   const pm = ctx.users.find((u) => u.id === ctx.projectManagerId)
   const people = pm ? ctx.users.filter((u) => u.companyId === pm.companyId) : ctx.users
   const words = ROLE_KEYWORDS[role] ?? []
@@ -101,7 +104,8 @@ export function resolveRoleOwner(role: DeliveryRole, ctx: PlanContext): { ownerI
 export interface PlannedTask {
   templateTaskId: string
   title: string
-  role: DeliveryRole
+  /** Null when the template task has no role (unassigned role: owned by the project manager). */
+  role: DeliveryRole | null
   ownerId: string
   fallbackOwner: boolean
   dayOffset: number
@@ -143,13 +147,13 @@ export function planProject(
     return {
       templateTaskId: t.id,
       title: t.title,
-      role: t.role,
+      role: t.role || null,
       ownerId,
       fallbackOwner: fallback,
       dayOffset: t.dayOffset,
       dueDate: isoDate(due),
       hours: t.hours,
-      priority: i === 0 || isLast ? 'High' : 'Medium',
+      priority: i === 0 || isLast ? 'high' : 'medium',
     }
   })
   const totals = templateTotals(template.tasks)

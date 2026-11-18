@@ -1,6 +1,7 @@
 import type { QuotationItem, QuotationStatus, QuotationTotals, QuotationUnit } from '@/modules/quotations/types'
 import type { PricingType } from '@/modules/services/types'
 import { getRegion } from '@/shared/lib/region'
+import { QUOTATION_AWAITING, QUOTATION_OPEN, QUOTATION_STATUSES } from '@/shared/domain/enums'
 
 /**
  * VAT rate of the default (UAE) workspace. The client uses the tenant's `useRegion().vatPct`;
@@ -98,9 +99,9 @@ export function daysUntil(dateIso: string): number {
 }
 
 /** Statuses still waiting on someone. */
-export const OPEN_STATUSES: QuotationStatus[] = ['Draft', 'Sent', 'Viewed']
+export const OPEN_STATUSES: readonly QuotationStatus[] = QUOTATION_OPEN
 
 /** Statuses waiting on the client's answer. */
-export const AWAITING_STATUSES: QuotationStatus[] = ['Sent', 'Viewed']
+export const AWAITING_STATUSES: readonly QuotationStatus[] = QUOTATION_AWAITING
 
-export const QUOTATION_STATUSES: QuotationStatus[] = ['Draft', 'Sent', 'Viewed', 'Accepted', 'Rejected', 'Expired']
+export { QUOTATION_STATUSES }

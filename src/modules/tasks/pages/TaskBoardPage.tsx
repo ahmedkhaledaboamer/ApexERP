@@ -1,9 +1,9 @@
 import { useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { subDays } from 'date-fns'
-import { CalendarClock, Lock, MessageSquare, Paperclip, SquareKanban, X } from 'lucide-react'
+import { CalendarClock, ListChecks, Lock, MessageSquare, MoreHorizontal, OctagonAlert, Paperclip, SquareKanban, Unlock, X } from 'lucide-react'
 import type { TaskPriority, TaskStatus, TaskView } from '@/modules/tasks/types'
-import { TASK_PRIORITIES, TASK_STATUSES } from '@/modules/tasks/types'
+import { TASK_PRIORITIES, TASK_PRIORITY_LABEL, TASK_STATUS_LABEL } from '@/modules/tasks/types'
 import { useProjectsQuery, useTasksQuery } from '@/modules/tasks/hooks/useTasks'
 import { cn } from '@/shared/lib/utils'
 import { KanbanBoard, KanbanCard, type KanbanColumn } from '@/shared/components/kanban'
@@ -12,25 +12,34 @@ import { Button } from '@/shared/components/ui/Button'
 import { EmptyState, ErrorState, Skeleton } from '@/shared/components/ui/Feedback'
 import { Tooltip } from '@/shared/components/ui/Kbd'
 import { useToast } from '@/shared/components/ui/Toast'
-import { SelectInput } from '@/shared/components/form/Field'
+import { Checkbox, SelectInput } from '@/shared/components/form/Field'
+import { Menu, MenuItem } from '@/shared/components/ui/Menu'
 import { PageBody } from '@/shared/components/layout/PageHeader'
-import { PriorityBadge } from '@/modules/tasks/components/TaskBadges'
+import { BlockedBadge, PriorityBadge } from '@/modules/tasks/components/TaskBadges'
 import { LinkChip } from '@/modules/tasks/components/LinkChip'
 import { TaskPageFrame } from '@/modules/tasks/components/TaskPageFrame'
 import { dueLabel, STATUS_TONE } from '@/modules/tasks/components/taskMeta'
-import { useActiveUsers, useOpenTask, useTaskPermissions, useTaskStatusChange } from '@/modules/tasks/components/useTaskActions'
+import { useActiveUsers, useOpenTask, useTaskBlocking, useTaskPermissions, useTaskStatusChange } from '@/modules/tasks/components/useTaskActions'
 
-/** Done tasks stay on the board for this many days. */
+/** Done and cancelled tasks stay on the board for this many days. */
 const DONE_DAYS = 14
 
-const COLUMNS: KanbanColumn<TaskStatus>[] = TASK_STATUSES.map((s) => ({ id: s, label: s, tone: STATUS_TONE[s] }))
+/**
+ * Board columns: the working statuses plus Done. Cancelled is a column only when "Show cancelled"
+ * is on (a filter, so the board stays usable); Blocked is a flag shown as a badge on the card.
+ */
+const BOARD_STATUSES: TaskStatus[] = ['todo', 'in_progress', 'review', 'done']
+const boardColumn = (s: TaskStatus): KanbanColumn<TaskStatus> => ({ id: s, label: TASK_STATUS_LABEL[s], tone: STATUS_TONE[s] })
 
-/** Kanban by status: drag a card to change it (Blocked asks for a reason). */
+/** Kanban by status: drag a card to change it. Block… / Unblock is on each card's menu. */
 export default function TaskBoardPage() {
   const [params, setParams] = useSearchParams()
   const ownerId = params.get('owner') ?? ''
   const projectId = params.get('project') ?? ''
   const priority = (params.get('priority') ?? '') as TaskPriority | ''
+  const showCancelled = params.get('cancelled') === '1'
+  const blockedOnly = params.get('blocked') === '1'
+  const columns = useMemo(() => [...BOARD_STATUSES, ...(showCancelled ? (['cancelled'] as TaskStatus[]) : [])].map(boardColumn), [showCancelled])
 
   const { scope, blockReason, editBlock } = useTaskPermissions()
   const toast = useToast()
@@ -41,6 +50,7 @@ export default function TaskBoardPage() {
 
   // Optimistic: the move updates the cached lists at once and rolls back if the server refuses.
   const status = useTaskStatusChange()
+  const blocking = useTaskBlocking()
 
   function setParam(key: string, value: string) {
     setParams(
@@ -59,19 +69,21 @@ export default function TaskBoardPage() {
     return (query.data ?? [])
       .filter(
         (t) =>
-          (t.status !== 'Done' || !t.completedAt || t.completedAt >= cutoff) &&
+          (t.status !== 'cancelled' || (showCancelled && t.updatedAt >= cutoff)) &&
+          (t.status !== 'done' || !t.completedAt || t.completedAt >= cutoff) &&
+          (!blockedOnly || t.blocked) &&
           (!ownerId || t.ownerId === ownerId) &&
           (!projectId || t.projectId === projectId) &&
           (!priority || t.priority === priority),
       )
-  }, [query.data, ownerId, projectId, priority])
+  }, [query.data, ownerId, projectId, priority, showCancelled, blockedOnly])
 
   const owners = useMemo(() => {
     const ids = new Set((query.data ?? []).map((t) => t.ownerId))
     return [...ids].map((id) => ({ id, name: allUsers.find((u) => u.id === id)?.name ?? (query.data ?? []).find((t) => t.ownerId === id)?.ownerName ?? id })).sort((a, b) => a.name.localeCompare(b.name))
   }, [query.data, allUsers])
 
-  const anyFilter = !!(ownerId || projectId || priority)
+  const anyFilter = !!(ownerId || projectId || priority || blockedOnly)
 
   return (
     <TaskPageFrame
@@ -110,9 +122,19 @@ export default function TaskBoardPage() {
           <SelectInput aria-label="Priority" value={priority} onChange={(e) => setParam('priority', e.target.value)} className="h-8 w-36 text-xs">
             <option value="">All priorities</option>
             {TASK_PRIORITIES.map((p) => (
-              <option key={p}>{p}</option>
+              <option key={p} value={p}>
+                {TASK_PRIORITY_LABEL[p]}
+              </option>
             ))}
           </SelectInput>
+          <label className="inline-flex h-8 items-center gap-1.5 text-xs text-ink-2">
+            <Checkbox id="board-blocked-only" checked={blockedOnly} onChange={(e) => setParam('blocked', e.target.checked ? '1' : '')} />
+            Blocked only
+          </label>
+          <label className="inline-flex h-8 items-center gap-1.5 text-xs text-ink-2">
+            <Checkbox id="board-show-cancelled" checked={showCancelled} onChange={(e) => setParam('cancelled', e.target.checked ? '1' : '')} />
+            Show cancelled
+          </label>
           {anyFilter && (
             <Button
               variant="ghost"
@@ -121,7 +143,7 @@ export default function TaskBoardPage() {
                 setParams(
                   (prev) => {
                     const next = new URLSearchParams(prev)
-                    for (const k of ['owner', 'project', 'priority']) next.delete(k)
+                    for (const k of ['owner', 'project', 'priority', 'blocked']) next.delete(k)
                     return next
                   },
                   { replace: true },
@@ -134,7 +156,7 @@ export default function TaskBoardPage() {
           )}
           <p id="board-hint" data-can-move={blockReason === null} className="ms-auto text-xs text-muted">
             {blockReason === null ? (
-              `Done shows the last ${DONE_DAYS} days. Drag cards to change status, or focus a card and use Space + arrow keys.`
+              `Done shows the last ${DONE_DAYS} days. Drag cards to change status, or focus a card and use Space + arrow keys. Block… is on each card’s menu.`
             ) : (
               <span className="inline-flex items-center gap-1.5">
                 <Lock className="size-3.5" aria-hidden /> View only: {blockReason}
@@ -145,7 +167,7 @@ export default function TaskBoardPage() {
 
         {query.isPending ? (
           <div aria-busy="true" className="flex gap-2.5 overflow-hidden">
-            {TASK_STATUSES.map((s) => (
+            {BOARD_STATUSES.map((s) => (
               <Skeleton key={s} className="h-[28rem] w-[20rem] shrink-0 rounded-card" />
             ))}
           </div>
@@ -156,7 +178,7 @@ export default function TaskBoardPage() {
         ) : (
           <div className="-mx-4 overflow-x-auto px-4 pb-2 sm:mx-0 sm:px-0">
             <KanbanBoard<TaskView, TaskStatus>
-              columns={COLUMNS}
+              columns={columns}
               items={items}
               getId={(t) => t.id}
               getColumn={(t) => t.status}
@@ -165,36 +187,114 @@ export default function TaskBoardPage() {
               onMove={(t, to) => status.change(t, to)}
               onBlockedMove={(t) => toast.error(`“${t.title}” wasn’t moved`, editBlock(t) ?? undefined)}
               emptyLabel={anyFilter ? 'Nothing matches' : blockReason === null ? 'Drop a task here' : 'No tasks'}
-              renderCard={(t, { overlay }) => <BoardCard task={t} onOpen={openTask} dragging={overlay} />}
+              renderCard={(t, { overlay }) => (
+                <BoardCard
+                  task={t}
+                  onOpen={openTask}
+                  dragging={overlay}
+                  canChange={blockReason === null && t.canEdit}
+                  onBlock={() => blocking.block(t)}
+                  onUnblock={() => blocking.unblock(t)}
+                />
+              )}
             />
           </div>
         )}
       </PageBody>
-      {status.dialog}
+      {blocking.dialog}
     </TaskPageFrame>
   )
 }
 
-function BoardCard({ task, onOpen, dragging }: { task: TaskView; onOpen: (id: string) => void; dragging: boolean }) {
+interface BoardCardProps {
+  task: TaskView
+  onOpen: (id: string) => void
+  dragging: boolean
+  canChange: boolean
+  onBlock: () => void
+  onUnblock: () => void
+}
+
+function BoardCard({ task, onOpen, dragging, canChange, onBlock, onUnblock }: BoardCardProps) {
+  const closed = task.status === 'done' || task.status === 'cancelled'
   return (
     <div onClick={() => onOpen(task.id)}>
       <KanbanCard className={cn('space-y-2.5 p-3', dragging && 'shadow-pop')}>
         {!task.canEdit && <span className="sr-only">View only. </span>}
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation()
-            onOpen(task.id)
-          }}
-          onKeyDown={(e) => e.stopPropagation()}
-          className={cn(
-            'block w-full rounded text-start text-[0.8125rem] leading-snug font-medium focus-visible:shadow-[var(--shadow-focus)] focus-visible:outline-none',
-            task.status === 'Done' ? 'text-muted line-through' : 'text-ink hover:underline',
+        <div className="flex items-start gap-1">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onOpen(task.id)
+            }}
+            onKeyDown={(e) => e.stopPropagation()}
+            className={cn(
+              'block min-w-0 flex-1 rounded text-start text-[0.8125rem] leading-snug font-medium focus-visible:shadow-[var(--shadow-focus)] focus-visible:outline-none',
+              closed ? 'text-muted line-through' : 'text-ink hover:underline',
+            )}
+          >
+            {task.title}
+          </button>
+          {canChange && !closed && !dragging && (
+            <div onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+              <Menu
+                className="w-44"
+                trigger={(props) => (
+                  <button
+                    type="button"
+                    {...props}
+                    aria-label={`Actions for ${task.title}`}
+                    className="-me-1 -mt-0.5 inline-flex size-6 items-center justify-center rounded text-subtle hover:bg-hover hover:text-ink focus-visible:shadow-[var(--shadow-focus)] focus-visible:outline-none"
+                  >
+                    <MoreHorizontal className="size-4" aria-hidden />
+                  </button>
+                )}
+              >
+                {(close) =>
+                  task.blocked ? (
+                    <MenuItem
+                      icon={<Unlock />}
+                      onSelect={() => {
+                        close()
+                        onUnblock()
+                      }}
+                    >
+                      Unblock
+                    </MenuItem>
+                  ) : (
+                    <MenuItem
+                      icon={<OctagonAlert />}
+                      onSelect={() => {
+                        close()
+                        onBlock()
+                      }}
+                    >
+                      Block…
+                    </MenuItem>
+                  )
+                }
+              </Menu>
+            </div>
           )}
-        >
-          {task.title}
-        </button>
-        {task.linkView && <LinkChip link={task.linkView} maxWidthClass="max-w-full" />}
+        </div>
+        {(task.blocked || task.linkView || task.subtaskProgress.total > 0) && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {task.blocked && <BlockedBadge reason={task.blockedReason} />}
+            {task.linkView && <LinkChip link={task.linkView} maxWidthClass="max-w-full" />}
+            {task.subtaskProgress.total > 0 && (
+              <span
+                className="inline-flex items-center gap-1 text-xs text-muted"
+                aria-label={`${task.subtaskProgress.done} of ${task.subtaskProgress.total} sub-tasks done`}
+              >
+                <ListChecks className="size-3.5" aria-hidden />
+                <span className="num">
+                  {task.subtaskProgress.done}/{task.subtaskProgress.total}
+                </span>
+              </span>
+            )}
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <PriorityBadge priority={task.priority} />
           <span

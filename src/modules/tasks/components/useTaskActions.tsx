@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import type { TaskStatus, TaskView } from '@/modules/tasks/types'
-import { useAssignableUsersQuery, useMoveTask } from '@/modules/tasks/hooks/useTasks'
+import { TASK_STATUS_LABEL } from '@/modules/tasks/types'
+import { useAssignableUsersQuery, useBlockTask, useMoveTask } from '@/modules/tasks/hooks/useTasks'
 import { useUsersQuery } from '@/modules/crm/hooks/useCrm'
 import { can, scopeOf } from '@/shared/lib/permissions'
 import { useCurrentUser } from '@/store/hooks'
@@ -95,23 +96,21 @@ export function useActiveUsers() {
 }
 
 /**
- * Status change with the board rule: moving to Blocked asks for a short reason, sent with the
- * change (`blockedReason`; the server posts it as a comment and refuses Blocked without one).
- * Optimistic: every cached list shows the new status at once and goes back if the server refuses
- * (useMoveTask); the toast carries the server's message. Render `dialog` once in the page.
- * A task the caller can't change is refused here with the reason (no request).
+ * Status change (board drag, status menus). Optimistic: every cached list shows the new status at
+ * once and goes back if the server refuses (useMoveTask); the toast carries the server's message.
+ * A task the caller can't change is refused here with the reason (no request). "Blocked" is not a
+ * status: see useTaskBlocking. `dialog` is kept for the pages that render it (nothing to show now).
  */
 export function useTaskStatusChange() {
   const toast = useToast()
   const move = useMoveTask()
   const { editBlock } = useTaskPermissions()
-  const [blocking, setBlocking] = useState<TaskView | null>(null)
 
   const apply = useCallback(
-    async (task: TaskView, status: TaskStatus, reason?: string) => {
+    async (task: TaskView, status: TaskStatus) => {
       try {
-        await move.mutateAsync({ id: task.id, status, ...(reason ? { blockedReason: reason } : {}) })
-        toast.success(status === 'Done' ? 'Task done' : `Moved to ${status}`, task.title)
+        await move.mutateAsync({ id: task.id, status })
+        toast.success(status === 'done' ? 'Task done' : `Moved to ${TASK_STATUS_LABEL[status]}`, task.title)
       } catch (e) {
         toast.error(`“${task.title}” wasn’t moved`, (e as Error).message)
       }
@@ -127,24 +126,67 @@ export function useTaskStatusChange() {
         toast.error(`“${task.title}” wasn’t moved`, refused)
         return
       }
-      if (status === 'Blocked') setBlocking(task)
-      else void apply(task, status)
+      void apply(task, status)
     },
     [apply, editBlock, toast],
   )
 
+  return { change, dialog: null, pending: move.isPending }
+}
+
+/**
+ * The blocked flag: `block(task)` asks why (BlockedReasonModal; 3–280 characters, the server
+ * requires it and posts it as a comment) and calls POST /tasks/:id/block; `unblock(task)` calls
+ * POST /tasks/:id/unblock. The status never changes. Render `dialog` once in the page.
+ */
+export function useTaskBlocking() {
+  const toast = useToast()
+  const mutation = useBlockTask()
+  const { editBlock } = useTaskPermissions()
+  const [asking, setAsking] = useState<Pick<TaskView, 'id' | 'title' | 'canEdit'> | null>(null)
+
+  const send = useCallback(
+    async (task: Pick<TaskView, 'id' | 'title'>, reason: string | null) => {
+      try {
+        await mutation.mutateAsync({ id: task.id, reason })
+        toast.success(reason === null ? 'Task unblocked' : 'Task marked blocked', task.title)
+      } catch (e) {
+        toast.error(reason === null ? `“${task.title}” wasn’t unblocked` : `“${task.title}” wasn’t blocked`, (e as Error).message)
+      }
+    },
+    [mutation.mutateAsync, toast],
+  )
+
+  const block = useCallback(
+    (task: Pick<TaskView, 'id' | 'title' | 'canEdit'>) => {
+      const refused = editBlock(task)
+      if (refused) toast.error(`“${task.title}” wasn’t blocked`, refused)
+      else setAsking(task)
+    },
+    [editBlock, toast],
+  )
+
+  const unblock = useCallback(
+    (task: Pick<TaskView, 'id' | 'title' | 'canEdit'>) => {
+      const refused = editBlock(task)
+      if (refused) toast.error(`“${task.title}” wasn’t unblocked`, refused)
+      else void send(task, null)
+    },
+    [editBlock, send, toast],
+  )
+
   const dialog = (
     <BlockedReasonModal
-      open={!!blocking}
-      taskTitle={blocking?.title ?? ''}
-      onClose={() => setBlocking(null)}
+      open={!!asking}
+      taskTitle={asking?.title ?? ''}
+      onClose={() => setAsking(null)}
       onConfirm={(reason) => {
-        const t = blocking
-        setBlocking(null)
-        if (t) void apply(t, 'Blocked', reason)
+        const t = asking
+        setAsking(null)
+        if (t) void send(t, reason)
       }}
     />
   )
 
-  return { change, dialog, pending: move.isPending }
+  return { block, unblock, dialog, pending: mutation.isPending }
 }

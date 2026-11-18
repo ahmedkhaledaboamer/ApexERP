@@ -137,10 +137,10 @@ export const leadFormSchema = (lookups: LookupsApi, original?: Original, activeS
     if (!lookups.isClosed(v.status) && !v.nextFollowUpDate) {
       ctx.addIssue({ code: 'custom', path: ['nextFollowUpDate'], message: 'Set the next follow-up date.' })
     }
-    if (target.requires === 'next-step' && !v.nextStep) {
+    if (target.requiresNextStep && !v.nextStep) {
       ctx.addIssue({ code: 'custom', path: ['nextStep'], message: `Record the next step for ${target.label}.` })
     }
-    if (target.requires === 'loss-reason' && v.status !== v.initialStatus) {
+    if (target.requiresLossReason && v.status !== v.initialStatus) {
       if (!v.lossReason) ctx.addIssue({ code: 'custom', path: ['lossReason'], message: 'A reason is required to close this lead.' })
       else if (!isActive(lookups.lossReasons, v.lossReason)) {
         ctx.addIssue({ code: 'custom', path: ['lossReason'], message: 'Pick a reason from the list.' })

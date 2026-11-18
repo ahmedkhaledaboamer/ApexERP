@@ -42,6 +42,7 @@ import { Drawer } from '@/shared/components/ui/Drawer'
 import { EmptyState, ErrorState, Skeleton } from '@/shared/components/ui/Feedback'
 import { useToast } from '@/shared/components/ui/Toast'
 import { Field, SelectInput, TextInput } from '@/shared/components/form/Field'
+import { QUOTATION_STATUS_LABEL } from '@/shared/domain/enums'
 
 /* ---------------- Host (mounted once in the app layout) ---------------- */
 
@@ -319,7 +320,7 @@ export function WonDialog({ target, onClose }: WonDialogProps) {
                 <option value="">None</option>
                 {preview.quotation && !preview.quotationOptions.some((o) => o.id === preview.quotation!.id) && (
                   <option value={preview.quotation.id}>
-                    {preview.quotation.number} · {preview.quotation.status} · {fmtMoney(preview.quotation.total)}
+                    {preview.quotation.number} · {(QUOTATION_STATUS_LABEL as Record<string, string>)[preview.quotation.status] ?? preview.quotation.status} · {fmtMoney(preview.quotation.total)}
                   </option>
                 )}
                 {preview.quotationOptions.map((o) => (
@@ -561,13 +562,13 @@ function ProjectPreview({ project: p, category }: { project: WonPreviewProject; 
                 <tr key={`${t.title}-${i}`} className="border-t border-line">
                   <td className="px-3 py-1.5">
                     <span className="text-ink">{t.title}</span>
-                    <span className="block text-subtle">{t.role}</span>
+                    <span className="block text-subtle">{t.role ?? 'No role'}</span>
                   </td>
                   <td className="px-3 py-1.5">
                     <span className="text-ink-2">{t.ownerName}</span>
                     {t.fallbackOwner && (
                       <span
-                        title={`No one in the department has the “${t.role}” role, so this goes to the project manager.`}
+                        title={t.role ? `No one in the department has the “${t.role}” role, so this goes to the project manager.` : 'The template task has no role, so it goes to the project manager.'}
                         className="ms-1.5 inline-flex rounded bg-warning-50 px-1.5 text-[0.6875rem] font-medium text-warning-700 dark:bg-warning-500/15 dark:text-warning-500"
                       >
                         → PM

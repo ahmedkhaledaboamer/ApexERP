@@ -1,5 +1,6 @@
 import type { Tone } from '@/shared/components/ui/Badge'
-import type { IndustryOption, ListOption, LookupList, Lookups, StatusKind, StatusOption, StatusRequirement } from '@/modules/settings/types'
+import type { IndustryOption, ListOption, LookupList, Lookups, StatusOption, StatusType } from '@/modules/settings/types'
+import { LEAD_STATUS_TYPE_LABEL, requirementOf } from '@/shared/domain/leadStatus'
 
 /**
  * Editing model for Settings > Fixed lists. Every row gets a local `_id` (its key, or a temporary
@@ -101,30 +102,29 @@ export const TONE_HEX: Record<Tone, string> = {
 
 export const TONES = Object.keys(TONE_HEX) as Tone[]
 
-export const KIND_LABEL: Record<StatusKind, string> = { open: 'Open', parked: 'Parked', won: 'Won', lost: 'Lost' }
-export const KIND_HINT: Record<StatusKind, string> = {
-  open: 'In the pipeline and worked by the owner',
-  parked: 'Out of the pipeline; no automatic follow-ups (like Cold)',
-  won: 'Closed as won',
-  lost: 'Closed as lost',
-}
-export const REQUIRES_LABEL: Record<StatusRequirement, string> = {
-  none: 'None',
-  'next-step': 'Next step & date',
-  'loss-reason': 'Loss reason',
-  convert: 'Convert to customer',
-}
-
-/** Sensible "requires" and probability when an admin changes a custom status's kind. */
-export function kindDefaults(kind: StatusKind, current: DraftStatus): Partial<DraftStatus> {
-  if (kind === 'won') return { requires: 'convert', probability: 100 }
-  if (kind === 'lost') return { requires: 'loss-reason', probability: 0 }
-  const requires = current.requires === 'convert' || current.requires === 'loss-reason' ? 'none' : current.requires
-  return { requires }
+/** Sensible requirement flags and probability when an admin changes a custom status's type. */
+export function typeDefaults(type: StatusType, current: DraftStatus): Partial<DraftStatus> {
+  if (type === 'won') return { requiresNextStep: false, requiresLossReason: false, probability: 100 }
+  if (type === 'lost') return { requiresNextStep: false, requiresLossReason: true, probability: 0 }
+  // Leaving lost: a loss reason no longer applies; a next-step requirement is kept.
+  return { requiresNextStep: requirementOf(current) === 'next-step', requiresLossReason: false }
 }
 
 export function newStatus(label: string): DraftStatus {
-  return { _id: tempId(), key: '', label, active: true, order: 0, probability: 10, kind: 'open', requires: 'none', tone: 'neutral', color: TONE_HEX.neutral, system: false }
+  return {
+    _id: tempId(),
+    key: '',
+    label,
+    active: true,
+    order: 0,
+    probability: 10,
+    type: 'open',
+    requiresNextStep: false,
+    requiresLossReason: false,
+    tone: 'neutral',
+    color: TONE_HEX.neutral,
+    system: false,
+  }
 }
 
 /* ---------------- Payload (what PUT /lookups/:list receives) ---------------- */
@@ -142,8 +142,9 @@ export function toPayload(list: LookupList, drafts: Drafts): Lookups[LookupList]
       return drafts.statuses.map((s, i) => ({
         ...option(s, i),
         probability: s.probability,
-        kind: s.kind,
-        requires: s.requires,
+        type: s.type,
+        requiresNextStep: s.requiresNextStep,
+        requiresLossReason: s.requiresLossReason,
         tone: s.tone,
         color: s.color,
         system: s.system,
@@ -192,8 +193,8 @@ export function validate(list: LookupList, drafts: Drafts): ListErrors {
         out.items[s._id] = 'Probability must be a whole number from 0 to 100.'
       }
     }
-    for (const kind of ['open', 'won', 'lost'] as const) {
-      if (!drafts.statuses.some((s) => s.kind === kind && s.active)) out.list.push(`Keep at least one active ${KIND_LABEL[kind]} status.`)
+    for (const type of ['open', 'won', 'lost'] as const) {
+      if (!drafts.statuses.some((s) => s.type === type && s.active)) out.list.push(`Keep at least one active ${LEAD_STATUS_TYPE_LABEL[type]} status.`)
     }
     return out
   }

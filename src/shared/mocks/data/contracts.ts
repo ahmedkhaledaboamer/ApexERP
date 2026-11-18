@@ -61,7 +61,7 @@ function build(seed: Seed[], companyId: string, base: number): Tenant<Contract>[
         billing,
         startDate: subDays(NOW, startDaysAgo).toISOString(),
         renewalDate: addDays(NOW, renewInDays).toISOString(),
-        status: cancelled ? 'Cancelled' : 'Active',
+        status: cancelled ? 'cancelled' : 'active',
         ownerId: customer.ownerId,
       },
     ]

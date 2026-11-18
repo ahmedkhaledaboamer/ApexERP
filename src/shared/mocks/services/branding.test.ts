@@ -87,12 +87,12 @@ describe('branding: image validation (server)', () => {
     ['WebP', WEBP_URL, 'WebP'],
     ['SVG', SVG_URL, 'SVG'],
   ])('accepts a %s for every image kind', async (_, dataUrl, label) => {
-    const res = await patch(ADMIN_APEX, { logoLight: dataUrl, logoDark: dataUrl, favicon: dataUrl })
+    const res = await patch(ADMIN_APEX, { logo_light: dataUrl, logo_dark: dataUrl, favicon: dataUrl })
     expect(res.status, res.text).toBe(200)
-    expect(res.body.branding.logoUrl).toBe(dataUrl)
-    expect(res.body.branding.logoDarkUrl).toBe(dataUrl)
-    expect(res.body.branding.faviconUrl).toBe(dataUrl)
-    expect(describeImageUrl(res.body.branding.logoUrl)).toMatch(new RegExp(`^${label} `))
+    expect(res.body.branding.logo_url).toBe(dataUrl)
+    expect(res.body.branding.logo_dark_url).toBe(dataUrl)
+    expect(res.body.branding.favicon_url).toBe(dataUrl)
+    expect(describeImageUrl(res.body.branding.logo_url)).toMatch(new RegExp(`^${label} `))
   })
 
   it('reads the size from each format', () => {
@@ -109,27 +109,27 @@ describe('branding: image validation (server)', () => {
       ['text/plain', enc('hello')],
       ['application/pdf', enc('%PDF-1.7')],
     ] as const) {
-      const res = await patch(ADMIN_APEX, { logoLight: url(mime, bytes) })
+      const res = await patch(ADMIN_APEX, { logo_light: url(mime, bytes) })
       expect(res.status, mime).toBe(422)
       expect(res.body.message).toMatch(/must be a PNG, JPG, SVG or WebP image/)
     }
   })
 
   it('rejects content that doesn’t match the declared type (magic bytes)', async () => {
-    const txt = await patch(ADMIN_APEX, { logoLight: url('image/png', enc('this is a text file renamed to .png')) })
+    const txt = await patch(ADMIN_APEX, { logo_light: url('image/png', enc('this is a text file renamed to .png')) })
     expect(txt.status).toBe(422)
     expect(txt.body.message).toBe('The light logo isn’t a real PNG image (its content doesn’t match the file type).')
     const jpgAsPng = await patch(ADMIN_APEX, { favicon: url('image/png', jpeg(10, 10)) })
     expect(jpgAsPng.status).toBe(422)
     expect(jpgAsPng.body.message).toMatch(/says it is PNG but its content is JPG/)
-    const pngAsSvg = await patch(ADMIN_APEX, { logoDark: url('image/svg+xml', png(10, 10)) })
+    const pngAsSvg = await patch(ADMIN_APEX, { logo_dark: url('image/svg+xml', png(10, 10)) })
     expect(pngAsSvg.status).toBe(422)
     expect(pngAsSvg.body.message).toMatch(/dark logo says it is SVG but its content is PNG/)
   })
 
   it('rejects oversize images per kind (logo 1 MB, favicon 256 KB)', async () => {
-    expect((await patch(ADMIN_APEX, { logoLight: url('image/png', png(10, 10, LOGO_MAX_BYTES)) })).status).toBe(200)
-    const logo = await patch(ADMIN_APEX, { logoLight: url('image/png', png(10, 10, LOGO_MAX_BYTES + 1)) })
+    expect((await patch(ADMIN_APEX, { logo_light: url('image/png', png(10, 10, LOGO_MAX_BYTES)) })).status).toBe(200)
+    const logo = await patch(ADMIN_APEX, { logo_light: url('image/png', png(10, 10, LOGO_MAX_BYTES + 1)) })
     expect(logo.status).toBe(422)
     expect(logo.body.message).toMatch(/light logo .*the limit is 1 MB/)
     const fav = await patch(ADMIN_APEX, { favicon: url('image/png', png(10, 10, FAVICON_MAX_BYTES + 1)) })
@@ -152,7 +152,7 @@ describe('branding: image validation (server)', () => {
     ['entity declaration', '<?xml version="1.0"?><!DOCTYPE svg [<!ENTITY x SYSTEM "file:///etc/passwd">]><svg xmlns="http://www.w3.org/2000/svg">&x;</svg>', /DOCTYPE|no <svg> root/],
   ])('rejects a dangerous SVG: %s', async (_, svg, why) => {
     expect(svgProblem(svg)).toMatch(why)
-    const res = await patch(ADMIN_APEX, { logoLight: url('image/svg+xml', enc(svg)) })
+    const res = await patch(ADMIN_APEX, { logo_light: url('image/svg+xml', enc(svg)) })
     expect(res.status).toBe(422)
     expect(res.body.message).toMatch(/^The light logo SVG .*Upload an SVG without scripts, links or embedded content, or a PNG\.$/)
     expect(companyById(APEX)!.branding.logoUrl).not.toContain('svg')
@@ -160,13 +160,13 @@ describe('branding: image validation (server)', () => {
 
   it('rejects malformed values, colours and names; nothing is written on a failed request', async () => {
     const before = structuredClone(companyById(APEX)!.branding)
-    expect((await patch(ADMIN_APEX, { logoLight: 'https://evil.example/logo.png' })).status).toBe(422)
-    expect((await patch(ADMIN_APEX, { logoLight: 'data:image/png;base64,@@@' })).status).toBe(422)
-    expect((await patch(ADMIN_APEX, { primaryColor: 'purple' })).body.message).toMatch(/hex value/)
-    expect((await patch(ADMIN_APEX, { displayName: '   ' })).status).toBe(422)
-    expect((await patch(ADMIN_APEX, { displayName: 'x'.repeat(61) })).status).toBe(422)
+    expect((await patch(ADMIN_APEX, { logo_light: 'https://evil.example/logo.png' })).status).toBe(422)
+    expect((await patch(ADMIN_APEX, { logo_light: 'data:image/png;base64,@@@' })).status).toBe(422)
+    expect((await patch(ADMIN_APEX, { brand_color: 'purple' })).body.message).toMatch(/hex value/)
+    expect((await patch(ADMIN_APEX, { display_name: '   ' })).status).toBe(422)
+    expect((await patch(ADMIN_APEX, { display_name: 'x'.repeat(61) })).status).toBe(422)
     // A valid colour with an invalid image: all-or-nothing.
-    expect((await patch(ADMIN_APEX, { primaryColor: '#0ea5e9', favicon: url('image/png', enc('nope')) })).status).toBe(422)
+    expect((await patch(ADMIN_APEX, { brand_color: '#0ea5e9', favicon: url('image/png', enc('nope')) })).status).toBe(422)
     expect((await patch(ADMIN_APEX, [])).status).toBe(400)
     expect(companyById(APEX)!.branding).toEqual(before)
   })
@@ -183,7 +183,7 @@ describe('branding: image validation (server)', () => {
 describe('branding: permissions', () => {
   it('Company Admin reads and writes (200)', async () => {
     expect((await api(ADMIN_APEX, 'GET', '/settings/branding')).status).toBe(200)
-    expect((await patch(ADMIN_APEX, { primaryColor: '#0ea5e9' })).status).toBe(200)
+    expect((await patch(ADMIN_APEX, { brand_color: '#0ea5e9' })).status).toBe(200)
     expect((await api(ADMIN_APEX, 'POST', '/settings/branding/reset')).status).toBe(200)
   })
 
@@ -191,9 +191,9 @@ describe('branding: permissions', () => {
     const token = roleToken(APEX, 'Management')
     const get = await api(token, 'GET', '/settings/branding')
     expect(get.status).toBe(200)
-    expect(get.body.branding.displayName).toBe('Apex Aora')
-    expect(get.body.limits).toEqual({ logoMaxBytes: LOGO_MAX_BYTES, faviconMaxBytes: FAVICON_MAX_BYTES, types: ['PNG', 'JPG', 'SVG', 'WebP'], displayNameMax: 60 })
-    expect((await patch(token, { primaryColor: '#0ea5e9' })).status).toBe(403)
+    expect(get.body.branding.display_name).toBe('Apex Aora')
+    expect(get.body.limits).toEqual({ logo_max_bytes: LOGO_MAX_BYTES, favicon_max_bytes: FAVICON_MAX_BYTES, types: ['PNG', 'JPG', 'SVG', 'WebP'], display_name_max: 60 })
+    expect((await patch(token, { brand_color: '#0ea5e9' })).status).toBe(403)
     expect((await api(token, 'POST', '/settings/branding/reset')).status).toBe(403)
     expect(companyById(APEX)!.branding.palette).toEqual(DEFAULT_PALETTE)
   })
@@ -201,7 +201,7 @@ describe('branding: permissions', () => {
   it.each(['Sales Agent', 'Sales Manager', 'Accountant'])('%s gets 403 on every branding endpoint', async (role) => {
     const token = roleToken(APEX, role)
     expect((await api(token, 'GET', '/settings/branding')).status).toBe(403)
-    expect((await patch(token, { primaryColor: '#0ea5e9' })).status).toBe(403)
+    expect((await patch(token, { brand_color: '#0ea5e9' })).status).toBe(403)
     expect((await api(token, 'POST', '/settings/branding/reset')).status).toBe(403)
   })
 
@@ -217,7 +217,7 @@ describe('branding: tenant isolation', () => {
   it('a Crest PATCH never changes Apex, even with Apex’s companyId in the body, query and headers', async () => {
     const apexBefore = structuredClone(companyById(APEX)!.branding)
     const res = await api(ADMIN_CREST, 'PATCH', '/settings/branding?companyId=co_apex', {
-      body: { companyId: APEX, company_id: APEX, tenantId: APEX, id: APEX, primaryColor: '#be123c', logoLight: PNG_URL, displayName: 'Crest Freight' },
+      body: { companyId: APEX, company_id: APEX, tenantId: APEX, id: APEX, brand_color: '#be123c', logo_light: PNG_URL, display_name: 'Crest Freight' },
       headers: { 'X-Company-Id': APEX, 'X-Tenant-Id': APEX },
     })
     expect(res.status, res.text).toBe(200)
@@ -226,12 +226,12 @@ describe('branding: tenant isolation', () => {
     expect(companyById(CREST)!.branding.logoUrl).toBe(PNG_URL)
     expect(companyById(APEX)!.branding).toEqual(apexBefore)
     const apexGet = await api(ADMIN_APEX, 'GET', '/settings/branding')
-    expect(apexGet.body.branding.logoUrl).not.toBe(PNG_URL)
-    expect(apexGet.body.branding.displayName).toBe('Apex Aora')
+    expect(apexGet.body.branding.logo_url).not.toBe(PNG_URL)
+    expect(apexGet.body.branding.display_name).toBe('Apex Aora')
   })
 
   it('unknown fields are ignored (no mass assignment)', async () => {
-    const res = await patch(ADMIN_APEX, { emailSenderAddress: 'evil@example.com', palette: { '600': '#000000' }, monogram: 'ZZ', subdomain: 'evil' })
+    const res = await patch(ADMIN_APEX, { email_sender_address: 'evil@example.com', palette: { '600': '#000000' }, monogram: 'ZZ', subdomain: 'evil' })
     expect(res.status).toBe(200)
     const b = companyById(APEX)!.branding
     expect(b.emailSenderAddress).toBe('sales@apexaora.ae')
@@ -241,7 +241,7 @@ describe('branding: tenant isolation', () => {
   })
 
   it('reset touches only the caller’s company', async () => {
-    await patch(ADMIN_APEX, { logoLight: PNG_URL, primaryColor: '#0ea5e9' })
+    await patch(ADMIN_APEX, { logo_light: PNG_URL, brand_color: '#0ea5e9' })
     const crestBefore = structuredClone(companyById(CREST)!.branding)
     expect((await api(ADMIN_CREST, 'POST', '/settings/branding/reset')).status).toBe(200)
     expect(companyById(APEX)!.branding.logoUrl).toBe(PNG_URL)
@@ -254,7 +254,7 @@ describe('branding: tenant isolation', () => {
 
 describe('branding: audit, reset and where it shows', () => {
   it('audits every change with field diffs; images summarised, never the data URL', async () => {
-    const res = await patch(ADMIN_APEX, { displayName: 'Apex Aora Studio', primaryColor: '#0EA5E9', logoLight: PNG_URL, logoDark: SVG_URL, favicon: WEBP_URL })
+    const res = await patch(ADMIN_APEX, { display_name: 'Apex Aora Studio', brand_color: '#0EA5E9', logo_light: PNG_URL, logo_dark: SVG_URL, favicon: WEBP_URL })
     expect(res.status).toBe(200)
     const entry = auditLog.find((a) => a.companyId === APEX && a.entity === 'branding')!
     expect(entry).toBeTruthy()
@@ -278,34 +278,34 @@ describe('branding: audit, reset and where it shows', () => {
     expect(JSON.stringify((await api(ADMIN_CREST, 'GET', '/audit-log')).body)).not.toContain('Updated the branding')
     // No entry when nothing changed.
     const count = auditLog.filter((a) => a.entity === 'branding').length
-    await patch(ADMIN_APEX, { primaryColor: '#0ea5e9' })
+    await patch(ADMIN_APEX, { brand_color: '#0ea5e9' })
     expect(auditLog.filter((a) => a.entity === 'branding').length).toBe(count)
   })
 
   it('the primary colour derives the palette; the response is the updated Company', async () => {
-    const res = await patch(ADMIN_APEX, { primaryColor: '#0ea5e9' })
-    expect(res.body.branding.primaryColor).toBe('#0ea5e9')
+    const res = await patch(ADMIN_APEX, { brand_color: '#0ea5e9' })
+    expect(res.body.branding.brand_color).toBe('#0ea5e9')
     expect(res.body.branding.palette).toEqual(deriveBrandScale('#0ea5e9'))
-    expect(res.body).toMatchObject({ id: APEX, subdomain: 'apexaora', profile: { tradeName: 'Apex Aora' } })
+    expect(res.body).toMatchObject({ id: APEX, subdomain: 'apexaora', profile: { trade_name: 'Apex Aora' } })
     // GET /tenant (session refresh) carries it.
     expect((await api(ADMIN_APEX, 'GET', '/tenant')).body.branding.palette['600']).toBe('#0ea5e9')
   })
 
   it('removing an image with null; reset restores monogram + default palette (audited)', async () => {
-    await patch(ADMIN_APEX, { logoLight: PNG_URL, logoDark: PNG_URL, favicon: PNG_URL, primaryColor: '#0ea5e9' })
-    const removed = await patch(ADMIN_APEX, { logoDark: null })
-    expect(removed.body.branding.logoDarkUrl).toBeNull()
-    expect(removed.body.branding.logoUrl).toBe(PNG_URL)
+    await patch(ADMIN_APEX, { logo_light: PNG_URL, logo_dark: PNG_URL, favicon: PNG_URL, brand_color: '#0ea5e9' })
+    const removed = await patch(ADMIN_APEX, { logo_dark: null })
+    expect(removed.body.branding.logo_dark_url).toBeNull()
+    expect(removed.body.branding.logo_url).toBe(PNG_URL)
     const reset = await api(ADMIN_APEX, 'POST', '/settings/branding/reset')
     expect(reset.status).toBe(200)
-    expect(reset.body.branding).toMatchObject({ logoUrl: null, logoDarkUrl: null, faviconUrl: null, primaryColor: null, palette: DEFAULT_PALETTE, monogram: 'AA', displayName: 'Apex Aora' })
+    expect(reset.body.branding).toMatchObject({ logo_url: null, logo_dark_url: null, favicon_url: null, brand_color: null, palette: DEFAULT_PALETTE, monogram: 'AA', display_name: 'Apex Aora' })
     const entry = auditLog.find((a) => a.companyId === APEX && a.entity === 'branding')!
     expect(entry.summary).toMatch(/^Reset the branding to the default/)
     expect(entry.changes.map((c) => c.field).sort()).toEqual(['favicon', 'logoLight', 'primaryColor'])
   })
 
   it('the public workspace lookup (sign-in page) returns the logos and favicon', async () => {
-    await patch(ADMIN_APEX, { logoLight: PNG_URL, logoDark: SVG_URL, favicon: WEBP_URL })
+    await patch(ADMIN_APEX, { logo_light: PNG_URL, logo_dark: SVG_URL, favicon: WEBP_URL })
     const pub = await api(null, 'GET', '/public/workspaces/apexaora')
     expect(pub.status).toBe(200)
     expect(pub.body.branding).toMatchObject({ logoUrl: PNG_URL, logoDarkUrl: SVG_URL, faviconUrl: WEBP_URL })
@@ -313,15 +313,15 @@ describe('branding: audit, reset and where it shows', () => {
   })
 
   it('sent emails are rendered with the branded header (logo, else monogram)', async () => {
-    await patch(ADMIN_APEX, { logoLight: PNG_URL })
+    await patch(ADMIN_APEX, { logo_light: PNG_URL })
     const lead = leads.find((l) => l.companyId === APEX && !l.doNotContact && l.contactEmail && !['Won', 'Lost', 'Not interested'].includes(l.status))!
-    const sent = await api(ADMIN_APEX, 'POST', `/leads/${lead.id}/messages`, { body: { channel: 'email', to: lead.contactEmail, subject: 'Hello', body: 'Line 1\n<b>Line 2</b>' } })
+    const sent = await api(ADMIN_APEX, 'POST', `/leads/${lead.id}/messages`, { body: { channel: 'email', to_address: lead.contactEmail, subject: 'Hello', body: 'Line 1\n<b>Line 2</b>' } })
     expect(sent.status, sent.text).toBe(200)
-    expect(sent.body.email.from).toBe('Apex Aora Sales <sales@apexaora.ae>')
+    expect(sent.body.email.from_address).toBe('Apex Aora Sales <sales@apexaora.ae>')
     expect(sent.body.email.html).toContain(`<img src="${PNG_URL}" alt="Apex Aora"`)
     expect(sent.body.email.html).toContain('Line 1<br>&lt;b&gt;Line 2&lt;/b&gt;')
     const crestLead = leads.find((l) => l.companyId === CREST && !l.doNotContact && l.contactEmail && !['Won', 'Lost', 'Not interested'].includes(l.status))!
-    const crest = await api(ADMIN_CREST, 'POST', `/leads/${crestLead.id}/messages`, { body: { channel: 'email', to: crestLead.contactEmail, subject: 'Hi', body: 'Hello' } })
+    const crest = await api(ADMIN_CREST, 'POST', `/leads/${crestLead.id}/messages`, { body: { channel: 'email', to_address: crestLead.contactEmail, subject: 'Hi', body: 'Hello' } })
     expect(crest.status, crest.text).toBe(200)
     expect(crest.body.email.html).not.toContain('<img')
     expect(crest.body.email.html).toContain('>CL</span>')
@@ -334,14 +334,14 @@ describe('branding: audit, reset and where it shows', () => {
 describe('branding: read-only workspaces and support sessions (central policy)', () => {
   it('billing read-only (suspended) → 423 on PATCH and reset; GET works', async () => {
     expect((await api(ADMIN_APEX, 'POST', '/dev/billing/status', { body: { status: 'suspended' } })).status).toBe(200)
-    const write = await patch(ADMIN_APEX, { primaryColor: '#0ea5e9' })
+    const write = await patch(ADMIN_APEX, { brand_color: '#0ea5e9' })
     expect(write.status).toBe(423)
     expect(write.body.code).toBe('workspace_read_only')
     expect((await api(ADMIN_APEX, 'POST', '/settings/branding/reset')).status).toBe(423)
     expect((await api(ADMIN_APEX, 'GET', '/settings/branding')).status).toBe(200)
     expect(companyById(APEX)!.branding.palette).toEqual(DEFAULT_PALETTE)
     // Crest is unaffected.
-    expect((await patch(ADMIN_CREST, { primaryColor: '#be123c' })).status).toBe(200)
+    expect((await patch(ADMIN_CREST, { brand_color: '#be123c' })).status).toBe(200)
   })
 
   it('a read-only support session can view but not change the branding (403 impersonation_read_only)', async () => {
@@ -349,7 +349,7 @@ describe('branding: read-only workspaces and support sessions (central policy)',
     expect(start.status, start.text).toBe(200)
     const token = start.body.token as string
     expect((await api(token, 'GET', '/settings/branding')).status).toBe(200)
-    const write = await patch(token, { primaryColor: '#0ea5e9' })
+    const write = await patch(token, { brand_color: '#0ea5e9' })
     expect(write.status).toBe(403)
     expect(write.body.code).toBe('impersonation_read_only')
     expect((await api(token, 'POST', '/settings/branding/reset')).body.code).toBe('impersonation_read_only')

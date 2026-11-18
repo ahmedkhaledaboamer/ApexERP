@@ -2,6 +2,7 @@ import type { Session, User } from '@/shared/types'
 import type { Company, PublicCompany } from '@/modules/tenancy/types'
 import type { CompanyAnnouncement } from '@/modules/platform/types'
 import { http } from '@/shared/lib/axios'
+import { companyAnnouncementMapper } from '@/shared/api/mappers'
 
 /** Tenant API. None of these send a company id; the server reads it from the token. */
 
@@ -45,7 +46,7 @@ export async function enableImpersonationWriteMode(): Promise<Session> {
 
 /** Active, in-segment announcements this user hasn't dismissed. */
 export async function getAnnouncements(): Promise<CompanyAnnouncement[]> {
-  return (await http.get<CompanyAnnouncement[]>('/announcements')).data
+  return companyAnnouncementMapper.fromApiList((await http.get<unknown>('/announcements')).data)
 }
 
 export async function dismissAnnouncement(id: string): Promise<void> {

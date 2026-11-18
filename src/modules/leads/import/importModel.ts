@@ -254,7 +254,7 @@ export interface ImportLists {
 
 /** Status for rows with a blank status: the first active open status (New by default). */
 export function defaultImportStatus(lists: ImportLists): LeadStatus {
-  return lists.statuses.find((s) => s.kind === 'open')?.key ?? ''
+  return lists.statuses.find((s) => s.type === 'open')?.key ?? ''
 }
 
 /** Closest item by label or key (see `closest`), returned as its key. */

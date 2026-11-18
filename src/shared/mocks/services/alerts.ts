@@ -1,18 +1,19 @@
-import { differenceInCalendarDays, parseISO, startOfDay, subDays } from 'date-fns'
+import { differenceInCalendarDays, parseISO, startOfDay } from 'date-fns'
 import type { User } from '@/shared/types'
 import type { Alert, AlertSeverity, AlertType } from '@/modules/alerts/types'
 import type { StoredNotification, Task } from '@/modules/tasks/types'
 import { customerPath, leadPath, PATHS } from '@/app/paths'
 import { inScope, scopeOf } from '@/shared/lib/permissions'
-import { activities, customers, users } from '@/shared/mocks/db'
+import { activities, customers } from '@/shared/mocks/db'
 import { contracts } from '@/shared/mocks/data/contracts'
 import { automationRulesFor, isClosedStatus, SYSTEM_STATUS } from '@/shared/mocks/data/lookups'
-import { notifications, tasks } from '@/shared/mocks/data/tasks'
+import { notifications } from '@/shared/mocks/data/tasks'
 import { companyDayOf, companyTeamIds } from '@/shared/mocks/selectors/company'
 import { daysBetweenIso } from '@/shared/lib/companyDay'
 import { now as clockNow } from '@/shared/mocks/clock'
 import { findInTenant, scoped, tenantOf, type Tenant } from '@/shared/mocks/tenant'
-import { isOverdue, linkView, myTasks, overdueTasks } from '@/shared/mocks/selectors/tasks'
+import { isOverdue, myTasks, overdueTasks, subjectOf } from '@/shared/mocks/selectors/tasks'
+import { runTaskReminders } from '@/shared/mocks/services/taskReminders'
 import { delay, fail, ownerName } from '@/shared/mocks/server'
 import { visibleLeads } from '@/shared/mocks/services/leads'
 import { statusLabelOf } from '@/shared/mocks/lookupChecks'
@@ -25,19 +26,20 @@ import { statusLabelOf } from '@/shared/mocks/lookupChecks'
  *   stalled       Interested lead with no activity for ≥ stalledInterestedDays (to managers: team/full scope)
  *   follow-up     Follow-ups due today or overdue (owner); others' overdue ones (managers)
  *   renewal       Contracts renewing within renewalAlertDays (anyone who can see the customer)
- *   task          Owner reminder: open tasks I own due within taskReminderDaysBefore days (due − N ≤ today ≤ due)
- *   task-overdue  Open overdue tasks: my own, my direct reports' (User.managerId = me), and — with a
- *                 team/full tasks scope — every overdue task in scope (the shared overdueTasks selector)
+ *   task-overdue  Open overdue tasks: my own, and — with a team/full tasks scope — every overdue task
+ *                 in scope (the shared overdueTasks selector), except those I got a stored notice for
  * Lead and contract alerts are scoped like leads; task alerts read the unified task store, with the
  * company's calendar days (regional timezone; `now` = the mock clock).
  *
- * Decision: task reminders stay COMPUTED here. The stored types task-due / task-overdue are kept in
- * the StoredNotification union for a future e-mail / push delivery, but nothing writes them.
+ * Task reminders are STORED (database alignment, part B): every call first runs the company's
+ * reminder tick (services/taskReminders.ts), which stores the owner's task-due reminder N days
+ * before the due date and the manager's task-overdue notice, each once per task
+ * (tasks.reminder_sent_at / overdue_notified_at; re-armed when the due date changes).
  *
- * Stored (`notifications` in src/shared/mocks/data/tasks.ts, pushed by the Won flow and task writes):
- *   won, assignment, mention, billing (subscription lifecycle, services/billing.ts), usage (plan usage
- *   warnings) (and stored task-due / task-overdue rows, if any) addressed to the
- * caller, with their `read` flag. PATCH /alerts/:id/read and POST /alerts/read-all mark them read.
+ * Stored (`notifications` in src/shared/mocks/data/tasks.ts, pushed by the Won flow, task writes and
+ *   the reminder tick): won, assignment, mention, task-due, task-overdue, billing (subscription
+ *   lifecycle, services/billing.ts), usage (plan usage warnings) addressed to the caller, with their
+ *   `read` flag. PATCH /alerts/:id/read and POST /alerts/read-all mark them read.
  *
  * Tenancy: every source (leads, contracts, tasks, notifications, people) is read inside the
  * caller's company, and the rules are that company's Settings > Automation.
@@ -61,6 +63,7 @@ function salesAlerts(user: User, now: Date): Alert[] {
   const co = tenantOf(user)
   const rules = automationRulesFor(co)
   const today = startOfDay(now)
+  const companyToday = companyDayOf(co, now).today
   const out: Alert[] = []
 
   for (const l of scoped(visibleLeads(user), user)) {
@@ -103,10 +106,9 @@ function salesAlerts(user: User, now: Date): Alert[] {
       }
     }
 
-    // (c) Follow-ups due today or overdue.
+    // (c) Follow-ups due today or overdue: company-local calendar dates against the company's today.
     if (l.nextFollowUpDate && !isClosedStatus(co, l.status)) {
-      const due = parseISO(l.nextFollowUpDate)
-      const late = differenceInCalendarDays(today, due)
+      const late = daysBetweenIso(l.nextFollowUpDate, companyToday)
       if (late >= 0 && (mine || (manager && late > 0))) {
         out.push({
           id: `follow-up:${l.id}`,
@@ -128,7 +130,8 @@ function salesAlerts(user: User, now: Date): Alert[] {
   // (d) Renewals: "Alert 30 days before the renewal date."
   const team = companyTeamIds(user)
   for (const c of scoped(contracts, user)) {
-    if (c.status === 'Cancelled') continue
+    // Only live (active) contracts renew; cancelled, renewed or draft ones never alert.
+    if (c.status !== 'active') continue
     const customer = findInTenant(customers, user, (x) => x.id === c.customerId)
     if (!customer || !inScope(scope, user, c.ownerId, team)) continue
     const days = differenceInCalendarDays(parseISO(c.renewalDate), today)
@@ -148,49 +151,35 @@ function salesAlerts(user: User, now: Date): Alert[] {
   return out
 }
 
-/** (e) Task reminders to the owner and (f) overdue alerts to the owner and their manager. */
+/**
+ * Overdue tasks the user should see live (computed, clear once the task is done or rescheduled):
+ * their own, and — with a team/full tasks scope — every overdue task in scope. The owner's
+ * reminder and the manager's overdue notice are STORED (services/taskReminders.ts); a task the
+ * user already has a stored overdue notice for isn't listed twice.
+ */
 function taskAlerts(user: User, now: Date): Alert[] {
   const scope = scopeOf(user.role, 'tasks')
   if (scope === 'hidden') return []
   // Days are the company's (regional timezone + week start), at `now` (the mock clock by default).
   const day = companyDayOf(tenantOf(user), now)
   const today = day.today
-  const before = Math.max(0, automationRulesFor(tenantOf(user)).taskReminderDaysBefore)
   const out: Alert[] = []
+  const notified = new Set(storedFor(user).filter((n) => n.type === 'task-overdue' && n.taskId).map((n) => n.taskId as string))
 
-  // (e) "The owner is notified N days before the due date" (N = taskReminderDaysBefore, default 1).
-  for (const t of myTasks(user)) {
-    if (t.ownerId !== user.id || !t.dueDate) continue
-    const left = daysBetweenIso(today, t.dueDate)
-    if (left < 0 || left > before) continue
-    const subject = linkView(t, user)?.label
-    out.push({
-      id: `task:${t.id}`,
-      type: 'task',
-      severity: left === 0 ? 'warning' : 'info',
-      title: t.title,
-      body: (subject ? `${subject} · ` : '') + (left === 0 ? 'Due today' : left === 1 ? 'Due tomorrow' : `Due in ${plural(left, 'day')}`),
-      taskId: t.id,
-      link: taskLink(PATHS.myTasks, t.id),
-      at: subDays(parseISO(t.dueDate), before).toISOString(),
-    })
-  }
-
-  // (f) "The owner's manager is notified when a task becomes overdue" — from the first overdue day.
-  const reports = new Set(users.filter((u) => u.companyId === user.companyId && u.managerId === user.id).map((u) => u.id))
   const overdue = new Map<string, Tenant<Task>>()
-  for (const t of scoped(tasks, user)) {
-    if ((t.ownerId === user.id || reports.has(t.ownerId)) && isOverdue(t, today)) overdue.set(t.id, t)
+  for (const t of myTasks(user)) {
+    if (t.ownerId === user.id && isOverdue(t, today)) overdue.set(t.id, t)
   }
   if (scope === 'team' || scope === 'full') {
     for (const t of overdueTasks(user, day)) overdue.set(t.id, t)
   }
+  for (const id of notified) overdue.delete(id)
 
   for (const t of overdue.values()) {
     const due = parseISO(t.dueDate as string)
     const late = daysBetweenIso(t.dueDate as string, today)
     const mine = t.ownerId === user.id
-    const subject = linkView(t, user)?.label
+    const subject = subjectOf(t, user)
     out.push({
       id: `task-overdue:${t.id}`,
       type: 'task-overdue',
@@ -236,14 +225,19 @@ function toAlert(n: StoredNotification): Alert {
     at: n.at,
     stored: true,
     read: n.read,
+    ...(n.taskId ? { taskId: n.taskId } : {}),
   }
 }
 
 /** The caller's stored notifications, in the caller's company only. */
 const storedFor = (user: User) => scoped(notifications, user).filter((n) => n.userId === user.id)
 
-/** Computed reminders plus the caller's stored notifications, newest first. */
+/**
+ * Runs the company's task reminder tick (stored, once per task), then: computed reminders plus the
+ * caller's stored notifications, newest first.
+ */
 export function alertsFor(user: User, now: Date = clockNow()): Alert[] {
+  runTaskReminders(tenantOf(user), now)
   return [...salesAlerts(user, now), ...taskAlerts(user, now), ...storedFor(user).map(toAlert)].sort((a, b) => b.at.localeCompare(a.at))
 }
 

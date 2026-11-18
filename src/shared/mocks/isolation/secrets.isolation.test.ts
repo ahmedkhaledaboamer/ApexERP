@@ -96,12 +96,12 @@ describe('§8 Sweep: every GET endpoint, every viewer', () => {
 describe('§8 Payment cards are masked end to end', () => {
   it.each(COMPANIES)('%s: a saved card comes back as brand + last 4 only, everywhere', async (co) => {
     const card = co === APEX ? '4242 4242 4242 4242' : '5555 5555 5555 4444'
-    const res = await api(adminToken(co), 'POST', '/billing/payment-method', { body: { holder: 'Card Holder', cardNumber: card, expiry: '12/39', cvc: '123' } })
+    const res = await api(adminToken(co), 'POST', '/billing/payment-method', { body: { holder: 'Card Holder', card_number: card, expiry: '12/39', cvc: '123' } })
     expect(res.status, res.text).toBe(200)
     expect(res.text).not.toContain(card.replace(/ /g, ''))
     expect(res.text).not.toContain('"123"')
     const overview = await api(adminToken(co), 'GET', '/billing/overview')
-    expect(overview.body.subscription.paymentMethod.last4).toBe(card.slice(-4))
+    expect(overview.body.subscription.payment_method.last4).toBe(card.slice(-4))
     for (const path of ['/billing/overview', '/billing/entitlements', '/billing/export', '/dev/billing/state']) {
       const r = await api(adminToken(co), 'GET', path)
       expect(r.text, path).not.toContain(card.replace(/ /g, ''))

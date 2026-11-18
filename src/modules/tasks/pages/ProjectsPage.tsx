@@ -4,7 +4,7 @@ import { createColumnHelper, type FilterFn, type Table } from '@tanstack/react-t
 import { AlarmClock, FolderKanban, Hourglass, PauseCircle, PlayCircle, Plus, ShieldOff, X } from 'lucide-react'
 import type { Scope } from '@/shared/types'
 import { customerPath, projectPath, servicePath } from '@/app/paths'
-import { PROJECT_STATUSES, type ProjectRow } from '@/modules/tasks/types'
+import { PROJECT_STATUSES, PROJECT_STATUS_LABEL, type ProjectRow } from '@/modules/tasks/types'
 import { useProjectsQuery } from '@/modules/tasks/hooks/useTasks'
 import { NewProjectDrawer } from '@/modules/tasks/projects/NewProjectDrawer'
 import { fmtHours, PROJECT_STATUS_TONE, ProgressBar, ProjectStatusBadge } from '@/modules/tasks/projects/projectUi'
@@ -168,20 +168,20 @@ function Kpis({ rows, loading, onFilter }: { rows: ProjectRow[] | undefined; loa
       </section>
     )
   }
-  const active = rows.filter((r) => r.status === 'Active')
-  const onHold = rows.filter((r) => r.status === 'On hold')
-  const live = rows.filter((r) => r.status !== 'Cancelled')
+  const active = rows.filter((r) => r.status === 'active')
+  const onHold = rows.filter((r) => r.status === 'on_hold')
+  const live = rows.filter((r) => r.status !== 'cancelled')
   const overdue = live.reduce((s, r) => s + r.overdueCount, 0)
   const overdueProjects = live.filter((r) => r.overdueCount > 0).length
   const logged = live.reduce((s, r) => s + r.loggedHours, 0)
   const estimated = live.reduce((s, r) => s + r.estimatedHours, 0)
   const pct = estimated ? Math.round((logged / estimated) * 100) : 0
 
-  const clickable = (status: string, card: ReactNode) => (
+  const clickable = (status: keyof typeof PROJECT_STATUS_LABEL, card: ReactNode) => (
     <button
       type="button"
       onClick={() => onFilter(status)}
-      title={`Show ${status.toLowerCase()} projects`}
+      title={`Show ${PROJECT_STATUS_LABEL[status].toLowerCase()} projects`}
       className="block rounded-card text-start transition-shadow hover:shadow-soft focus-visible:shadow-[var(--shadow-focus)] focus-visible:outline-none"
     >
       {card}
@@ -190,8 +190,8 @@ function Kpis({ rows, loading, onFilter }: { rows: ProjectRow[] | undefined; loa
 
   return (
     <section aria-label="Project figures" className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
-      {clickable('Active', <StatCard label="Active" icon={<PlayCircle />} value={active.length} hint={`${rows.filter((r) => r.status === 'Planned').length} planned`} />)}
-      {clickable('On hold', <StatCard label="On hold" icon={<PauseCircle />} value={onHold.length} hint={onHold.length ? 'Waiting on something' : 'Nothing paused'} />)}
+      {clickable('active', <StatCard label="Active" icon={<PlayCircle />} value={active.length} hint={`${rows.filter((r) => r.status === 'planned').length} planned`} />)}
+      {clickable('on_hold', <StatCard label="On hold" icon={<PauseCircle />} value={onHold.length} hint={onHold.length ? 'Waiting on something' : 'Nothing paused'} />)}
       <StatCard
         label="Overdue tasks"
         icon={<AlarmClock />}
@@ -229,7 +229,7 @@ function Facets({ table, data }: { table: Table<ProjectRow>; data: ProjectRow[] 
         'Status',
         PROJECT_STATUSES.map((s) => ({
           value: s,
-          label: s,
+          label: PROJECT_STATUS_LABEL[s],
           icon: <span className={`size-2 rounded-full ${DOT[PROJECT_STATUS_TONE[s]]}`} aria-hidden />,
           count: count((r) => r.status === s),
         })),
@@ -264,7 +264,7 @@ function buildColumns() {
       cell: ({ row }) => {
         const p = row.original
         return (
-          <div className={cn('min-w-0', p.status === 'Cancelled' && 'opacity-70')}>
+          <div className={cn('min-w-0', p.status === 'cancelled' && 'opacity-70')}>
             <p className="truncate font-medium text-ink">{p.name}</p>
             <p className="truncate text-xs text-muted">
               <span className="font-mono">{p.id}</span> · {p.taskCount} task{p.taskCount === 1 ? '' : 's'}
@@ -312,7 +312,7 @@ function buildColumns() {
       header: 'Start – end',
       cell: ({ row }) => {
         const p = row.original
-        const late = p.status !== 'Completed' && p.status !== 'Cancelled' && p.endDate < new Date().toISOString().slice(0, 10)
+        const late = p.status !== 'completed' && p.status !== 'cancelled' && p.endDate < new Date().toISOString().slice(0, 10)
         return (
           <span className="num flex flex-col text-xs leading-tight whitespace-nowrap">
             <span className="text-ink-2">{fmtDate(p.startDate, 'd MMM yy')}</span>
@@ -363,5 +363,5 @@ const projectSearch: FilterFn<ProjectRow> = (row, _columnId, value: string) => {
   const q = value.trim().toLowerCase()
   if (!q) return true
   const p = row.original
-  return [p.name, p.id, p.customerName, p.serviceName, p.managerName, p.status].join(' ').toLowerCase().includes(q)
+  return [p.name, p.id, p.customerName, p.serviceName, p.managerName, PROJECT_STATUS_LABEL[p.status]].join(' ').toLowerCase().includes(q)
 }

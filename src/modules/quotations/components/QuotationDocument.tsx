@@ -34,7 +34,7 @@ const fmtQty = (n: number) => new Intl.NumberFormat('en-US', { maximumFractionDi
  */
 export function QuotationDocument({ data, className, issuer: issuerOverride }: { data: QuotationDocumentData; className?: string; issuer?: Issuer }) {
   const totals = computeTotals(data.items, data.vatPct)
-  const draft = data.status === 'Draft'
+  const draft = data.status === 'draft'
   const tenant = useTenant()
   const issuer = issuerOverride ?? issuerFor(tenant)
   const fmtAed = (v: number) => fmtAmount(v, data.currency)

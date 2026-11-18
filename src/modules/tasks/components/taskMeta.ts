@@ -1,45 +1,37 @@
 import { format, parseISO } from 'date-fns'
 import type { Tone } from '@/shared/components/ui/Badge'
 import type { TaskLinkType, TaskPriority, TaskStatus, TaskView } from '@/modules/tasks/types'
-import { customerPath, leadPath, projectPath } from '@/app/paths'
+import { TASK_PRIORITY_RANK, TASK_PRIORITY_TONE, TASK_STATUS_TONE, isClosedTaskStatus } from '@/modules/tasks/enums'
+import { customerPath, eventPath, leadPath, projectPath } from '@/app/paths'
 import { getRegion } from '@/shared/lib/region'
 import { companyDay, type CompanyDay } from '@/shared/lib/companyDay'
 
 /** Display constants and helpers shared by the task screens. */
 
-export const STATUS_TONE: Record<TaskStatus, Tone> = {
-  'To do': 'neutral',
-  'In progress': 'blue',
-  Blocked: 'amber',
-  Done: 'green',
-}
+export const STATUS_TONE: Record<TaskStatus, Tone> = TASK_STATUS_TONE
 
-export const PRIORITY_TONE: Record<TaskPriority, Tone> = {
-  Urgent: 'red',
-  High: 'amber',
-  Medium: 'blue',
-  Low: 'neutral',
-}
+export const PRIORITY_TONE: Record<TaskPriority, Tone> = TASK_PRIORITY_TONE
 
 /** Chip fill by priority (calendar). */
 export const PRIORITY_CHIP: Record<TaskPriority, string> = {
-  Urgent: 'bg-danger-50 text-danger-700 ring-danger-100 dark:bg-danger-500/15 dark:text-danger-500 dark:ring-danger-500/25',
-  High: 'bg-warning-50 text-warning-700 ring-warning-100 dark:bg-warning-500/15 dark:text-warning-500 dark:ring-warning-500/25',
-  Medium: 'bg-accent-50 text-accent-700 ring-accent-100 dark:bg-accent-500/15 dark:text-accent-300 dark:ring-accent-500/25',
-  Low: 'bg-sunken text-ink-2 ring-line',
+  urgent: 'bg-danger-50 text-danger-700 ring-danger-100 dark:bg-danger-500/15 dark:text-danger-500 dark:ring-danger-500/25',
+  high: 'bg-warning-50 text-warning-700 ring-warning-100 dark:bg-warning-500/15 dark:text-warning-500 dark:ring-warning-500/25',
+  medium: 'bg-accent-50 text-accent-700 ring-accent-100 dark:bg-accent-500/15 dark:text-accent-300 dark:ring-accent-500/25',
+  low: 'bg-sunken text-ink-2 ring-line',
 }
 
-export const LINK_LABEL: Record<TaskLinkType, string> = {
+export const LINK_LABEL: Record<TaskLinkType | 'project', string> = {
   lead: 'Lead',
   customer: 'Customer',
   project: 'Project',
   event: 'Event',
 }
 
-export function linkHref(type: TaskLinkType, id: string): string | null {
+export function linkHref(type: TaskLinkType | 'project', id: string): string | null {
   if (type === 'lead') return leadPath(id)
   if (type === 'customer') return customerPath(id)
   if (type === 'project') return projectPath(id)
+  if (type === 'event') return eventPath(id)
   return null
 }
 
@@ -69,10 +61,10 @@ export const DUE_GROUPS: { id: DueGroup; label: string }[] = [
 
 /**
  * My tasks bucket, by the company's calendar: Overdue (before today), Today, This week (to the end
- * of the company's week, from its weekStartsOn), Later, No date; Done tasks go to Completed.
+ * of the company's week, from its weekStartsOn), Later, No date; done and cancelled tasks go to Completed.
  */
 export function dueGroupOf(t: Pick<TaskView, 'status' | 'dueDate'>, day: CompanyDay = currentDay()): DueGroup {
-  if (t.status === 'Done') return 'done'
+  if (isClosedTaskStatus(t.status)) return 'done'
   if (!t.dueDate) return 'none'
   if (t.dueDate < day.today) return 'overdue'
   if (t.dueDate === day.today) return 'today'
@@ -115,5 +107,5 @@ export function fmtBytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`
 }
 
-/** Priority order for sorting (Urgent first). */
-export const PRIORITY_RANK: Record<TaskPriority, number> = { Urgent: 0, High: 1, Medium: 2, Low: 3 }
+/** Priority order for sorting (urgent first). */
+export const PRIORITY_RANK: Record<TaskPriority, number> = TASK_PRIORITY_RANK

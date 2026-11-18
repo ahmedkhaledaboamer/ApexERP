@@ -4,8 +4,9 @@ import type { TaskLink, TaskLinkType } from '@/modules/tasks/types'
 import { TASK_LINK_TYPES } from '@/modules/tasks/types'
 import { useLeadsQuery } from '@/modules/leads/hooks/useLeads'
 import { useCustomersQuery } from '@/modules/crm/hooks/useCrm'
-import { useProjectsQuery } from '@/modules/tasks/hooks/useTasks'
-import { EVENTS_ENABLED } from '@/shared/lib/features'
+import { useEventsEnabled } from '@/modules/events/hooks/useEventsEnabled'
+import { useEventsQuery } from '@/modules/events/hooks/useEvents'
+import { EVENT_STATUS_LABEL } from '@/modules/events/types'
 import { cn } from '@/shared/lib/utils'
 import { SelectInput, TextInput } from '@/shared/components/form/Field'
 import { LINK_LABEL } from './taskMeta'
@@ -21,7 +22,7 @@ export interface LinkOption {
 export function useLinkOptions(type: TaskLinkType | '') {
   const leads = useLeadsQuery()
   const customers = useCustomersQuery()
-  const projects = useProjectsQuery()
+  const events = useEventsQuery({}, { enabled: type === 'event' })
   return useMemo(() => {
     if (type === 'lead') {
       return { options: (leads.data ?? []).map((l) => ({ id: l.id, label: l.company, hint: l.status })), loading: leads.isPending && leads.fetchStatus !== 'idle' }
@@ -29,11 +30,14 @@ export function useLinkOptions(type: TaskLinkType | '') {
     if (type === 'customer') {
       return { options: (customers.data ?? []).map((c) => ({ id: c.id, label: c.name, hint: c.status })), loading: customers.isPending && customers.fetchStatus !== 'idle' }
     }
-    if (type === 'project') {
-      return { options: (projects.data ?? []).map((p) => ({ id: p.id, label: p.name, hint: p.customerName })), loading: projects.isPending && projects.fetchStatus !== 'idle' }
+    if (type === 'event') {
+      return {
+        options: (events.data ?? []).filter((e) => e.status !== 'cancelled').map((e) => ({ id: e.id, label: e.name, hint: `${e.startDate} · ${EVENT_STATUS_LABEL[e.status]}` })),
+        loading: events.isPending && events.fetchStatus !== 'idle',
+      }
     }
     return { options: [] as LinkOption[], loading: false }
-  }, [type, leads.data, leads.isPending, leads.fetchStatus, customers.data, customers.isPending, customers.fetchStatus, projects.data, projects.isPending, projects.fetchStatus])
+  }, [type, leads.data, leads.isPending, leads.fetchStatus, customers.data, customers.isPending, customers.fetchStatus, events.data, events.isPending, events.fetchStatus])
 }
 
 interface LinkPickerProps {
@@ -46,10 +50,11 @@ interface LinkPickerProps {
   idPrefix?: string
 }
 
-/** Polymorphic link: type + record search. Events show but stay disabled until the module exists. */
+/** Polymorphic link: type + record search. Events need the Events module in the plan (disabled otherwise). */
 export function LinkPicker({ value, onChange, currentLabel, disabled, invalid, idPrefix }: LinkPickerProps) {
   const autoId = useId()
   const base = idPrefix ?? autoId
+  const eventsOn = useEventsEnabled()
   const [type, setType] = useState<TaskLinkType | ''>(value?.type ?? '')
   const shownType = value?.type ?? type
   const { options, loading } = useLinkOptions(shownType)
@@ -87,9 +92,9 @@ export function LinkPicker({ value, onChange, currentLabel, disabled, invalid, i
       >
         <option value="">No link</option>
         {TASK_LINK_TYPES.map((t) => (
-          <option key={t} value={t} disabled={t === 'event' && !EVENTS_ENABLED && value?.type !== 'event'}>
+          <option key={t} value={t} disabled={t === 'event' && !eventsOn && value?.type !== 'event'}>
             {LINK_LABEL[t]}
-            {t === 'event' && !EVENTS_ENABLED ? ' (coming soon)' : ''}
+            {t === 'event' && !eventsOn ? ' (not in your plan)' : ''}
           </option>
         ))}
       </SelectInput>
@@ -103,7 +108,7 @@ export function LinkPicker({ value, onChange, currentLabel, disabled, invalid, i
         >
           {shownType && <LinkTypeIcon type={shownType} className="text-muted" />}
           <span className="min-w-0 flex-1 truncate">{selected.label}</span>
-          {value?.type === 'event' && !EVENTS_ENABLED && <span className="text-xs text-subtle">inactive</span>}
+          {value?.type === 'event' && !eventsOn && <span className="text-xs text-subtle">inactive</span>}
           {!disabled && (
             <button type="button" aria-label="Remove link" onClick={() => onChange(null)} className="rounded p-0.5 text-subtle hover:text-ink">
               <X className="size-3.5" />
@@ -120,9 +125,9 @@ export function LinkPicker({ value, onChange, currentLabel, disabled, invalid, i
             aria-controls={listId}
             aria-autocomplete="list"
             invalid={invalid}
-            disabled={disabled || !shownType || shownType === 'event'}
+            disabled={disabled || !shownType || (shownType === 'event' && !eventsOn)}
             placeholder={
-              !shownType ? 'Pick a type first' : shownType === 'event' ? 'Events aren’t enabled yet' : loading ? 'Loading…' : `Search ${LINK_LABEL[shownType].toLowerCase()}s`
+              !shownType ? 'Pick a type first' : shownType === 'event' && !eventsOn ? 'Events isn’t in your plan' : loading ? 'Loading…' : `Search ${LINK_LABEL[shownType].toLowerCase()}s`
             }
             value={q}
             onFocus={() => setOpen(true)}
@@ -148,7 +153,7 @@ export function LinkPicker({ value, onChange, currentLabel, disabled, invalid, i
               }
             }}
           />
-          {open && shownType && shownType !== 'event' && (
+          {open && shownType && (shownType !== 'event' || eventsOn) && (
             <ul
               id={listId}
               role="listbox"

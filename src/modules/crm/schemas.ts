@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { isMobile, mobileError } from '@/shared/lib/phone'
 import { getRegion } from '@/shared/lib/region'
+import { CUSTOMER_STATUSES } from '@/shared/domain/enums'
 
 const optionalEmail = z
   .string()
@@ -45,7 +46,7 @@ export const contractSchema = z
 export type ContractValues = z.infer<typeof contractSchema>
 
 export const customerSchema = z.object({
-  status: z.enum(['Active', 'Paused', 'VIP']),
+  status: z.enum(CUSTOMER_STATUSES),
   website: z
     .string()
     .trim()

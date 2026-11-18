@@ -1,8 +1,9 @@
 import { useMemo } from 'react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { Hourglass, Users } from 'lucide-react'
-import { cn } from '@/shared/lib/utils'
+import { Clock, Hourglass, Users } from 'lucide-react'
+import { cn, fmtDate } from '@/shared/lib/utils'
 import { Avatar } from '@/shared/components/ui/Avatar'
+import { Badge } from '@/shared/components/ui/Badge'
 import { Card, CardBody, CardHeader } from '@/shared/components/ui/Card'
 import { EmptyState } from '@/shared/components/ui/Feedback'
 import { fmtHours, ProgressBar, TaskStatusBadge, useOpenTask, type ProjectDetail } from './projectUi'
@@ -27,20 +28,36 @@ interface PersonRow {
   logged: number
 }
 
-/** Project › Hours: estimated vs logged, per person (chart + table) and per task. */
+/**
+ * Project › Hours: estimated vs logged, per person (chart + table), per task, and the time entries
+ * themselves (time_entries: date, person, task, hours, billable). Logged = the sum of the entries
+ * (projects.actual_hours); a person's logged hours are the entries they logged.
+ */
 export function ProjectHours({ project: p }: { project: ProjectDetail }) {
   const openTask = useOpenTask()
+  const entries = useMemo(
+    () =>
+      p.tasks
+        .flatMap((t) => (t.timeEntries ?? []).map((e) => ({ ...e, taskTitle: t.title })))
+        .sort((a, b) => b.entryDate.localeCompare(a.entryDate) || b.createdAt.localeCompare(a.createdAt)),
+    [p.tasks],
+  )
   const people = useMemo(() => {
     const map = new Map<string, PersonRow>()
     for (const t of p.tasks) {
       const row = map.get(t.ownerId) ?? { name: t.ownerName, tasks: 0, estimated: 0, logged: 0 }
       row.tasks += 1
       row.estimated += t.estimatedHours
-      row.logged += t.loggedHours
       map.set(t.ownerId, row)
     }
+    for (const e of entries) {
+      const row = map.get(e.userId) ?? { name: e.userName, tasks: 0, estimated: 0, logged: 0 }
+      row.logged += e.hours
+      map.set(e.userId, row)
+    }
     return [...map.values()].sort((a, b) => b.estimated - a.estimated)
-  }, [p.tasks])
+  }, [p.tasks, entries])
+  const billable = entries.filter((e) => e.isBillable).reduce((s, e) => s + e.hours, 0)
 
   const taskEstimate = p.tasks.reduce((s, t) => s + t.estimatedHours, 0)
   const budget = p.estimatedHours || taskEstimate
@@ -58,7 +75,7 @@ export function ProjectHours({ project: p }: { project: ProjectDetail }) {
     <div className="space-y-6">
       <section aria-label="Hour totals" className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Total label="Project estimate" value={fmtHours(p.estimatedHours)} hint={`Tasks add up to ${fmtHours(taskEstimate)}`} />
-        <Total label="Logged" value={fmtHours(p.loggedHours)} hint={`${pct}% of the estimate`} alert={pct > 100} />
+        <Total label="Logged" value={fmtHours(p.loggedHours)} hint={`${pct}% of the estimate · ${fmtHours(billable)} billable`} alert={pct > 100} />
         <Total label="Remaining" value={fmtHours(Math.max(0, budget - p.loggedHours))} hint={pct > 100 ? `${fmtHours(p.loggedHours - budget)} over` : 'to the estimate'} />
       </section>
 
@@ -172,6 +189,40 @@ export function ProjectHours({ project: p }: { project: ProjectDetail }) {
             </tfoot>
           </table>
         </div>
+      </Card>
+
+      <Card>
+        <CardHeader title="Time entries" icon={<Clock />} description="Hours logged on the project’s tasks, newest first" />
+        {entries.length === 0 ? (
+          <p className="px-5 pb-5 text-[0.8125rem] text-muted">No hours logged yet. Log them from a task’s Time tab.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[40rem] text-[0.8125rem]" aria-label="Time entries">
+              <thead>
+                <tr className="border-y border-line text-xs text-muted">
+                  <th className="px-5 py-2 text-start font-medium">Date</th>
+                  <th className="px-3 py-2 text-start font-medium">Person</th>
+                  <th className="px-3 py-2 text-start font-medium">Task</th>
+                  <th className="px-3 py-2 text-start font-medium">Description</th>
+                  <th className="px-3 py-2 text-end font-medium">Hours</th>
+                  <th className="px-5 py-2 text-start font-medium">Billable</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {entries.map((e) => (
+                  <tr key={e.id} className="cursor-pointer hover:bg-hover/60" onClick={() => e.taskId && openTask(e.taskId)}>
+                    <td className="num px-5 py-2 whitespace-nowrap text-ink-2">{fmtDate(e.entryDate, 'd MMM yyyy')}</td>
+                    <td className="px-3 py-2 text-ink-2">{e.userName}</td>
+                    <td className="max-w-[16rem] truncate px-3 py-2 text-ink">{e.taskTitle}</td>
+                    <td className="max-w-[16rem] truncate px-3 py-2 text-muted">{e.description ?? '—'}</td>
+                    <td className="num px-3 py-2 text-end text-ink">{fmtHours(e.hours)}</td>
+                    <td className="px-5 py-2">{e.isBillable ? <Badge tone="green">Billable</Badge> : <span className="text-subtle">—</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Card>
     </div>
   )

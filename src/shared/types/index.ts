@@ -74,6 +74,8 @@ export interface Lead {
   lossReason: string
   /** Set once a Won lead has been converted into a customer. */
   customerId: string | null
+  /** leads.won_at: when the Won flow converted the lead (null / absent until then). */
+  wonAt?: string | null
   /** What the company itself offers, as tags (instead of a long free-text field). */
   companyServices: string[]
   /** Catalog services of interest (service ids). */
@@ -87,11 +89,17 @@ export interface Lead {
   recommendedServiceText: string | null
   /** Automatic interest score, 0 to 100. */
   score: number
+  /** leads.event_id: the event the lead registered at (Events module; source "Event"). */
+  eventId?: string | null
+  /** leads.campaign_id: the marketing campaign the lead came from (cost per lead); null = none. */
+  campaignId?: string | null
 }
 
 export interface Contact {
   id: string
   leadId: string
+  /** contacts.customer_id: set when the lead is won (the contact keeps leadId; nothing is copied). */
+  customerId?: string | null
   name: string
   title: string
   mobile: string
@@ -147,7 +155,8 @@ export interface Customer {
   /** Street / building / area; '' until someone fills it in. */
   address: string
   emirate: 'Dubai' | 'Abu Dhabi' | 'Sharjah' | 'Ajman' | 'Umm Al Quwain' | 'Ras Al Khaimah' | 'Fujairah' | ''
-  status: 'Active' | 'Paused' | 'VIP'
+  /** customers.status: active | paused | vip | churned (labels in shared/domain/enums.ts). */
+  status: import('@/shared/domain/enums').CustomerStatus
   /** Deal value (AED) of the Won lead at conversion. */
   wonValue: number
   /** When the lead was won. */
@@ -241,8 +250,10 @@ export interface DashboardSummary {
       title: string
       /** yyyy-MM-dd or null. */
       dueDate: string | null
-      priority: 'Low' | 'Medium' | 'High' | 'Urgent'
-      status: 'To do' | 'In progress' | 'Blocked' | 'Done'
+      priority: import('@/modules/tasks/enums').TaskPriority
+      status: import('@/modules/tasks/enums').TaskStatus
+      /** tasks.blocked_at is set. */
+      blocked?: boolean
       overdue: boolean
       /** Linked record (project / lead / customer / event) label, if any. */
       linkLabel: string | null

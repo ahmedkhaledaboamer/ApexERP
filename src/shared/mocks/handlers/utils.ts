@@ -122,3 +122,16 @@ export async function respond<T>(run: () => Promise<T> | T): Promise<Response> {
     throw error
   }
 }
+
+/**
+ * Like `respond`, but serializes the result to the API's snake_case shape with a resource mapper
+ * (shared/api/mapping.ts). Error envelopes are not mapped.
+ */
+export function respondAs<T>(mapper: { toApi(value: never): unknown }, run: () => Promise<T> | T): Promise<Response> {
+  return respond(async () => mapper.toApi((await run()) as never))
+}
+
+/** Parses a JSON request body from the API's snake_case shape into the UI / service shape. */
+export async function bodyAs<T>(request: Request, mapper: { fromApi(value: unknown): unknown }): Promise<T> {
+  return mapper.fromApi(await request.json()) as T
+}

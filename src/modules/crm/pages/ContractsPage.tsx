@@ -8,7 +8,15 @@ import type { Scope } from '@/shared/types'
 import { customerPath } from '@/app/paths'
 import { useContractsQuery, useUpdateContract } from '@/modules/crm/hooks/useCrm'
 import type { ContractRow } from '@/modules/crm/types'
-import { BILLINGS, BILLING_SUFFIX, CONTRACT_STATUSES, CONTRACT_STATUS_TONE } from '@/modules/crm/constants'
+import {
+  BILLINGS,
+  BILLING_SUFFIX,
+  CONTRACT_DISPLAY_ORDER,
+  CONTRACT_FILTER_STATUSES,
+  CONTRACT_STATUS_LABEL,
+  CONTRACT_STATUS_TONE,
+  contractDisplayStatus,
+} from '@/modules/crm/constants'
 import { ContractStatusBadge, RenewsIn } from '@/modules/crm/components/CrmBadges'
 import { ContractDrawer } from '@/modules/crm/components/ContractDrawer'
 import { useCurrentUser } from '@/store/hooks'
@@ -71,7 +79,7 @@ function ContractsList({ scope, canEdit }: { scope: Scope; canEdit: boolean }) {
   const filtered = table.getState().columnFilters.length > 0 || !!search
 
   function showRenewals() {
-    table.getColumn('status')?.setFilterValue(['Expiring'])
+    table.getColumn('status')?.setFilterValue(['expiring'])
   }
 
   return (
@@ -175,12 +183,12 @@ function Kpis({ rows, loading, onRenewals }: { rows: ContractRow[] | undefined; 
       </section>
     )
   }
-  const live = rows.filter((r) => r.status === 'Active' || r.status === 'Expiring')
+  const live = rows.filter((r) => r.status === 'active')
   const activeValue = live.reduce((s, r) => s + r.annualValue, 0)
   const mrr = rows.reduce((s, r) => s + r.mrr, 0)
-  const renewing = rows.filter((r) => r.status === 'Expiring')
+  const renewing = rows.filter((r) => contractDisplayStatus(r) === 'expiring')
   const renewingValue = renewing.reduce((s, r) => s + r.annualValue, 0)
-  const expired = rows.filter((r) => r.status === 'Expired').length
+  const expired = rows.filter((r) => r.status === 'expired').length
 
   return (
     <section aria-label="Contract figures" className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
@@ -234,11 +242,11 @@ function Facets({ table, data }: { table: Table<ContractRow>; data: ContractRow[
       {facet(
         'status',
         'Status',
-        CONTRACT_STATUSES.map((s) => ({
+        CONTRACT_DISPLAY_ORDER.filter((s) => CONTRACT_FILTER_STATUSES.includes(s) || data.some((r) => contractDisplayStatus(r) === s)).map((s) => ({
           value: s,
-          label: s,
+          label: CONTRACT_STATUS_LABEL[s],
           icon: <span className={`size-2 rounded-full ${DOT[CONTRACT_STATUS_TONE[s]]}`} aria-hidden />,
-          count: count((r) => r.status === s),
+          count: count((r) => contractDisplayStatus(r) === s),
         })),
       )}
       {facet('billing', 'Billing', BILLINGS.map((b) => ({ value: b, label: b, count: count((r) => r.billing === b) })))}
@@ -265,7 +273,7 @@ function buildColumns(canEdit: boolean, onEdit: (c: ContractRow) => void) {
       enableHiding: false,
       meta: { width: 280 },
       cell: ({ row }) => (
-        <div className={cn('min-w-0', row.original.status === 'Cancelled' && 'opacity-70')}>
+        <div className={cn('min-w-0', row.original.status === 'cancelled' && 'opacity-70')}>
           <p className="truncate font-medium text-ink">{row.original.title}</p>
           <p className="truncate text-xs text-muted" title={row.original.serviceNames.join(', ')}>
             <span className="font-mono">{row.original.id}</span> · {row.original.serviceNames.join(', ')}
@@ -286,10 +294,12 @@ function buildColumns(canEdit: boolean, onEdit: (c: ContractRow) => void) {
         </Link>
       ),
     }),
-    col.accessor('status', {
+    // Display status: the stored status, or "expiring" inside the renewal alert window.
+    col.accessor((r) => contractDisplayStatus(r), {
+      id: 'status',
       header: 'Status',
       filterFn: inSet,
-      sortingFn: (a, b) => CONTRACT_STATUSES.indexOf(a.original.status) - CONTRACT_STATUSES.indexOf(b.original.status),
+      sortingFn: (a, b) => CONTRACT_DISPLAY_ORDER.indexOf(contractDisplayStatus(a.original)) - CONTRACT_DISPLAY_ORDER.indexOf(contractDisplayStatus(b.original)),
       cell: ({ getValue }) => <ContractStatusBadge status={getValue()} />,
     }),
     col.accessor('billing', {
@@ -312,7 +322,7 @@ function buildColumns(canEdit: boolean, onEdit: (c: ContractRow) => void) {
       header: 'Renews in',
       cell: ({ row }) => {
         const k = row.original
-        const soon = k.status === 'Expiring'
+        const soon = contractDisplayStatus(k) === 'expiring'
         return (
           <span
             className={cn(
@@ -320,7 +330,7 @@ function buildColumns(canEdit: boolean, onEdit: (c: ContractRow) => void) {
               soon && 'bg-warning-50 ring-1 ring-warning-100 ring-inset dark:bg-warning-500/10 dark:ring-warning-500/20',
             )}
           >
-            <RenewsIn days={k.daysToRenewal} cancelled={k.status === 'Cancelled'} className="text-[0.8125rem]" />
+            <RenewsIn days={k.daysToRenewal} cancelled={k.status === 'cancelled'} className="text-[0.8125rem]" />
             <span className="num text-xs text-muted">{fmtDate(k.renewalDate)}</span>
           </span>
         )
@@ -362,7 +372,7 @@ function nextTerm(k: ContractRow): string {
 function RowActions({ contract: k, onEdit }: { contract: ContractRow; onEdit: () => void }) {
   const update = useUpdateContract()
   const toast = useToast()
-  const cancelled = k.status === 'Cancelled'
+  const cancelled = k.status === 'cancelled'
 
   function patch(input: Parameters<typeof update.mutate>[0]['input'], done: string) {
     update.mutate(
@@ -414,7 +424,7 @@ function RowActions({ contract: k, onEdit }: { contract: ContractRow; onEdit: ()
                 icon={<RotateCcw />}
                 onSelect={() => {
                   close()
-                  patch({ status: 'Active' }, 'Contract reinstated')
+                  patch({ status: 'active' }, 'Contract reinstated')
                 }}
               >
                 Reinstate
@@ -425,7 +435,7 @@ function RowActions({ contract: k, onEdit }: { contract: ContractRow; onEdit: ()
                 icon={<Ban />}
                 onSelect={() => {
                   close()
-                  patch({ status: 'Cancelled' }, 'Contract cancelled')
+                  patch({ status: 'cancelled' }, 'Contract cancelled')
                 }}
               >
                 Cancel contract

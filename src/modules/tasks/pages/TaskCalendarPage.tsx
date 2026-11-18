@@ -17,6 +17,7 @@ import {
 import { DndContext, DragOverlay, MouseSensor, TouchSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { CalendarDays, CalendarX2, ChevronLeft, ChevronRight, Lock } from 'lucide-react'
 import type { TaskView } from '@/modules/tasks/types'
+import { TASK_PRIORITY_LABEL, TASK_STATUS_LABEL } from '@/modules/tasks/types'
 import { useMoveTask, useTasksQuery } from '@/modules/tasks/hooks/useTasks'
 import { useRegion } from '@/modules/tenancy/hooks'
 import { companyDay } from '@/shared/lib/companyDay'
@@ -89,8 +90,10 @@ export default function TaskCalendarPage() {
     const map = new Map<string, TaskView[]>()
     const none: TaskView[] = []
     for (const t of seen.values()) {
+      // Cancelled tasks stay off the calendar.
+      if (t.status === 'cancelled') continue
       if (!t.dueDate) {
-        if (t.status !== 'Done') none.push(t)
+        if (t.status !== 'done') none.push(t)
         continue
       }
       if (t.dueDate < range.from || t.dueDate > range.to) continue
@@ -98,7 +101,7 @@ export default function TaskCalendarPage() {
       list.push(t)
       map.set(t.dueDate, list)
     }
-    for (const list of map.values()) list.sort((a, b) => Number(a.status === 'Done') - Number(b.status === 'Done') || PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority])
+    for (const list of map.values()) list.sort((a, b) => Number(a.status === 'done') - Number(b.status === 'done') || PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority])
     none.sort((a, b) => PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority])
     return { byDay: map, noDate: none }
   }, [dated.data, all.data, range.from, range.to])
@@ -382,12 +385,12 @@ function ChipFace({ task, compact, lifted }: { task: TaskView; compact?: boolean
         'flex min-w-0 items-center gap-1 rounded-md px-1.5 ring-1 ring-inset',
         compact ? 'h-6 text-[0.6875rem]' : 'h-7 text-xs',
         PRIORITY_CHIP[task.priority],
-        task.status === 'Done' && 'opacity-60',
+        task.status === 'done' && 'opacity-60',
         lifted && 'shadow-pop',
       )}
     >
       <StatusIcon status={task.status} className="size-3" />
-      <span className={cn('truncate font-medium', task.status === 'Done' && 'line-through')}>{task.title}</span>
+      <span className={cn('truncate font-medium', task.status === 'done' && 'line-through')}>{task.title}</span>
       {task.overdue && <span className="sr-only">(overdue)</span>}
     </span>
   )
@@ -416,8 +419,8 @@ function CalendarChip({
       {...listeners}
       role="button"
       tabIndex={0}
-      aria-label={`${task.title}, ${task.priority} priority, ${task.status}${task.overdue ? ', overdue' : ''}${locked ? ', view only' : ''}`}
-      title={`${task.title} · ${task.priority} · ${task.ownerName}`}
+      aria-label={`${task.title}, ${TASK_PRIORITY_LABEL[task.priority]} priority, ${TASK_STATUS_LABEL[task.status]}${task.blocked ? ', blocked' : ''}${task.overdue ? ', overdue' : ''}${locked ? ', view only' : ''}`}
+      title={`${task.title} · ${TASK_PRIORITY_LABEL[task.priority]} · ${task.ownerName}${task.blocked ? ' · Blocked' : ''}`}
       onClick={() => onOpen(task.id)}
       onKeyDown={(e) => onKeyDown(e, task)}
       className={cn(

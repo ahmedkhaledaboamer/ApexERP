@@ -39,6 +39,12 @@ export const PATHS = {
   serviceDetail: '/services/:id',
   servicePackages: '/services/packages',
   serviceTemplates: '/services/templates',
+  /** Events module (plan module `events`). */
+  events: '/events',
+  eventCalendar: '/events/calendar',
+  eventDetail: '/events/:id',
+  /** Public registration page of an event (no sign-in, no workspace). */
+  publicEvent: '/e/:token',
   /** Platform console: outside any workspace (TenantProvider exempts /platform). */
   platform: '/platform',
   platformLogin: '/platform/login',
@@ -78,4 +84,11 @@ export function newQuotationPath(opts: { leadId?: string; customerId?: string } 
   if (opts.customerId) q.set('customerId', opts.customerId)
   const s = q.toString()
   return s ? `/sales/quotations/new?${s}` : '/sales/quotations/new'
+}
+export function eventPath(id: string, tab?: string): string {
+  return tab ? `/events/${enc(id)}?tab=${enc(tab)}` : `/events/${enc(id)}`
+}
+/** The public registration page of an event (its registration token). */
+export function publicEventPath(token: string): string {
+  return `/e/${enc(token)}`
 }

@@ -27,5 +27,5 @@ export const SYSTEM_STATUS = {
 export function movesToProposal(status: (key: string) => StatusOption, key: string): boolean {
   const proposal = status(SYSTEM_STATUS.proposal)
   const current = status(key)
-  return proposal.active && current.kind === 'open' && current.order < proposal.order
+  return proposal.active && current.type === 'open' && current.order < proposal.order
 }

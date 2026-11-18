@@ -9,7 +9,7 @@ import { PATHS } from '@/app/paths'
 import { ModuleNotIncluded } from '@/modules/tenancy/components/ModuleNotIncluded'
 import { itemPlanModule, routeDecision } from '@/modules/billing/gating'
 import { useGateContext } from '@/modules/billing/hooks'
-import { GateSkeleton } from '@/modules/billing/components/ModuleGate'
+import { GateSkeleton, ModuleGate } from '@/modules/billing/components/ModuleGate'
 
 import LoginPage from '@/modules/auth/pages/LoginPage'
 import DashboardPage from '@/modules/dashboard/pages/DashboardPage'
@@ -27,6 +27,7 @@ import ContractsPage from '@/modules/crm/pages/ContractsPage'
 import QuotationsPage from '@/modules/quotations/pages/QuotationsPage'
 import QuotationEditorPage from '@/modules/quotations/pages/QuotationEditorPage'
 import SalesReportsPage from '@/modules/reports/pages/SalesReportsPage'
+import { MARKETING_PATHS } from '@/modules/marketing/paths'
 import MyAccountPage from '@/modules/account/pages/MyAccountPage'
 import MyTasksPage from '@/modules/tasks/pages/MyTasksPage'
 import TaskBoardPage from '@/modules/tasks/pages/TaskBoardPage'
@@ -58,6 +59,17 @@ import AuditLogPage from '@/modules/settings/pages/AuditLogPage'
 
 /** Super-Admin Console: its own chunk (and its own layout), never part of the company bundle. */
 const PlatformApp = lazy(() => import('@/modules/platform/PlatformApp'))
+// Marketing (plan module `marketing`, Phase 2): loaded on first visit.
+const CampaignsPage = lazy(() => import('@/modules/marketing/pages/CampaignsPage'))
+const CampaignDetailPage = lazy(() => import('@/modules/marketing/pages/CampaignDetailPage'))
+const BulkEmailsPage = lazy(() => import('@/modules/marketing/pages/BulkEmailsPage'))
+const BulkEmailPage = lazy(() => import('@/modules/marketing/pages/BulkEmailPage'))
+const MarketingReportsPage = lazy(() => import('@/modules/reports/pages/MarketingReportsPage'))
+// Events (plan module `events`, Phase 2): loaded on first visit. The public registration page needs no sign-in.
+const EventsListPage = lazy(() => import('@/modules/events/pages/EventsListPage'))
+const EventsCalendarPage = lazy(() => import('@/modules/events/pages/EventsCalendarPage'))
+const EventDetailPage = lazy(() => import('@/modules/events/pages/EventDetailPage'))
+const PublicRegistrationPage = lazy(() => import('@/modules/events/pages/PublicRegistrationPage'))
 
 /** Every module's routes, behind the session guard and (per route) a permission guard. */
 export function AppRouter() {
@@ -65,9 +77,28 @@ export function AppRouter() {
   const servicesGuard = (page: ReactNode) => <RequirePermission module="services">{page}</RequirePermission>
   const deptGuard = (page: ReactNode) => <RequirePermission module="departments">{page}</RequirePermission>
   const tasksGuard = (page: ReactNode) => <RequirePermission module="tasks">{page}</RequirePermission>
+  const marketing = (page: ReactNode) => (
+    <RequirePermission module="marketing">
+      <Suspense fallback={<GateSkeleton />}>{page}</Suspense>
+    </RequirePermission>
+  )
+  // Events: plan-gated (upgrade page without the module); access inside follows the marketing column + event teams.
+  const eventsGuard = (page: ReactNode) => (
+    <ModuleGate module="events">
+      <Suspense fallback={<GateSkeleton />}>{page}</Suspense>
+    </ModuleGate>
+  )
   return (
     <Routes>
       <Route path={PATHS.index} element={<IndexRedirect />} />
+      <Route
+        path={PATHS.publicEvent}
+        element={
+          <Suspense fallback={<div className="grid h-full place-items-center text-[0.8125rem] text-muted">Loading…</div>}>
+            <PublicRegistrationPage />
+          </Suspense>
+        }
+      />
       <Route path={PATHS.login} element={<LoginPage />} />
       <Route path={PATHS.signup} element={<SignupPage />} />
       <Route path={PATHS.workspaceLogin} element={<WorkspaceLoginPage />} />
@@ -111,6 +142,16 @@ export function AppRouter() {
         <Route path={PATHS.quotationDetail} element={sales(<QuotationEditorPage />)} />
 
         <Route path={PATHS.salesTargets} element={sales(<SalesTargetsPage />)} />
+
+        <Route path={MARKETING_PATHS.campaigns} element={marketing(<CampaignsPage />)} />
+        <Route path={MARKETING_PATHS.campaignDetail} element={marketing(<CampaignDetailPage />)} />
+        <Route path={MARKETING_PATHS.emails} element={marketing(<BulkEmailsPage />)} />
+        <Route path={MARKETING_PATHS.emailDetail} element={marketing(<BulkEmailPage />)} />
+        <Route path={MARKETING_PATHS.reports} element={marketing(<MarketingReportsPage />)} />
+
+        <Route path={PATHS.events} element={eventsGuard(<EventsListPage />)} />
+        <Route path={PATHS.eventCalendar} element={eventsGuard(<EventsCalendarPage />)} />
+        <Route path={PATHS.eventDetail} element={eventsGuard(<EventDetailPage />)} />
         <Route
           path={PATHS.salesReports}
           element={

@@ -34,6 +34,7 @@ import { KanbanBoard, KanbanCard, type KanbanColumn } from '@/shared/components/
 import { useRegion } from '@/modules/tenancy/hooks'
 import { useReadOnly, useReadOnlyHint } from '@/shared/lib/readOnly'
 import { getRegion } from '@/shared/lib/region'
+import { isParkedType } from '@/shared/domain/leadStatus'
 
 /**
  * Columns = the active statuses in their configured order (Cold shows as a parked column), plus
@@ -48,7 +49,7 @@ function columnsFor(lookups: LookupsApi, leads: LeadRow[]): KanbanColumn<LeadSta
     id: s.key,
     label: s.active ? s.label : `${s.label} (inactive)`,
     tone: s.tone,
-    meta: s.kind === 'parked' ? 'Parked' : `${s.probability}%`,
+    meta: isParkedType(s.type) ? 'Parked' : `${s.probability}%`,
   }))
 }
 

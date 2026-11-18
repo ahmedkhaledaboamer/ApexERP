@@ -152,19 +152,40 @@ directions between two companies:
   `5xx` server error (retried once). Some errors carry extra fields next to `message` and `code` (e.g. `limit`, `current`,
   `max`, `planId`); the client keeps the whole body on the error as `details`.
 - **Dates:** ISO-8601 strings (`2026-11-17T09:00:00.000Z`); date-only fields are `yyyy-MM-dd`,
-  months are `yyyy-MM`. Money is in the company currency (`tenant.regional.currency`; AED for Apex Aora).
+  months are `yyyy-MM`. A lead's `next_follow_up_date` is a **company-local calendar date** (`yyyy-MM-dd`,
+  never a datetime): "today", "overdue" and "+N days" use the company's timezone (Settings › Company ›
+  Regional) at the server's clock; a datetime there is refused (`422`). Money is in the company currency (`tenant.regional.currency`; AED for Apex Aora).
 - **IDs:** strings.
 - **Scope:** unless noted, Sales/CRM endpoints are scoped by the caller's `sales` permission
   (own / team / full); a hidden scope gets `403`. Writes need `edit` (or `create`) on `sales`.
+- **Wire format (database column names):** every company endpoint except auth / tenant / account / alerts and the
+  platform console speaks the "Apex Aora ERP Database Design" columns in snake_case: leads (contacts, activities,
+  notes, stage moves, duplicates, owners, import), contacts, lookups, customers, contracts, quotations, the Won flow,
+  messages, services / packages / project templates, tasks, projects, departments, settings users, roles, security,
+  audit log, message templates, targets, automation rules, report schedules, reports, dashboard, company profile,
+  branding, onboarding, email connection, announcements, billing and public sign-up. The client maps them to its
+  camelCase types in one layer (`src/shared/api/mapping.ts`, mappers in `src/shared/api/mappers.ts`). Field tables:
+  `docs/DB-ALIGNMENT.md` (leads, contacts, lookups) and `docs/DB-ALIGNMENT.md` (everything
+  else, incl. opaque map-valued fields and the fields with no design column). **The camelCase names in the tables
+  below are the UI names; on the wire each is the snake_case / design column given there** (e.g. `validUntil` →
+  `valid_until`, a customer's `ownerId` → `account_manager_id`). Query parameters are snake_case too (`lead_id`,
+  `owner_id`, `include_done`, `include_inactive`, `related_type`…). Not converted (camelCase): `/auth/*`, `/tenant`,
+  `/users`, `/account*`, `/alerts*`, `/public/workspaces/:subdomain`, the sign-up completion session, `/platform/*`
+  and `/dev/*`. Error bodies are never mapped.
+- **Status enums:** values on the wire are lower-case snake values, labels are display-only
+  (`src/shared/domain/enums.ts`): customer `active|paused|vip|churned`; quotation
+  `draft|sent|viewed|accepted|rejected|expired`; contract `draft|active|expired|cancelled|renewed`;
+  lead status `type` `open|won|lost|cold|parked`. Anything else → `422`.
 - **Lookup keys:** lead `status`, `sourceType`, `industry`, `subIndustry` and `lossReason` (and the
   customer copies of industry/source) are **keys of the fixed lists** (`GET /lookups`), never free
   text. The server validates them on create / update / import and answers `422` when a value isn't
   an **active** list item; an unchanged value on an existing record is accepted even if it has
   since been deactivated. Labels are display-only; clients look them up by key. Built-in status
   keys are stable (`New`, `Contacted`, `No response`, `Call later`, `Interested`, `Meeting`,
-  `Proposal`, `Cold`, `Won`, `Lost`, `Not interested`); open/closed logic uses the status `kind`
-  (`open`, `parked`, `won`, `lost`), forecasts use its `probability`, and stage moves enforce its
-  `requires`. `sourceType` (list key) and `sourceDetail` (free text: link or name) are separate fields.
+  `Proposal`, `Cold`, `Won`, `Lost`, `Not interested`); open/closed logic uses the status `type`
+  (`open`, `won`, `lost`, `cold`, `parked`; everything but `open` is out of the pipeline), forecasts use its
+  `probability`, and stage moves enforce its `requires_next_step` / `requires_loss_reason` flags. On the wire
+  (leads) these fields are `status_id`, `source_id`, `industry_id`, `sub_industry_id`, `loss_reason_id`. `sourceType` (list key) and `sourceDetail` (free text: link or name) are separate fields.
 
 ## Auth
 
@@ -182,32 +203,35 @@ Every authenticated request from a deactivated user gets `401`, even with a toke
 
 | Method | Path | Body / query | Returns | Rules |
 |---|---|---|---|---|
-| GET | `/leads` | | `LeadRow[]` | Scoped. `403` if hidden. Each row has `reopenEligible: boolean`: true for a lead whose status kind is `lost` and whose `stageChangedAt` is at least `lostReopenDays` ago (Settings > Automation). |
-| POST | `/leads` | `QuickAddInput` or `LeadCreateInput` (contacts[], website, sourceDetail, subIndustry, ownerId, value, nextFollowUpDate, nextStep, companyServices, serviceIds, recommendedServiceId, doNotContact, note, force) | `LeadRow` | Status always the first open status (`New`). Owner auto-assigned to the least-loaded Sales Agent unless a manager (sales scope full/team) picks one. Lists validated against the **active** lookups (source, industry, sub-industry belongs to industry; `422`), mobile valid for the company country, email format, ≥1 named contact. `serviceIds` / `recommendedServiceId` must be **active** catalog service ids (`422`); never free text. `409` on duplicate (within the company only); `force` only for managers (else `403`). `note` becomes a Note. |
-| GET | `/leads/duplicates` | `?company=&email=&emails=a,b&website=&excludeId=` | `DuplicateMatch[]` (reason `company`/`domain`/`email`) | Checks **all** leads, not just the caller's scope. Company names normalized (drop LLC, FZE…). Domain from website/email; free-mail domains (gmail, outlook, hotmail, yahoo, icloud, live…) ignored. |
-| GET | `/leads/owners` | | `LeadOwnerOption[]` `{id,name,title,role,openLeads}` | Needs sales create. Full: everyone who sells; team: the team; own: only the caller. Deactivated users are never listed, auto-assigned or accepted as owner (`422`). |
-| GET | `/leads/:id` | | `LeadDetail` (+ `website`) | `404` / `403` outside scope. |
-| PATCH | `/leads/:id` | `LeadUpdateInput` + `contacts[]` (replaces all), `website`, `doNotContact`, `force` | `LeadRow` | Changed source/industry/sub-industry must be active lookup items (`422`). `serviceIds` (replaces the list) and `recommendedServiceId`: ids not already on the lead must be **active** catalog services (`422`); unchanged, since-deactivated ids are accepted. Setting a non-null `recommendedServiceId` clears `recommendedServiceText` (the legacy unmatched text); omitting it or sending `null` leaves the text alone. Owner change: own scope `403`, team only within team. Duplicate rule re-runs when name/website/emails change (`409` / `force`). First contact becomes primary. |
-| PATCH | `/leads/:id/stage` | `{ status, lossReason?, nextStep?, nextFollowUpDate? }` | `LeadRow` | `status` must be an active status (`422`). What the move needs comes from the status's `requires`: `loss-reason` → `lossReason` = an active loss-reason key, optionally followed by ` — details`; `next-step` → `nextStep` + `nextFollowUpDate`; a Won-flow status (kind `won` **or** `requires: 'convert'`) is refused with `409 { code: 'use_won_flow', message: "Use the Won flow…" }`: only `POST /leads/:id/won` wins a lead (see **The Won flow**). Sets `stageChangedAt`. Non-open kinds (won/lost/parked) clear `nextFollowUpDate`. **Automation:** moving to `No response` sets `nextFollowUpDate` = now + `noResponseFollowUpDays`; moving a closed lead back to an open status (Reopen → `New`) clears `lossReason` and sets a follow-up for tomorrow when none is given. |
-| PATCH | `/leads/:id/do-not-contact` | `{ value }` | `LeadRow` | |
-| GET | `/leads/:id/activities` | | `ActivityView[]` | Newest first. |
-| POST | `/leads/:id/activities` | `{ type, summary }` | `ActivityView` (+ optional `autoStatus {from, to, label, attempts}`) | `422` for call/email/WhatsApp when Do Not Contact. First outreach moves `New` → `Contacted`. **Automation** (outreach = call/email/WhatsApp): on a lead in `No response`, attempts are counted since it entered that status (activities after `stageChangedAt`); when attempts ≥ `attemptsBeforeCold` the lead moves to `Cold` (parked; `stageChangedAt` = now, `nextFollowUpDate` = null) and the response carries `autoStatus`; otherwise the next follow-up is pushed to now + `noResponseFollowUpDays`. |
-| GET | `/leads/:id/notes` | | `NoteView[]` | Newest first. |
+| GET | `/leads` | | `LeadRow[]` (snake_case: `id, company_name, contact_name, email, phone, industry_id, sub_industry_id, source_id, source_detail, status_id, stage_changed_at, owner_id, owner_name, estimated_value, next_follow_up_date, created_at, do_not_contact, next_step, loss_reason_id, customer_id, company_services, service_ids, recommended_service_id, recommended_service_text, score, reopen_eligible`) | Scoped. `403` if hidden. `reopen_eligible`: true for a lead whose status type is `lost` and whose `stage_changed_at` is at least `lostReopenDays` ago (Settings > Automation). |
+| POST | `/leads` | Quick add `{company_name, contact_name, phone, email, source_id, industry_id, force?}` or the full form (+ `contacts[] {name, title, mobile, email, is_decision_maker}`, `website, source_detail, sub_industry_id, owner_id, estimated_value, next_follow_up_date (yyyy-MM-dd), next_step, company_services, service_ids, recommended_service_id, do_not_contact, note`) | `LeadRow` | Status always the first open status (`New`). Owner auto-assigned to the least-loaded Sales Agent unless a manager (sales scope full/team) picks one. Lists validated against the **active** lookups (source, industry, sub-industry belongs to industry; `422`), mobile valid for the company country, email format, ≥1 named contact. `service_ids` / `recommended_service_id` must be **active** catalog service ids (`422`); never free text. `next_follow_up_date` must be `yyyy-MM-dd` (`422`); none → the company's tomorrow. `409` on duplicate (within the company only); `force` only for managers (else `403`). `note` becomes a Note. |
+| GET | `/leads/duplicates` | `?company_name=&email=&emails=a,b&website=&exclude_id=` | `DuplicateMatch[]` `{lead_id, company_name, owner_name, status_id, reason}` (reason `company`/`domain`/`email`) | Checks **all** leads, not just the caller's scope. Company names normalized (drop LLC, FZE…). Domain from website/email; free-mail domains (gmail, outlook, hotmail, yahoo, icloud, live…) ignored. |
+| GET | `/leads/owners` | | `LeadOwnerOption[]` `{id,name,title,role,open_leads}` | Needs sales create. Full: everyone who sells; team: the team; own: only the caller. Deactivated users are never listed, auto-assigned or accepted as owner (`422`). |
+| GET | `/leads/:id` | | `LeadDetail` (row + `website`, `contacts[] {id, lead_id, name, title, mobile, email, is_decision_maker}`) | `404` / `403` outside scope. |
+| PATCH | `/leads/:id` | Partial lead in snake_case (`company_name, email, phone, industry_id, sub_industry_id, source_id, source_detail, owner_id, estimated_value, next_follow_up_date, next_step, company_services, service_ids, recommended_service_id`) + `contacts[]` (replaces all), `website`, `do_not_contact`, `force` | `LeadRow` | Changed source/industry/sub-industry must be active lookup items (`422`). `serviceIds` (replaces the list) and `recommendedServiceId`: ids not already on the lead must be **active** catalog services (`422`); unchanged, since-deactivated ids are accepted. `next_follow_up_date` must be `yyyy-MM-dd` (`422`). Setting a non-null `recommended_service_id` clears `recommended_service_text` (the legacy unmatched text); omitting it or sending `null` leaves the text alone. Owner change: own scope `403`, team only within team. Duplicate rule re-runs when name/website/emails change (`409` / `force`). First contact becomes primary. |
+| PATCH | `/leads/:id/stage` | `{ status_id, loss_reason_id?, next_step?, next_follow_up_date? }` | `LeadRow` | `status_id` must be an active status (`422`). What the move needs comes from the status's flags: `requires_loss_reason` → `loss_reason_id` = an active loss-reason key, optionally followed by ` — details`; `requires_next_step` → `next_step` + `next_follow_up_date` (`yyyy-MM-dd`; a datetime is `422`); a status of type `won` is refused with `409 { code: 'use_won_flow', message: "Use the Won flow…" }`: only `POST /leads/:id/won` wins a lead (see **The Won flow**). Sets `stage_changed_at`. Non-open types (won/lost/cold/parked) clear `next_follow_up_date`. **Automation:** moving to `No response` sets `next_follow_up_date` = the company's today + `noResponseFollowUpDays`; moving a closed lead back to an open status (Reopen → `New`) clears the loss reason and sets a follow-up for the company's tomorrow when none is given. |
+| PATCH | `/leads/:id/do-not-contact` | `{ value }` | `LeadRow` (snake_case) | |
+| GET | `/leads/:id/activities` | | `ActivityView[]` `{id, lead_id, type, summary, user_id, user_name, occurred_at}` | Newest first. |
+| POST | `/leads/:id/activities` | `{ type, summary }` | `ActivityView` (+ optional `auto_status {from_status_id, to_status_id, label, attempts}`) | `422` for call/email/WhatsApp when Do Not Contact. First outreach moves `New` → `Contacted`. **Automation** (outreach = call/email/WhatsApp): on a lead in `No response`, attempts are counted since it entered that status (activities after `stageChangedAt`); when attempts ≥ `attemptsBeforeCold` the lead moves to the first active `cold` status (`Cold`; `stage_changed_at` = now, `next_follow_up_date` = null) and the response carries `auto_status`; otherwise the next follow-up is pushed to the company's today + `noResponseFollowUpDays`. |
+| GET | `/leads/:id/notes` | | `NoteView[]` `{id, lead_id, body, user_id, author_name, created_at}` | Newest first. |
 | POST | `/leads/:id/notes` | `{ body }` | `NoteView` | |
 | POST | `/leads/:id/messages` | `{ channel: 'email'\|'whatsapp', to, subject?, body, templateId? }` (final text, variables already filled) | `{ activity: ActivityView, autoStatus?, email? }`; `email: { from, subject, html }` for the email channel: `html` is the branded layout (company logo header, `renderEmailHtml`) | Needs sales edit (`403`); lead in scope (`404`/`403`). `422` for Do Not Contact (same wording as activities); `to` must be an email (email) or a mobile valid for the company country (WhatsApp); email needs a subject (≤150); body required (WhatsApp ≤1024, email ≤5000); any leftover `{{…}}` / `[unknown: …]` is rejected; `templateId` must exist and match the channel. Delivery is done by the backend (mocked here). Logs an `email`/`whatsapp` activity through the same path as `POST /activities`, so New→Contacted and No response→Cold still run. |
-| GET | `/leads/:id/tasks` | | `TaskView[]` | Soonest due first. |
-| POST | `/leads/import/check` | `{ rows: ImportLeadRow[] }` (max 5000) | `ImportCheckRow[]` `{row, errors[], warnings[], matches, fileDuplicateOf}` | Rows carry lookup keys (the wizard maps the file's free text onto the active items). Errors: missing company, source/industry/status not an active list item. Warnings: value cleared or defaulted. Rows also carry `recommendedServiceId` (catalog match of the file's "Recommended service"/"Service" column, `''` = none) and `recommendedServiceText` (the file's value when unmatched); the server re-matches the text with `matchServiceText`, accepts only **active** ids, and warns "kept as unmatched" otherwise. |
-| POST | `/leads/import` | `{ rows, decisions: Record<row,'import'\|'skip'>, ownerRule: 'file'\|'auto' }` | `ImportResult` `{created, skipped, failed:[{row,company,reason}], skippedRows, createdIds, skippedForLimit, limitReached}` | Plan limit (leads + contacts): valid rows are created while they fit, the rest are counted in `skippedForLimit` with `limitReached` (`LimitReachedDetails`). Re-checks rows in order (catches repeats inside the file). Duplicates skipped unless a manager chooses import. Agents own their imports. Missing follow-up → tomorrow; blank status → New; Lost/Not interested get "Imported from Excel (no reason recorded)". |
+| GET | `/leads/:id/tasks` | | `TaskView[]` `{id, lead_id, title, owner_id, owner_name, due_date, status, priority}` | Soonest due first. |
+| POST | `/leads/import/check` | `{ rows: ImportLeadRow[] }` (max 5000; snake_case lead columns + `row, contact_title, is_decision_maker, notes`; `next_follow_up_date` `yyyy-MM-dd`) | `ImportCheckRow[]` `{row, errors[], warnings[], matches, file_duplicate_of}` | Rows carry lookup keys (the wizard maps the file's free text onto the active items). Errors: missing company, source/industry/status not an active list item. Warnings: value cleared or defaulted. Rows also carry `recommended_service_id` (catalog match of the file's "Recommended service"/"Service" column, `''` = none) and `recommended_service_text` (the file's value when unmatched); the server re-matches the text with `matchServiceText`, accepts only **active** ids, and warns "kept as unmatched" otherwise. |
+| POST | `/leads/import` | `{ rows, decisions: Record<row,'import'\|'skip'>, owner_rule: 'file'\|'auto' }` | `ImportResult` `{imported_rows, duplicate_rows, failures:[{row,company_name,reason}], skipped_rows, created_ids, skipped_for_limit, limit_reached}` | Plan limit (leads + contacts): valid rows are created while they fit, the rest are counted in `skipped_for_limit` with `limit_reached` (`LimitReachedDetails`, same shape as the 402 body). Re-checks rows in order (catches repeats inside the file). Duplicates skipped unless a manager chooses import. Agents own their imports. Missing follow-up → tomorrow; blank status → New; Lost/Not interested get "Imported from Excel (no reason recorded)". |
 
 Register `/leads/duplicates`, `/leads/owners` and `/leads/import*` before `/leads/:id`.
 
 ## Follow-ups
 
 No endpoints of its own: the page reads `GET /leads`, logs with `POST /leads/:id/activities`
-and reschedules with `PATCH /leads/:id` (`nextFollowUpDate`). Leads whose status kind isn't
-`open` (won, lost, parked/Cold) have no follow-ups. No-contact / stalled badges come from `GET /alerts`.
+and reschedules with `PATCH /leads/:id` (`next_follow_up_date`, `yyyy-MM-dd`). Overdue / today / upcoming
+compare that date with the **company's** today (its timezone), never the browser's. Leads whose status type
+isn't `open` (won, lost, cold, parked) have no follow-ups. No-contact / stalled badges come from `GET /alerts`.
 
 ## Sales targets
+
+**Wire format:** snake_case design columns; field table in docs/DB-ALIGNMENT.md §11 (`values` / `actuals` are opaque maps keyed by metric).
 
 | Method | Path | Body | Returns | Rules |
 |---|---|---|---|---|
@@ -223,11 +247,15 @@ that kind is left out of every completion %. Register `/targets/defaults` before
 
 ## Dashboard
 
+**Wire format:** snake_case design columns; field table in docs/DB-ALIGNMENT.md §11 (deep, e.g. `total_leads`, `open_pipeline_value`, `series[].won_value`).
+
 | Method | Path | Returns |
 |---|---|---|
 | GET | `/dashboard/summary?period=30d\|quarter\|ytd\|12m` (default `12m`) | `DashboardSummary` (scoped like `/leads`). `series` buckets: daily for 30d, weekly for quarter, monthly for ytd/12m. `*Prev` = the equal-length window just before (YTD: same dates last year). Pipeline, follow-ups and targets are "as of now". Targets use the same numbers as `/targets`. Bad period → `422`. |
 
 ## Services
+
+**Wire format:** snake_case design columns; field table in docs/DB-ALIGNMENT.md §6 (`category_id`, `industry_ids`, `currency_code`, `is_active`, package `price`, template task `estimated_hours`).
 
 The catalog quotations, leads and contracts are built from (`src/modules/services/types.ts`). Services and packages are
 **deactivated, never deleted**, so old leads, quotations and contracts keep resolving their ids. `category` is a key of the
@@ -267,27 +295,35 @@ Register `/services/packages*` before `/services/:id`.
 
 ## CRM
 
-Contract status is derived: `Expiring` = renews within `renewalAlertDays` (Settings > Automation, default 30), `Expired` = renewal date passed;
-only `Active` and `Cancelled` are stored. `annualValue`: Monthly ×12, Annual/One-off as is.
+**Wire format:** snake_case design columns; field table in docs/DB-ALIGNMENT.md §1–2 (customers: `account_manager_id`, `address_line`, `city`, `customer_since`; contracts: `cycle_value`, `billing_period`).
+
+Contract `status`: `draft | active | expired | cancelled | renewed`. Stored: `active` / `cancelled` (draft and renewed are
+reserved); an active contract past its renewal date comes back `expired`. "Expiring" is not a status: rows carry
+`renewalDue: boolean` (active and renewing within `renewalAlertDays`, Settings > Automation, default 30) and the UI shows it as Expiring.
+Customer `status`: `active | paused | vip | churned`. `annualValue`: Monthly ×12, Annual/One-off as is.
 `mrr`: Monthly value, Annual / 12, One-off 0, live contracts only.
 
 | Method | Path | Body | Returns | Rules |
 |---|---|---|---|---|
-| GET | `/customers` | | `CustomerRow[]` (+ ownerName, contactsCount, activeContractValue, activeContracts, nextRenewal, daysToRenewal, lastActivityAt) | Newest first. |
-| GET | `/customers/:id` | | `CustomerDetail` (+ lead summary, contacts, contracts, last 10 activities, notes, lifetimeValue) | lifetimeValue = billed to date, or won value without contracts. |
-| PATCH | `/customers/:id` | `{status?, website?, address?, emirate?, ownerId?}` | `CustomerRow` | Status Active/Paused/VIP; website valid URL (https:// added); emirate valid; address ≤200; reassign rules as leads. |
-| GET | `/contacts` | | `ContactRow[]` (+ company, recordType Lead/Customer, recordId, ownerName) | Contacts on leads and customers in scope. |
-| POST | `/contacts` | `{recordType, recordId, name, title, mobile, email, isDecisionMaker}` | `ContactRow` | Name required; mobile valid for the company country; email format; mobile or email required; `409` if the email exists at that company. |
+| GET | `/customers` | | `CustomerRow[]` (+ account_manager_name, contacts_count, active_contract_value, active_contracts, next_renewal, days_to_renewal, last_activity_at) | Newest first. |
+| GET | `/customers/:id` | | `CustomerDetail` (+ `lead` summary, `contacts`, `contracts`, last 10 `recent_activities`, `notes`, `lifetime_value`) | lifetimeValue = billed to date, or won value without contracts. |
+| PATCH | `/customers/:id` | `{status?, website?, address_line?, city?, account_manager_id?}` | `CustomerRow` | Status `active`/`paused`/`vip`/`churned` (else `422`); website valid URL (https:// added); emirate valid; address ≤200; reassign rules as leads. |
+| GET | `/contacts` | | `ContactRow[]` snake_case `{id, lead_id, name, title, mobile, email, is_decision_maker, company_name, record_type (Lead/Customer), record_id, owner_name}` | Contacts on leads and customers in scope. |
+| POST | `/contacts` | `{record_type, record_id, name, title, mobile, email, is_decision_maker}` | `ContactRow` | Name required; mobile valid for the company country; email format; mobile or email required; `409` if the email exists at that company. |
 | PATCH | `/contacts/:id` | partial of the above | `ContactRow` | Same checks; editing a lead's first contact updates the lead's contact fields. |
-| GET | `/contracts` | | `ContractRow[]` (+ customerName, ownerName, serviceNames, daysToRenewal, annualValue, mrr) | Soonest renewal first. |
-| POST | `/contracts` | `{customerId, title, serviceIds, value, billing, startDate, renewalDate, ownerId?}` | `ContractRow` | Title required; ≥1 catalog service (new picks must be **active**; services already on the contract stay valid); value >0; renewal after start; owner defaults to the customer's. |
-| PATCH | `/contracts/:id` | partial + `status: Active\|Cancelled` | `ContractRow` | Same checks; Expiring/Expired can't be set by hand. |
+| GET | `/contracts` | | `ContractRow[]` (+ renewal_due, customer_name, owner_name, service_names, days_to_renewal, annual_value, mrr) | Soonest renewal first. |
+| POST | `/contracts` | `{customer_id, title, service_ids, cycle_value, billing_period, start_date, renewal_date, owner_id?}` | `ContractRow` | Title required; ≥1 catalog service (new picks must be **active**; services already on the contract stay valid); value >0; renewal after start; owner defaults to the customer's. |
+| PATCH | `/contracts/:id` | partial + `status: active\|cancelled` | `ContractRow` | Same checks; `expired` (and the derived Expiring) can't be set by hand (`422`). |
 
 ## Quotations
 
+**Wire format:** snake_case design columns; field table in docs/DB-ALIGNMENT.md §3 (`lead_id`, `valid_until`, `tax_percent`, `currency_code`, items `unit_price`, `discount_percent`; query `?lead_id=`).
+
 Totals are always computed by the server: `subtotal = Σ qty × price`, `discount = Σ line discounts`,
 `vat = (subtotal − discount) × vatPct`, `total = subtotal − discount + vat`. VAT defaults to 5%.
-Sent/Viewed quotations past `validUntil` come back as `Expired`.
+Status: `draft | sent | viewed | accepted | rejected | expired`. A `sent` / `viewed` quotation whose `validUntil` is before the
+company's today (its timezone, server clock) is **stored** as `expired`: lazily on every quotation read and on the per-request
+lifecycle tick; accepted / rejected / draft never expire. `viewedAt` is set when the client first opens it (`POST /quotations/:id/viewed`).
 
 | Method | Path | Body | Returns | Rules |
 |---|---|---|---|---|
@@ -296,7 +332,8 @@ Sent/Viewed quotations past `validUntil` come back as `Expired`.
 | POST | `/quotations` | `QuotationInput {leadId, title, validUntil, items[], notes, terms, vatPct?}` | `Quotation` | Needs create + lead in scope. Company/contact copied from the lead. Number `QT-<year>-NNNN`. Starts Draft. |
 | PATCH | `/quotations/:id` | `QuotationUpdateInput` (partial, no leadId) | `Quotation` | Only Draft (`409`). |
 | POST | `/quotations/:id/send` | | `Quotation` | Draft→Sent, sets `sentAt`. `422` if lead is Do Not Contact, has no email, or draft invalid. Moves a lead before Proposal to `Proposal`. Logs an `email` activity on the lead. |
-| POST | `/quotations/:id/status` | `{ status: 'Accepted' \| 'Rejected' }` | `Quotation` | Only from Sent/Viewed; sets `decidedAt`; `409` otherwise or if expired. |
+| POST | `/quotations/:id/status` | `{ status: 'accepted' \| 'rejected' }` | `Quotation` | Only from `sent` / `viewed`; sets `decidedAt`; `409` otherwise or if expired (an expired one can't be accepted); other values `422`. |
+| POST | `/quotations/:id/viewed` | | `Quotation` | The client opened the shared document (the editor's **Open as customer**; a real backend would serve a signed public link). `sent` → `viewed` once, sets `viewedAt`; a draft is `409`; other statuses are returned unchanged. |
 | POST | `/quotations/:id/duplicate` | | `Quotation` | New Draft, new number, valid 30 days, author = caller. |
 
 Validation: title required; `validUntil` today or later; ≥1 item; each item has a description,
@@ -319,6 +356,8 @@ Currency and catalog lines:
 
 ## Reports
 
+**Wire format:** snake_case design columns; field table in docs/DB-ALIGNMENT.md §11 (deep; schedules `report_type`, `run_at`; query `owner_id`, `department_id`).
+
 Scoped to the narrower of the caller's `reports` and `sales` scopes.
 
 | Method | Path | Body / query | Returns | Rules |
@@ -331,21 +370,23 @@ Scoped to the narrower of the caller's `reports` and `sales` scopes.
 
 ## Lookups & automation
 
+**Wire format:** snake_case design columns; field table in docs/DB-ALIGNMENT.md §11 for automation (`workflow_settings`: `first_contact_reminder_days`, `no_response_followup_days`, `max_attempts_before_cold`, `interested_stalled_days`, `reopen_lost_after_days`); lookups in part-a.md.
+
 | Method | Path | Body / query | Returns | Rules |
 |---|---|---|---|---|
-| GET | `/lookups` | | `Lookups {statuses, sources, industries (with subIndustries), lossReasons, tags}` | Any signed-in user. Every item has `key` (stable, stored on records), `label`, `active`, `order`. Statuses add `probability` (0–100), `kind` (`open`/`parked`/`won`/`lost`), `requires` (`none`/`next-step`/`loss-reason`/`convert`), `tone`, `color`, `system`. Pickers show active items only; display looks labels up by key. |
-| PUT | `/lookups/:list` | `{ items }` (the whole list; new items without `key`) | `Lookups` | Company Admin only (`403`). Unknown list `404`. Items can be renamed, reordered and deactivated but not removed (`422`); built-in statuses keep their kind; at least one active status of each kind. **Protected items** (`system: true` on a plain list item, e.g. loss reason `imported-no-reason` "Imported - no reason recorded"): can't be removed, renamed or deactivated (`422`); always re-pinned last on reorder; `system`/`hiddenFromPickers` can't be changed by clients. Each list needs ≥1 active item that isn't `hiddenFromPickers`. Audited. |
+| GET | `/lookups` | | `{lead_statuses, lead_sources, industries (with sub_industries), loss_reasons, tags, service_categories}` | Any signed-in user. Every item has `id` (statuses: `code`; the stable key stored on records), `name`, `is_active`, `sort_order`. Statuses add `probability` (0–100), `type` (`open`/`won`/`lost`/`cold`/`parked`), `requires_next_step`, `requires_loss_reason`, `tone`, `color`, `is_system`. Plain items may add `is_system`, `hidden_from_pickers`. Pickers show active items only; display looks labels up by key. |
+| PUT | `/lookups/:list` | `:list` = `lead_statuses` \| `lead_sources` \| `industries` \| `loss_reasons` \| `tags` \| `service_categories`; `{ items }` (the whole list in the GET shape; new items without `id` / `code`) | same as GET | Company Admin only (`403`). Unknown list (old camelCase names included) `404`. Items can be renamed, reordered and deactivated but not removed (`422`); built-in statuses keep their type; at least one active status of type `open`, `won` and `lost`; `type` must be one of the five, the flags booleans, not both flags, none on a `won` status; a status that leads sit in can't become `won` (`422`). **Protected items** (`is_system: true` on a plain list item, e.g. loss reason `imported-no-reason` "Imported - no reason recorded"): can't be removed, renamed or deactivated (`422`); always re-pinned last on reorder; `is_system`/`hidden_from_pickers` can't be changed by clients. Each list needs ≥1 active item that isn't `hiddenFromPickers`. Audited. |
 | GET | `/settings/automation` | | `AutomationRules` | Any signed-in user. `{noContactReminderDays: 1, noResponseFollowUpDays: 2, attemptsBeforeCold: 3, stalledInterestedDays: 3, lostReopenDays: 90, renewalAlertDays: 30, taskReminderDaysBefore: 1}` by default. Read live by the lead journey (stage moves, activities, `reopenEligible`), CRM renewals and `/alerts`. |
 | PUT | `/settings/automation` | `Partial<AutomationRules>` | `AutomationRules` | Company Admin only. Whole numbers within each rule's limits (`422`). Audited. |
 | POST | `/settings/automation/reset` | | `AutomationRules` | Back to the defaults. Audited. |
 | GET | `/audit-log` | `?entity=&userId=&action=&from=&to=` | `AuditEntry[]` `{id, at, userId, userName, action, entity, entityId, summary, changes[{field,from,to}]}` | Admins only (`403`). Newest first. |
 | GET | `/alerts` | | `Alert[]` `{id, type, severity: info\|warning\|danger, title, body, leadId?, customerId?, link, at}` | Scoped like `/leads` (hidden scope → `[]`). Newest first. Types, using the automation rules: `no-contact` — New lead with no activity for ≥ `noContactReminderDays` (to the owner); `stalled` — Interested lead with no activity for ≥ `stalledInterestedDays` (to managers: sales scope team/full); `follow-up` — follow-up due today or overdue (owner), others' overdue ones (managers); `renewal` — contracts (not cancelled) renewing within `renewalAlertDays`; `task` — open tasks of any kind (lead, customer, project, personal) that I own, due within `taskReminderDaysBefore` days (owner reminder); `task-overdue` — open overdue tasks: my own, my direct reports', and with a team/full tasks scope every overdue task in scope. Task alerts follow the **tasks** scope (not sales) and the company's calendar (regional timezone, mock clock); see **Tasks › Reminders**. |
 
-List items may carry `system?: boolean` (protected) and `hiddenFromPickers?: boolean` (never offered for
+List items may carry `is_system?: boolean` (protected) and `hidden_from_pickers?: boolean` (never offered for
 new values, but labels still resolve). `imported-no-reason` is accepted only by the Excel import
 (`POST /leads/import`); stage moves and lead create/edit reject it ("Pick a loss reason from the list.").
-Events-attended target cells in reports return actual 0 / pct 0 and are left out of `overall`
-until the Events module exists.
+Events-attended target cells count the agent's events attended (see **Events › Targets**) when the company's
+plan includes the Events module; without it they return actual 0 / pct 0 and are left out of `overall`.
 
 ## My account
 
@@ -359,6 +400,8 @@ the backend should also expire idle tokens on its side.
 
 ## Settings: users
 
+**Wire format:** snake_case design columns; field table in docs/DB-ALIGNMENT.md §10 (`department_id`, `manager_id`, `is_active`).
+
 All writes are Company Admin only (`403`) and audited with a field-by-field diff. Users are never deleted.
 
 | Method | Path | Body | Returns | Rules |
@@ -371,6 +414,8 @@ All writes are Company Admin only (`403`) and audited with a field-by-field diff
 | POST | `/settings/users/:id/reactivate` | | `SettingsUserRow` | |
 
 ## Settings: security
+
+**Wire format:** snake_case design columns; field table in docs/DB-ALIGNMENT.md §10 (all mechanical, e.g. `enabled_at`, `last_active_at`, `session_timeout_minutes`).
 
 Security events are audited with action `security`, entity `security`, id `2fa`/`session`/`backup`/`policy`.
 
@@ -389,6 +434,8 @@ Security events are audited with action `security`, entity `security`, id `2fa`/
 | PUT | `/security/policy` | partial policy | policy | Company Admin; timeout 5–1440, password length 8–64; requiring 2FA needs your own 2FA on. |
 
 ## Settings: templates
+
+**Wire format:** snake_case design columns; field table in docs/DB-ALIGNMENT.md §11 (`type` = channel, `is_active`; query `type`, `purpose`, `is_active`).
 
 | Method | Path | Body / query | Returns | Rules |
 |---|---|---|---|---|
@@ -411,6 +458,8 @@ from the picker). `POST /leads/:id/messages` fills any `{{company.*}}` left in t
 New companies get the 12 default templates (`defaultTemplatesFor` in `src/shared/mocks/data/templates.ts`).
 
 ## Settings: company profile
+
+**Wire format:** snake_case design columns; field table in docs/DB-ALIGNMENT.md §12 (deep, e.g. `legal_name`, `address.line1`, `bank.bank_name`).
 
 The issuer printed on quotations (header, "From" block, footer) and future invoices, and the
 source of `{{company.*}}`. Stored inside the `Company` record (`Company.profile`, type
@@ -455,6 +504,8 @@ Every change is audited (`entity: "company-profile"`, `entityId` = company id) w
 (`address.city`, `bank.iban`…; the IBAN is masked to its last 4 characters). No entry when nothing changed.
 
 ## Settings: branding
+
+**Wire format:** snake_case design columns; field table in docs/DB-ALIGNMENT.md §12 (`brand_color`, `logo_url`, `display_name`, PATCH `logo_light`; `palette` opaque).
 
 The workspace's look: display name, light and dark logos, favicon and primary colour. Stored on the
 `Company` record (`Company.branding`, type `Branding` in `src/modules/tenancy/types.ts`), so `GET /tenant`,
@@ -517,6 +568,8 @@ yet; when one is added it should use `TenantLogo variant="light"` like the quota
 data URL into the text would break the 5,000-character body limit.
 
 ## Self-service sign-up (public)
+
+**Wire format:** snake_case design columns; field table in docs/DB-ALIGNMENT.md §13b (deep: `signup_id`, `company_name`, `admin_email`, `checkout_id`, `card_number`); the completion session is not mapped.
 
 Types: `src/modules/signup/types.ts`; plans are data served by the API (`src/shared/mocks/data/plans.ts`, see Plans, limits and subscription lifecycle); server mock:
 `src/shared/mocks/services/signup.ts`. All endpoints here are **public** (no `Authorization`), product level (not on a
@@ -603,6 +656,8 @@ Contact sales stores the request in a platform list (not visible to any company)
 
 ## Subscription, roles, email connection
 
+**Wire format:** snake_case design columns; field table in docs/DB-ALIGNMENT.md §10 / 12 (roles `is_system`, `permissions` opaque; email connection `connected_at`).
+
 | Method | Path | Who | Body | Returns |
 |---|---|---|---|---|
 | GET | `/settings/roles` | Company Admin, Management | | `CompanyRoleDefinition[]` (`{ id, name, system, permissions: Record<ModuleKey, Scope> }`; 9 roles, read-only) |
@@ -614,6 +669,8 @@ Seeds: Apex Aora `enterprise` (active); Crest Logistics `business` (active). Pla
 see the next section.
 
 ## Plans, limits and subscription lifecycle
+
+**Wire format:** snake_case design columns; field table in docs/DB-ALIGNMENT.md §13a (deep: `plan_id`, `current_period_end`, `payment_method`; `limits` opaque). `/dev/billing/*` stays camelCase.
 
 Types: `src/modules/billing/types.ts` (the contract). Server mock: `src/shared/mocks/services/billing.ts`,
 `src/shared/mocks/handlers/billing.ts`, data in `src/shared/mocks/data/plans.ts` (plans, platform settings) and
@@ -684,7 +741,7 @@ All company endpoints derive the company from the token (never from the request)
 | POST | `/billing/reactivate` | Company Admin | `{ planId }` | `BillingOverview` (active, new period from now, paid invoice) | `409 invalid_state` (only suspended / cancelled), `422 invalid_plan` / `contact_sales`, `422 payment_method_required`, `409 downgrade_blocked` |
 | GET | `/billing/export` | Company Admin | | `DataExport { generatedAt, company { name, subdomain }, counts, data: { leads, contacts, customers, tasks, projects, quotations, users } }` (the caller's company only, no `companyId`). Allowed while read-only. Audited. | `403` |
 | POST | `/ai/credits/consume` | any signed-in user | `{ credits }` (1–1000) | `AiCreditsResult { used, limit, remaining }` | `403 module_not_in_plan` (no `ai`), `402 LIMIT_REACHED`, `422 invalid_credits` |
-| GET | `/hr/employees`, `/events`, `/marketing/campaigns`, `/finance/invoices`, `/integrations` | signed in | | `[]` (stubs so module gating is real) | `403 module_not_in_plan` |
+| GET | `/hr/employees`, `/finance/invoices`, `/integrations` | signed in | | `[]` (stubs so module gating is real) | `403 module_not_in_plan` |
 | POST | `/billing/trial-plan` | Company Admin, trialing only | `TrialPlanInput { planId }` | `BillingOverview` (`subscription.selectedPlanId` set). Audited. | `409 invalid_state` (not trialing), `422 invalid_plan` / `contact_sales` |
 
 Platform billing settings moved to `GET/PATCH /platform/settings` (Super-Admin Console); `/platform/billing-settings` is removed.
@@ -804,6 +861,8 @@ failNextPayment, subscription, simulated }`. A real backend has none of these.
 | POST | `/dev/billing/reset` | | Clears the company's usage offsets and fail flag (the clock is global and is not reset) |
 
 ## Super-Admin Console (platform)
+
+**Wire format:** not converted yet (camelCase); see docs/DB-ALIGNMENT.md "Not converted".
 
 Types: `src/modules/platform/types.ts` (the contract), `src/modules/tenancy/types.ts` (`PlatformRole`, `PLATFORM_PERMISSIONS`,
 `canPlatform`, `ImpersonationInfo`). Server mock: `src/shared/mocks/services/platform.ts`, `services/impersonation.ts`,
@@ -970,6 +1029,8 @@ Writes that affect a company are also recorded in that company's audit log.
 
 ## Onboarding
 
+**Wire format:** snake_case design columns; field table in docs/DB-ALIGNMENT.md §12 (mechanical).
+
 `GET /onboarding` → `OnboardingState { items: OnboardingItem[], done, total, complete, dismissed }`, computed for the
 caller's company. Company Admin and Management read (`403` others); only Company Admin writes. Progress and dismissal
 are stored **per company** on the server, so every admin sees the same state.
@@ -992,6 +1053,8 @@ Item: `{ id, title, description, href, done, manual }`.
 | PATCH | `/onboarding` | `{ dismissed: boolean }` | `OnboardingState` |
 
 ## Departments
+
+**Wire format:** snake_case design columns; field table in docs/DB-ALIGNMENT.md §9 (`head_user_id`, `cost_center_code`, `is_active`; query `include_inactive`).
 
 Membership has one source of truth: `User.departmentId`. Moving a member here and changing a user's
 department in Settings › Users & roles (`PATCH /settings/users/:id`) are the same change; that endpoint
@@ -1029,8 +1092,10 @@ reactivate, goal create / edit / delete.
 
 ## The Won flow
 
+**Wire format:** snake_case design columns; field table in docs/DB-ALIGNMENT.md §4 (body `quotation_id, service_ids, project_manager_id, start_date, idempotency_key`).
+
 One atomic server action converts a won deal. Every trigger in the UI goes through one rule,
-`moveActionFor(status) === 'won'` (kind `won` **or** `requires: 'convert'`, `modules/leads/lib/transitions.ts`),
+`moveActionFor(status) === 'won'` (status `type` `won`, `modules/leads/lib/transitions.ts`),
 and opens the same confirm dialog (`useOpenWonDialog` → `WonDialog`), which reads the preview and then calls
 `POST /leads/:id/won`: dragging a lead to a Won column (pipeline), the lead page's stage select and its
 "Win deal" button, the lead form's status select (saves the other fields, then opens the dialog), the stage
@@ -1065,17 +1130,25 @@ Interested still needs next step + date; Lost / Not interested still need a loss
    **"At least one contact"** = a contact record of the lead (with a name), **or** the lead's primary contact
    with a name **and** a mobile or an email. The `contactName` text alone does not count ("Add at least one
    contact (a name with a mobile or an email) before winning this lead."). At least one purchased service.
-2. **lead**: status → the Won status (lookup key `Won`), `stageChangedAt` = now, follow-up cleared.
+2. **lead**: status → the Won status (lookup key `Won`), `stageChangedAt` = now, **`wonAt` = now** (leads.won_at),
+   follow-up cleared, and a **`lead_status_history` row** `{ leadId, fromStatusId, toStatusId, changedBy, reason, changedAt }`
+   (`shared/mocks/data/leadStatusHistory.ts`, `recordLeadStatusChange`).
 3. **customer**: links the customer with this `leadId` (or the same company name), else creates one from the
-   lead (company, industry, website, emirate, value, services). Contacts, notes and the activity history stay
-   on the lead id that the customer references, so nothing is retyped. Purchased services are added.
+   lead (company, industry, website, emirate, value, services); the lead gets `customerId`. **The lead's contacts
+   get `customerId`** (contacts.customer_id) and keep `leadId`: nothing is copied or retyped. Notes and the
+   activity history stay on the lead id that the customer references. Purchased services are added. **The
+   accepted quotation gets `customerId` and `acceptedAt`** (its decision time, else now).
 4. **contract**: only from an Accepted quotation of this lead, when it has recurring lines (unit `month`): billing Monthly, value = monthly net,
-   renewal = start + the longest monthly term on the quote.
-5. **projects**: one per purchased service, status Planned. Tasks come from the service's project template:
+   renewal = start + the longest monthly term on the quote; carries `quotationId` and `createdBy` (contracts.quotation_id / created_by).
+5. **projects**: one per purchased service, status `planned`, with `leadId`, `quotationId`, `contractId` and
+   `projectTemplateId` (the service's template, null without one). Tasks (`status: todo`, `link: null`,
+   `projectId`, `sortOrder` = template order, `priority` `high` for the first and last task, else `medium`) come from the service's project template:
    due date = start + template day offset + task length (hours ÷ 8, at least 1 day) − 1, in the company's **working
    days** (from its region's weekend: Mon–Fri for the UAE, Sun–Thu for Saudi Arabia); owner = an active person whose job title matches the template role in the project manager's
    department, then in the Delivery department (fewest assigned first), otherwise the project manager.
-   A service without a template gets a project with no tasks (preview warns).
+   A service without a template gets a project with no tasks (preview warns). A template task **without a
+   role** stays unassigned-role (`role: null` in the preview) and goes to the project manager (Design gap:
+   `project_template_tasks.default_role_id`, docs/DB-ALIGNMENT.md).
 6. **notify**: lead owner (`won`), project manager (`assignment`), each task owner (`assignment`).
 7. **audit**: audit entries for the customer (`create`, or `update` "linked" with the services change), the
    contract (`create`), **each project** (`create`, so the project's Activity tab has history from day one) and
@@ -1095,7 +1168,12 @@ rolled back with its code + details preserved (above).
 
 **Test-only failpoints (mock only).** Unit tests pass `{ failAt: step, failWith?: 'error' | 'limit' | 'module' | 'read_only' }`
 to `winLead`; browser tests set `window.__apexWonFailAt = '<step>'` (and optionally `window.__apexWonFailWith`)
-before the app loads, like `__apexMoveFailureRate`. The real backend has no failpoints.
+before the app loads, like `__apexMoveFailureRate`. The hooks are read only when
+`import.meta.env.DEV || import.meta.env.MODE === 'test'`, so a production build contains none of them
+(`npm run build` → no `__apex` in `dist/`). The real backend has no failpoints.
+
+**Rollback** also covers contacts (`customerId`), the quotation (`customerId`, `acceptedAt`) and the
+`lead_status_history` row.
 
 **After success** the client invalidates leads (+ alerts), CRM (customers, contacts, contracts), quotations,
 projects, tasks, alerts / notifications, dashboard, reports, audit, services, departments and targets
@@ -1103,11 +1181,46 @@ projects, tasks, alerts / notifications, dashboard, reports, audit, services, de
 
 ## Tasks
 
+Field names follow the database design (tasks, task_followers, comments, attachments, time_entries) and travel in
+snake_case on the wire (part-d-mappers.md §7: `owner_id`, `due_date`, `follower_ids`, attachments `original_name`, comments `user_id`; query `include_done`, `related_type`…); the full mapping and the migration are in `docs/DB-ALIGNMENT.md`.
+
 Tasks scope (`tasks` column of the permission matrix): **Own** for Sales Agent, Employee, Accountant and HR
 Manager; **Team** (real department membership, `teamIdsFor`) for Sales Manager, Department Head and
 Marketing Manager; **Full** for Company Admin and Management. Everyone also sees tasks they follow or created
-and the tasks of projects they manage. A task links to a lead, customer, project or event (polymorphic
-`link {type, id}`); event links are stored but inactive until the Events module exists.
+and the tasks of projects they manage. **A sub-task has its parent's scope**: whoever sees (or may change) the
+parent sees (or may change) its sub-tasks.
+
+**Enums (values on the wire; the screens show the labels):**
+
+| Field | Values | Labels |
+|---|---|---|
+| `status` (tasks.status) | `todo`, `in_progress`, `review`, `done`, `cancelled` | To do, In progress, Review, Done, Cancelled |
+| `priority` (tasks.priority) | `low`, `medium`, `high`, `urgent` | Low, Medium, High, Urgent |
+
+They live in `src/modules/tasks/enums.ts` (value tuple + type + labels + tones), shared by the screens, the mock
+and these docs. Done and cancelled are **closed**: not open, never overdue, no reminders. The old values
+(`To do`, `In progress`, `Blocked`, `Done`; `Low`…`Urgent`) answer `422`.
+
+**One related link plus the project.** `link {type, id}` is the design's `related_type` + `related_id`: one
+optional **lead, customer or event** (`type: 'project'` → `422`). The project is its own column, `projectId`
+(tasks.project_id), shown as a separate chip (`projectName`). Event links need the Events module in the plan and an
+existing event of the company (`422` otherwise, like a missing lead); the chip opens the event (`/events/:id`).
+
+**Blocked is a flag, not a status** (`blockedAt`, `blockedReason`; Design gap, see part-b.md). A blocked task
+keeps its status (e.g. `in_progress`) and can still move between columns; the board, list, drawer, My tasks
+and calendar show a "Blocked" badge. Set it with `POST /tasks/:id/block`, clear it with `POST /tasks/:id/unblock`.
+Moving a task to `done` or `cancelled` clears the flag (history "Unblocked (done)").
+
+**Sub-tasks** (`parentTaskId`, tasks.parent_task_id): one level only (a sub-task can't have sub-tasks: `422`).
+Created with `POST /tasks { parentTaskId }` by someone who may change the parent; the parent must be open. A
+sub-task always has its parent's project and company (a different `projectId` → `422`; `PATCH` of a sub-task's
+`projectId` → `422`; changing the parent's project moves its sub-tasks). The parent's `TaskView` lists
+`subtasks[]` and `subtaskProgress { done, total }` (cancelled sub-tasks don't count). Moving a parent to `done`
+while sub-tasks are open → `409` unless `force: true`; cancelling a parent cancels its open sub-tasks; a
+sub-task of a closed parent can't be reopened (`422`). Deleting: there is no task delete endpoint yet; when one
+comes (soft delete, tasks.deleted_at) it deletes the parent's sub-tasks with it.
+
+**`completedAt`** is set when the status becomes `done` and cleared on reopen (any other status, also `cancelled`).
 
 **Dates are the company's.** "Today", `overdue`, "due this week" and the reminders use the company's
 regional settings: the calendar date in its `timezone` and weeks starting on its `weekStartsOn` (0 Sun, 1 Mon,
@@ -1117,36 +1230,60 @@ reads time from `clock.ts` (`now()`, moved by the dev clock), so simulated days 
 screens use the same helper (`shared/lib/companyDay.ts`) with the tenant's regional settings: My tasks groups
 (Overdue / Today / This week / Later / No date), the calendar's today and week start, due labels.
 
-**`TaskView`** = `Task` + `ownerName`, `followerNames`, `projectName`, `overdue` (company calendar),
-`linkView {type, id, label, available}` and **`canEdit`**:
-- `canEdit`: may the caller change this task (the same rule PATCH enforces): the tasks `edit` right (a `view`
-  scope is read-only) and owner, creator, follower, the project's manager, team scope over the owner, or full
-  scope. The board, calendar, status menus, list and drawer use it per task; the UI also blocks every move while
-  the workspace is read-only (suspended / cancelled / read-only support session) with that reason.
-- `linkView.available`: false when the target doesn't exist in the company, is an event (until Events is
-  enabled), **or the caller couldn't open it**: a lead or customer outside their Sales & CRM scope, a project
-  outside their projects scope. The chip still shows the label (non-clickable, with the reason as a tooltip).
+**`Task`** = `{ id, title, description, ownerId, followerIds, priority, dueDate, status, link, projectId,
+parentTaskId, estimatedHours, templateTaskId, dayOffset, sortOrder, blockedAt, blockedReason, reminderSentAt,
+overdueNotifiedAt, attachments[], comments[], history[], createdBy, createdAt, updatedAt, completedAt }`.
+
+**`TaskView`** = `Task` + `ownerName`, `followerNames`, `projectName`, `overdue` (company calendar), `blocked`,
+`linkView {type, id, label, available}`, `loggedHours` (sum of its time entries), `timeEntries: TimeEntryView[]`,
+`parentTitle`, `subtasks: { id, title, status, ownerId, ownerName, dueDate, blocked }[]`, `subtaskProgress` and **`canEdit`**:
+- `canEdit`: may the caller change this task (the same rule PATCH, block / unblock and time entries enforce): the
+  tasks `edit` right (a `view` scope is read-only) and owner, creator, follower, the project's manager, team scope
+  over the owner, full scope, or (for a sub-task) the same over its parent. The board, calendar, status menus,
+  list and drawer use it per task; the UI also blocks every change while the workspace is read-only (suspended /
+  cancelled / read-only support session) with that reason.
+- `linkView.available`: false when the target doesn't exist in the company, is an event while the plan has no
+  Events module, **or the caller couldn't open it**: a lead or customer outside their Sales & CRM scope, an event
+  they can't see (Events permissions). The label of an event link is the event's name. The chip
+  still shows the label (non-clickable, with the reason as a tooltip).
+
+**`TaskAttachment`** = `{ id, name, sizeBytes, mimeType, uploadedBy, uploadedAt }` (attachments.original_name,
+size_bytes, mime_type). **`TimeEntry`** = `{ id, projectId, taskId, userId, entryDate, hours, description,
+isBillable, createdAt }` (time_entries); `TimeEntryView` adds `userName`.
 
 | Method | Path | Body / query | Returns | Rules |
 |---|---|---|---|---|
 | GET | `/tasks/assignable` | | `{ id, name, title, role, departmentId }[]` (caller first, then by name) | The active users of the caller's company that POST / PATCH accept as `ownerId`: own scope → only the caller; team scope → `teamIdsFor` (direct reports, members of the departments they head and of those departments' sub-departments); full → everyone active. A role without create/edit gets only themselves; hidden → `403`. Owner pickers (quick add, drawer) use it. Never another company's users. |
-| GET | `/tasks` | `?mine, ownerId, projectId, linkType, linkId, status, priority, dueFrom, dueTo, includeDone` | `TaskView[]` | Scoped as above (`403` if hidden). Done only with `includeDone` or `status=Done`; `dueFrom/dueTo` drop undated tasks. Sorted by due date (undated last), then priority (Urgent first), then newest. |
-| GET | `/tasks/:id` | | `TaskView` | `404` if missing or not visible. |
-| POST | `/tasks` | `TaskInput` | `TaskView` | Title 1–160; owner defaults to the caller and must be active; own scope may assign only to themselves, team scope only within the team (`403`); followers active; link target must exist; priority `Low/Medium/High/Urgent`; status `To do/In progress/Blocked/Done` (Blocked needs `blockedReason`, see PATCH); due yyyy-MM-dd or null. A project link sets `projectId`. History "created"; `assignment` notification when someone else is the owner. |
-| PATCH | `/tasks/:id` | `TaskUpdateInput` (incl. `loggedHours`, `blockedReason`) | `TaskView` | Editors = `canEdit` (`403`, the message says whether the role can't edit tasks or the task isn't theirs). **Moving to Blocked needs `blockedReason`** (3–280 characters) → `422` without it; it is posted as a comment "Blocked: …" and quoted in the status history (already Blocked: not asked again). One history event per changed field ("Status: To do → In progress"); `completedAt` set/cleared with Done; new owner notified. Board and calendar moves are this PATCH (`status` / `dueDate`); the UI updates every cached list at once and restores it when the server refuses. Test hook (mock only): `window.__apexMoveFailureRate = 1` makes status / due-date changes fail with `503` (default: never). |
+| GET | `/tasks` | `?mine, ownerId, projectId, linkType, linkId, status, priority, blocked, dueFrom, dueTo, includeDone` | `TaskView[]` | Scoped as above (`403` if hidden). Done and cancelled only with `includeDone` or `status=done` / `status=cancelled`; `blocked=true|false` filters on the flag; `dueFrom/dueTo` drop undated tasks. Sorted by due date (undated last), then priority (urgent first), then newest. Runs the company's reminder tick first. |
+| GET | `/tasks/:id` | | `TaskView` | `404` if missing or not visible. Runs the reminder tick. |
+| POST | `/tasks` | `TaskInput { title, description?, ownerId?, followerIds?, priority?, dueDate?, status?, link?, projectId?, parentTaskId?, estimatedHours? }` | `TaskView` | Title 1–160; owner defaults to the caller and must be active; own scope may assign only to themselves, team scope only within the team (`403`); followers active; link target must exist (lead / customer / event only); priority and status from the enums (default `medium`, `todo`); due yyyy-MM-dd or null; sub-task rules above. History "created"; `assignment` notification when someone else is the owner. |
+| PATCH | `/tasks/:id` | `TaskUpdateInput` (any `TaskInput` field except `parentTaskId`, plus `force?`) | `TaskView` | Editors = `canEdit` (`403`, the message says whether the role can't edit tasks or the task isn't theirs). One history event per changed field ("Status: To do → In progress", labels); `completedAt` set/cleared with done; a new due date clears `reminderSentAt` / `overdueNotifiedAt` (re-armed); new owner notified. Board and calendar moves are this PATCH (`status` / `dueDate`); the UI updates every cached list at once and restores it when the server refuses. Test hook (mock only, dev/test builds): `window.__apexMoveFailureRate = 1` makes status / due-date changes fail with `503` (default: never). `loggedHours` is no longer writable: log time entries. |
+| POST | `/tasks/:id/block` | `{ reason }` | `TaskView` | Editors. `reason` 3–280 characters (trimmed), required → `422` without it. Sets `blockedAt` = now and `blockedReason`, posts the reason as a comment "Blocked: …" and a history line; the status doesn't change. Closed task → `422`; already blocked → `409`. |
+| POST | `/tasks/:id/unblock` | | `TaskView` | Editors. Clears `blockedAt` and `blockedReason`, posts an "Unblocked" comment and history line. Not blocked → `409`. |
 | POST | `/tasks/:id/comments` | `{ body, mentions? }` | `TaskView` | Anyone who can see the task. Body 1–2000. `@Full Name` (or a unique `@First`) and explicit `mentions` ids → `mention` notifications (not the author). |
-| POST | `/tasks/:id/attachments` | `{ name, size, type }` | `TaskView` | Editors. Mocked upload: metadata only, ≤ 25 MB (`422`). Counts toward the plan's `storageMb` limit: over it → `402` (see **Limits**). The backend stores the file. |
+| POST | `/tasks/:id/attachments` | `{ name, sizeBytes, mimeType? }` | `TaskView` | Editors. Mocked upload: metadata only, ≤ 25 MB (`422`); `mimeType` defaults to `application/octet-stream`; the old `{ size, type }` body → `422`. Counts toward the plan's `storageMb` limit (sum of `sizeBytes`): over it → `402` (see **Limits**). The backend stores the file. |
 | DELETE | `/tasks/:id/attachments/:attachmentId` | | `TaskView` | Editors; `404` if gone. |
+| POST | `/tasks/:id/time-entries` | `{ entryDate (yyyy-MM-dd), hours, description?, isBillable? }` | `TaskView` | Editors log their own hours on the task (and its project: `projectId` = the task's). `hours` > 0, ≤ 24, two decimals; `description` ≤ 255; `isBillable` defaults to true for a project task, else false. History "Logged 2 h on 2026-11-18". |
+| DELETE | `/tasks/:id/time-entries/:entryId` | | `TaskView` | Editors; only the person who logged the entry or a full-scope user (`403`); `404` if gone. |
 
-**Reminders (Settings › Automation):** the owner gets a `task` alert from `taskReminderDaysBefore` days before
-the due date until the due day; once overdue, the owner and the owner's manager (and team/full-scope viewers)
-get `task-overdue` (`danger`). Days are the company's (timezone, mock clock). See `GET /alerts`.
-**Decision:** task reminders are **computed** alerts in the bell (recomputed on every `GET /alerts` from the
-tasks and the automation numbers; they clear when the task is done or rescheduled, and can't be marked read).
-The stored notification types `task-due` / `task-overdue` exist in `StoredNotification` but nothing writes
-them; a real backend that wants e-mail or push delivery would add them then, keeping the same rules.
+**Reminders — stored, once only (Settings › Automation):** the company's **reminder tick**
+(`services/taskReminders.ts`, run lazily per company on `GET /alerts`, `GET /tasks` and `GET /tasks/:id`, like
+billing's `runLifecycle`; a real backend runs it from the scheduler) stores:
+- a `task-due` notification to the **owner** when today (company calendar) is within `taskReminderDaysBefore`
+  days of the due date (due − N ≤ today ≤ due), and sets `reminderSentAt`;
+- a `task-overdue` notification to the **owner's manager** (users.manager_id, active, same company) from the
+  first day after the due date ("Owner · N days overdue · subject"), and sets `overdueNotifiedAt` (also when the
+  owner has no manager, so it isn't checked again).
+
+Each is sent **once per task**; changing the due date re-arms both. Done and cancelled tasks get neither. The
+notifications carry `taskId` and show in the bell as `task` / `task-overdue` alerts with `stored: true` (mark
+read like any notification). The owner's own overdue tasks (and every overdue task in a team/full scope) still
+show as a computed `task-overdue` alert that clears when the task is done or rescheduled; a task the viewer
+already got a stored notice for is not listed twice.
 
 ## Projects
+
+**Wire format:** snake_case design columns; field table in docs/DB-ALIGNMENT.md §8 (mechanical projects columns; detail `tasks`, `audit`).
 
 Projects follow the **tasks** column of the permission matrix (role tests: `permissions.isolation.test.ts`
 checks list, detail, create, patch, manager change and status for all nine roles in both companies).
@@ -1154,28 +1291,34 @@ A role whose tasks scope is hidden gets `403` for every project request (any id,
 foreign id still answers like a missing one); otherwise another company's project is `404` and a project of
 the company outside the caller's scope is `403`.
 
+**`status`** (projects.status): `planned`, `active`, `on_hold`, `completed`, `cancelled` (labels Planned, Active,
+On hold, Completed, Cancelled; `PROJECT_STATUSES` in `modules/tasks/enums.ts`). **`Project`** adds the design's
+`contractId` and `projectTemplateId` (set by the Won flow / template generation, else null).
+
 | Method | Path | Body | Returns | Rules |
 |---|---|---|---|---|
-| GET | `/projects` | | `ProjectRow[]` (customer/service/manager names, task counts, overdue, `progress` %, `loggedHours`) | Same tasks scope: full / view = all; team = projects managed by the team or with team-owned tasks or tasks I follow; own = projects you manage or have (or follow) tasks in. Newest first. |
-| GET | `/projects/:id` | | `ProjectDetail` = row + `tasks: TaskView[]` (every task of the project, each with the caller's `canEdit`) + `audit: AuditEntry[]` + `canManage` | `404` / `403` as above. |
-| POST | `/projects` | `ProjectInput & { generateTasks?: boolean }` (default true) | `ProjectRow` | Full or team scope (`403` otherwise). Name 1–160; customer exists; service exists and is active; manager active; start ≤ end; status `Planned/Active/On hold/Completed/Cancelled`; hours ≥ 0. `generateTasks` builds tasks from the service template exactly like the Won flow. Audited; manager and task owners notified. |
-| PATCH | `/projects/:id` | `ProjectUpdateInput & { force?: boolean }` | `ProjectRow` | `canManage`: the tasks `edit` right (a view scope is read-only, even for the manager), then full scope, the project manager, or a team-scope user over the manager (`403`). A manager of another company → `422`. Completed while tasks are open → `409` unless `force: true`. Audited with field changes; a new manager is notified. |
+| GET | `/projects` | | `ProjectRow[]` (customer/service/manager names, task counts, overdue, `progress` %, `loggedHours` = projects.actual_hours, the sum of its time entries) | Same tasks scope: full / view = all; team = projects managed by the team or with team-owned tasks or tasks I follow; own = projects you manage or have (or follow) tasks in. Newest first. |
+| GET | `/projects/:id` | | `ProjectDetail` = row + `tasks: TaskView[]` (every task of the project, each with the caller's `canEdit` and its `timeEntries`) + `audit: AuditEntry[]` + `canManage` | `404` / `403` as above. The Hours tab lists the time entries of every task. |
+| POST | `/projects` | `ProjectInput & { generateTasks?: boolean }` (default true) | `ProjectRow` | Full or team scope (`403` otherwise). Name 1–160; customer exists; service exists and is active; manager active; start ≤ end; status from the enum; hours ≥ 0. `generateTasks` builds tasks from the service template exactly like the Won flow (and sets `projectTemplateId`). Audited; manager and task owners notified. |
+| PATCH | `/projects/:id` | `ProjectUpdateInput & { force?: boolean }` | `ProjectRow` | `canManage`: the tasks `edit` right (a view scope is read-only, even for the manager), then full scope, the project manager, or a team-scope user over the manager (`403`). A manager of another company → `422`. `completed` while tasks are open (not done or cancelled) → `409` unless `force: true`. Audited with field changes (status as labels); a new manager is notified. |
 
-Progress = done share of the project's tasks, weighted by estimated hours when present. The project timeline
-plots working days from the company's weekend (e.g. "Working days (Sun–Thu)" for a Friday–Saturday weekend)
-with week ticks on its `weekStartsOn`.
+Progress = done share of the project's tasks (cancelled ones left out), weighted by estimated hours when present.
+The project timeline plots working days from the company's weekend (e.g. "Working days (Sun–Thu)" for a
+Friday–Saturday weekend) with week ticks on its `weekStartsOn`.
 
 ## Changes to earlier endpoints (tasks & Won)
 
-- **`GET /alerts`** adds types `task` (owner reminder), `task-overdue`, and the stored notifications `won`,
-  `assignment`, `mention` (with `stored: true` and `read`). New: **`PATCH /alerts/:id/read`** (stored
+- **`GET /alerts`** adds types `task` (owner reminder, stored once: `task-due`), `task-overdue` (stored notice to
+  the manager, computed for the owner and team/full scopes), and the stored notifications `won`, `assignment`,
+  `mention` (with `stored: true`, `read` and, for task notifications, `taskId`). New: **`PATCH /alerts/:id/read`** (stored
   notifications only; computed ids → `422`, others' → `404`) and **`POST /alerts/read-all`** → `{ updated }`.
   Task alerts need a tasks scope (not a sales scope).
 - **`GET /dashboard/summary`** adds `tasks { myOpenTasks, myOverdueTasks, dueThisWeek, teamOverdueTasks, scope,
-  next[] }` from the same task selectors as the tasks API.
+  next[] }` from the same task selectors as the tasks API (`next[]` items carry `priority`, `status` and `blocked`).
 - **`GET /reports/sales`** `overdueTasks[]` now covers every task kind: `{ taskId, title, linkType, linkId,
   linkLabel, linkAvailable, projectId, projectName, ownerId, ownerName, dueDate, daysOverdue, priority, status }`,
-  narrowed by the report scope, department and owner filters.
+  narrowed by the report scope, department and owner filters. `linkType` is the related link (lead, customer,
+  event), else `project` for a project task.
 - **Departments** `tasks` in `GET /departments/:id` now come from the unified task store (lead, project and
   personal tasks) with `projectId` and `linkLabel`.
 - **Activities** gain type `system` (written by the app, e.g. the Won flow; never offered in pickers).
@@ -1183,3 +1326,220 @@ with week ticks on its `weekStartsOn`.
 ---
 
 Next modules (HR, Events, Marketing, Accounting…) add their sections here as they're built.
+
+## Events
+
+Phase 2, optional: plan module `events` (Business and Enterprise; not Starter or Trial; platform module
+overrides apply). Exhibitions, conferences, meetings and webinars the company attends or organizes; everyone
+registered becomes a lead with the source **Event**, and leads / won deals are counted per event. Tables:
+`events`, `event_team`, `event_attendees` (DB design §13; gaps in `docs/DB-ALIGNMENT.md` › Design gaps › Events).
+Wire format: snake_case columns (`src/shared/api/eventMappers.ts`); handlers `src/shared/mocks/handlers/events.ts`,
+service `src/shared/mocks/services/events.ts`, access rules `src/shared/mocks/selectors/events.ts`.
+
+### Plan gating
+
+Every `/events/*` path goes through the request policy (`userFrom` → `enforceRequestPolicy`): a company whose plan
+(± platform override) lacks `events` gets `403 module_not_in_plan` (`{ module: 'events', planId }`). The client
+routes (`/events`, `/events/calendar`, `/events/:id`) are wrapped in `ModuleGate module="events"` (upgrade page) and
+the nav items carry `planModule: 'events'`. The old `GET /events` billing stub is replaced by the real handler.
+
+### Permissions (decision)
+
+`PERMISSION_MATRIX` has no Events column. **Events follow the Marketing column, plus event-team membership:**
+
+| Marketing scope (roles today) | Sees | Edits (event, attendees, check-in, tasks) | Creates | Cancels / changes the team |
+|---|---|---|---|---|
+| `full` (Company Admin, Management, Marketing Manager) | every event | every event | yes | yes |
+| `view` (Sales Manager) | every event | only events they're on | no | only events they own |
+| `team` / `own` (not used today) | events they're on (+ `team`: owned by their team) | the same | yes | only events they own |
+| `hidden` (Sales Agent, Accountant, HR Manager, Department Head, Employee) | only events they're on | events they're on | no | only events they own |
+
+"On an event" = its owner (`owner_id`, always on the team) or an `event_team` member, **whatever their role**: a
+Sales Agent staffing a stand can register and check in attendees. Another company's event answers `404` (same body
+as a missing id); an event of the own company outside the caller's reach answers `403`. The public registration
+token (`registration_token`) is served only to people who can edit the event. Tested table-driven from the matrix
+in `src/app/isolation/events.isolation.test.ts` (every role × both companies, with and without team membership).
+
+### Models
+
+`EventRow` (list and detail): `id, name, type (exhibition | conference | meeting | webinar | other), status
+(planned | confirmed | completed | cancelled), is_organizer, starts_at, ends_at` (UTC instants) `, start_date,
+end_date, start_time, end_time` (the same in the company's timezone; times null = all day) `, location, online_url,
+budget, actual_cost, currency` (the company's) `, description, owner_id, owner_name, team[] {user_id, name, title,
+is_owner}, registration_open, registration_token` (editors only, else null) `, attendee_count, checked_in_count,
+leads_created, created_by, created_by_name, created_at, updated_at, can_edit, can_manage`. `EventDetail` adds
+`history[] {id, at, user_id, user_name, summary}` (created, field changes "Budget: 12000 → 15000", team changes,
+registrations, check-ins, imports).
+
+`Attendee`: `id, event_id, name, company_name, email, mobile` (normalized for the company's country) `, title,
+lead_id, lead_outcome (created | linked | none), lead_company, lead_status, can_open_lead` (the lead fields only when
+the caller's Sales scope reaches the lead) `, source (manual | import | public), source_detail, registered_at,
+checked_in_at`.
+
+`EventStats`: `attendees, checked_in, leads_created, leads_linked, leads` (distinct leads from the event) `,
+deals_won, won_value` (won leads among them and the sum of their `estimated_value`) `, pipeline_value` (still open) `,
+budget, actual_cost, cost_per_lead` (= budget ÷ new leads, 2 decimals; null without a budget or new leads) `, currency`.
+
+### Endpoints
+
+| Method | Path | Who | Body | Answer | Errors |
+|---|---|---|---|---|---|
+| GET | `/events?from=&to=` | anyone (rows filtered by access) | | `EventRow[]`, newest first; `from` / `to` (company dates) keep events overlapping the range | `422` bad date, `403 module_not_in_plan` |
+| POST | `/events` | marketing create right | `{ name, type, status?, is_organizer?, start_date, start_time?, end_date?, end_time?, location?, online_url?, budget?, description?, owner_id?, team_ids?, registration_open? }` | `EventDetail` (owner defaults to the caller; owner + `team_ids` form the team; a registration token is generated) | `403`, `422` (name 2–255, type, real dates, end ≥ start, HH:mm, end time needs a start time, https link, amounts ≥ 0, owner / team = active users of the company, can't start cancelled) |
+| GET | `/events/:id` | sees it | | `EventDetail` | `404`, `403` |
+| PATCH | `/events/:id` | edits it | any create field except `team_ids`, plus `actual_cost` | `EventDetail` | `403`; owner change and cancel / reopen via `status` need *manage*; `422` as create. Cancelling closes registration. |
+| DELETE | `/events/:id` | manages it | | `EventDetail` with `status: cancelled` (soft delete: attendees and leads kept) | `403`, `409 event_completed` (a completed event happened: it can’t be cancelled) |
+| POST | `/events/:id/team` | manages it | `{ user_id }` | `EventDetail` | `404` unknown / other company's user, `422` deactivated, `409` already on the team |
+| DELETE | `/events/:id/team/:userId` | manages it | | `EventDetail` | `404` not on the team, `422` the owner (change the owner first) |
+| GET | `/events/:id/attendees` | sees it | | `Attendee[]`, newest first | |
+| POST | `/events/:id/attendees` | edits it | `{ name, company_name?, email?, mobile?, title? }` | `RegistrationResult { attendee, outcome, lead_id, limit_reached, message }` | `422` (name 2–255, valid email, mobile of the company's country, email or mobile required), `409 already_registered` (same email at this event), `409 event_cancelled`, `422 event_source_missing` |
+| PATCH | `/events/:id/attendees/:attendeeId` | edits it | any attendee field | `Attendee` (the lead keeps its own data) | `404`, `409` email taken at this event, `422` |
+| DELETE | `/events/:id/attendees/:attendeeId` | edits it | | `{ removed: true }` (a lead it created stays) | `404` |
+| POST | `/events/:id/attendees/import` | edits it | `{ rows: [{ row, name, company_name?, email?, mobile?, title? }], file_name? }` (≤ 1,000 rows; the client reads CSV / .xlsx and maps the headers) | `{ added, leads_created, leads_linked, without_lead, failed[] {row, name, reason}, limit_reached }` | `422` no rows / too many, `409 event_cancelled` |
+| POST | `/events/:id/attendees/:attendeeId/check-in` | edits it | `{ undo? }` | `Attendee` (`checked_in_at` set / cleared) | `404`, `409 event_cancelled` |
+| GET | `/events/:id/stats` | sees it | | `EventStats` | |
+| GET | `/public/events/:token` | **public** | | `{ name, type, start_date, end_date, start_time, end_time, timezone, location, online_url, description, organizer_name, registration_open, closed_reason, country }` (no ids, budget or people) | `404 event_not_found` |
+| POST | `/public/events/:token/register` | **public** | `{ name, email, company_name?, mobile?, title?, website? }` + header `X-Client-Id` | `{ registered: true, message }` (never says whether a lead was created or linked) | `404 event_not_found`, `409 registration_closed`, `422 invalid_registration`, `429 rate_limited` |
+
+### Rules
+
+- **Registration → lead.** A new attendee becomes a lead: source = the company's active **Event** source (Settings ›
+  Fixed lists; matched by key or label "Event"), `source_detail` = the event name, `event_id` (new lead column,
+  `leads.event_id`, served on lead rows / detail), status New, industry empty, one contact (name, title, mobile,
+  email), a first note "Registered at …", follow-up tomorrow (company time). **Owner**: the event owner and team
+  members in turn (round-robin by the number of leads the event already created), keeping only people whose Sales
+  scope can own leads (`full` / `team` / `own`); nobody → the company's first active Sales Agent, then the owner.
+- **Duplicates.** An attendee whose email is an existing lead's email (lead email or any contact's, same company,
+  case-insensitive) is **linked** to that lead (`outcome: linked`): no new lead, and a `system` activity "… registered
+  at {event}" is logged on the lead. The same email twice at one event → `409 already_registered` (the public page
+  answers success and stores nothing new).
+- **No Event source.** When the company has no active Event source, registrations that would create a lead are
+  refused with `422 event_source_missing` (a clear message pointing to Settings › Fixed lists); linking an existing
+  lead still works. We refuse rather than create the source silently, so a company's list stays its own. Both
+  seeded companies have one (Crest's list gained "Event").
+- **Plan limit.** Creating the lead needs room for 2 leads + contacts (`assertCapacity`). At the limit the attendee
+  **is still saved** without a lead: `outcome: none`, `lead_id: null`, `limit_reached: { code: 'LIMIT_REACHED',
+  limit: 'leadsContacts', current, max, planId }` and a message saying so (HTTP 200). Imports continue row by row
+  the same way (`without_lead`).
+- **Public registration.** Each event has an unguessable 20-letter `registration_token`; the page `/e/:token` (no
+  sign-in, no workspace) shows the public fields and a form. Registration must be open (`registration_open`, the
+  event not completed / cancelled, the workspace not read-only) or `409 registration_closed`. Unknown token, a
+  company without the module, or a deleted / suspended workspace → the same `404`. Rate limit like sign-up: 5
+  attempts per client (`X-Client-Id`) and per email per event in 10 minutes (`429 rate_limited` with the wait).
+  Honeypot `website`: filled → a success answer, nothing stored. Email is required on the public page.
+- **Stats** count the event's attendees and their leads (created + linked); deals won = those leads in a won status.
+- **Targets: Events attended** (`events` target key). An event counts for each of its team members (owner
+  included) in the month of its start date (company time) once it took place: status `completed`, or not
+  cancelled, started and at least one attendee checked in. Real counts only (no synthetic baseline). Without the
+  module in the plan the kind is "n/a" everywhere (targets page, dashboard, reports, settings) and left out of
+  completion (`eventsEnabledFor(entitlements.modules)` on the client, `eventsEnabledIn(companyId)` on the server).
+- **Tasks.** A task may link to an event of the company while the plan includes the module (`422` otherwise);
+  the event page has a Tasks tab (tasks with `related_type=event&related_id=:id`, quick add linked to the event).
+- **Dates** are entered and shown in the company's timezone (regional settings) and stored as UTC instants; the
+  calendar (`/events/calendar`, month / week, company week start) shows multi-day events on each day.
+
+### Isolation
+
+Every endpoint is in `src/shared/mocks/isolation/endpoints.ts` (company-list / -write / -item / -export with samples;
+`/public/events/*` as `public` with a reason). Events, team rows, attendees and history carry `company_id`; leads
+created by a registration land in the event's company only. Persisted dev DB: `VERSION` 8.
+
+## Marketing
+
+Phase 2, optional, plan-gated. Plan module `marketing` (Business and Enterprise; not Starter / Trial): every
+`/marketing/*` path answers **403 `module_not_in_plan`** (`{ module: 'marketing', planId }`) when the company's plan
+(± platform overrides) lacks it — checked centrally in `userFrom` → `enforceRequestPolicy`. Role rights come from the
+**Marketing** column of `PERMISSION_MATRIX`: `hidden` → 403 on every endpoint; `view` (Sales Manager) → reads only,
+writes 403; `full` (Company Admin, Management, Marketing Manager) → reads and writes. The cost-per-lead report also
+needs a **Reports** scope of `full` or `marketing` (the marketing report family; `reports/lib/marketingAccess.ts`).
+Everything is scoped to the caller's company; another company's id answers exactly like a missing one (404, or 422
+inside a body). Wire names: `src/shared/api/marketingMappers.ts`; tables `campaigns`, `campaign_costs`, `bulk_emails`,
+`bulk_email_recipients`, and `leads.campaign_id`.
+
+### Models
+
+- **Campaign** `id, name, channel (email|social|ads|event|referral|other), status (draft|active|paused|completed),
+  budget (number|null), currency_code (the company's currency, server-set), starts_on, ends_on (company-local
+  YYYY-MM-DD), goal, target_leads (int|null), owner_id, owner_name, source_detail (UTM / source detail), created_at,
+  updated_at` + derived `spend` (sum of costs), `leads` (leads with `campaign_id` = it), `won`, `cost_per_lead`
+  (spend ÷ leads, null without leads).
+- **Campaign cost** `id, campaign_id, incurred_on, amount, description, created_at`.
+- **Bulk email** `id, name, campaign_id, campaign_name, message_template_id, subject, body, filters { industries[],
+  statuses[], sources[], owner_ids[] } (empty = no filter), status (draft|scheduled|sending|sent|cancelled),
+  scheduled_at (UTC), scheduled_local (YYYY-MM-DDTHH:mm in the company timezone), timezone, started_at, sent_at,
+  created_by, created_by_name, created_at, updated_at, counts { recipients, queued, sent, skipped, failed, opened,
+  replied, open_rate, reply_rate (0–100, one decimal; null before anything was sent), skipped_by { dnc,
+  not_interested, no_email, duplicate, limit, removed, cancelled } }`; the detail adds `recipients[] { id, lead_id,
+  contact_id, company, name, email, status (queued|sent|skipped|failed), skip_reason, sent_at, opened_at, replied_at }`.
+
+### Endpoints
+
+| Method & path | Roles | Body / query | Answer · errors |
+|---|---|---|---|
+| `GET /marketing/options` | view | — | `currency, timezone, owners[], templates[]` (active email templates), `campaigns[]`, `excluded_statuses[]` |
+| `GET /marketing/campaigns` | view | `?status=` | Campaign[] |
+| `POST /marketing/campaigns` | full | `name, channel, status?, budget?, starts_on?, ends_on?, goal?, target_leads?, owner_id?, source_detail?` | Campaign · 422 (name missing / taken in the company, bad channel, dates, end before start, owner not an active user of the company) |
+| `GET /marketing/campaigns/:id` | view | — | Campaign · 404 |
+| `PATCH /marketing/campaigns/:id` | full | any create field | Campaign · 404, 422 |
+| `POST /marketing/campaigns/:id/costs` | full | `incurred_on, amount (> 0), description?` | Cost · 404, 422 |
+| `GET /marketing/campaigns/:id/results` | view | — | `{ campaign, costs[], emails[], kpis { leads, won, won_value, spend, budget, cost_per_lead, cost_per_won, sent, opened, replied, open_rate, reply_rate, target_leads }, timeline[{ week, leads, won }] }` (weeks start on the company's week start) |
+| `GET /marketing/emails` | view | `?status=&campaign_id=` | BulkEmail[] |
+| `POST /marketing/emails` | full | `name, campaign_id?, message_template_id?, subject?, body?, filters?` — a template fills subject / body unless given | detail · 422 (unknown campaign / template / owner) |
+| `GET /marketing/emails/:id` | view | — | detail (with recipients) · 404 |
+| `PATCH /marketing/emails/:id` | full | same as create | detail · 409 once sending / sent / cancelled |
+| `DELETE /marketing/emails/:id` | full | — | **cancels** (draft / scheduled → cancelled; sending → remaining queued recipients skipped `cancelled`) · 409 when already sent / cancelled |
+| `POST /marketing/emails/:id/preview-audience` | view | `{ filters? }` (an unsaved list; else the saved one) | `{ matched, eligible, excluded { dnc, not_interested, no_email, duplicate }, excluded_statuses, available (emails left this period minus other pending sends; null = unlimited), sample[] }` |
+| `POST /marketing/emails/:id/schedule` | full | `{ scheduled_at: "YYYY-MM-DDTHH:mm" }` — wall time in the **company's timezone** (Settings › Company › Regional) | detail (`scheduled`) · 422 (malformed, in the past, > 1 year ahead, no subject / body, unknown `{{variable}}`, no sender address in Branding, nobody eligible), **402 LIMIT_REACHED**, 409 |
+| `POST /marketing/emails/:id/send-now` | full | — | detail (`sending`, recipients queued) · same checks as schedule |
+| `POST /marketing/emails/:id/test` | full | `{ to }` | `{ to_address, from_address, subject ("[Test] …"), html }` rendered for the first eligible lead with the branded layout (`emailLayout.ts`); counts 1 email · 422, 402 |
+| `GET /marketing/reports/cost-per-lead` | view + Reports full / marketing | `?from=&to=` (YYYY-MM-DD) | `{ from, to, currency, rows[{ campaign_id, name, channel, status, leads, won, won_value, spend, cost_per_lead, cost_per_won, sent, opened, replied }], sources[{ source, leads, attributed, won }], totals { leads, attributed, spend, cost_per_lead } }` — leads created and costs incurred in the period, plus a "No campaign" row for unattributed leads · 400, 403 |
+
+Leads: `POST /leads` (full form), `PATCH /leads/:id` and `POST /leads/import/run` (`campaign_id` applies to every
+imported row) accept an optional `campaign_id`; it must be a campaign of the company (otherwise 422 "That campaign
+doesn’t exist.", the same for a foreign id). Lead rows and details return `campaign_id`.
+
+### Exclusions (enforced server-side, at send time)
+
+A bulk email never goes to: **Do Not Contact** leads; leads in an **excluded status** — the built-in `Not interested`
+(system key) and any company-added status of type `lost` (a custom refusal); leads **without a valid email**; and a
+**duplicate** address within the same send (lower-cased; the first lead in id order keeps it — the design's
+`UNIQUE (bulk_email_id, email)`). The built-in **Lost** status (a lost deal, not an opt-out) is **not** excluded; leave
+it out of `filters.statuses` to skip it. The preview counts these; the send resolves the target list again when it
+starts (scheduled sends: at their time) and **checks every queued recipient again right before delivery** (lead deleted
+→ `removed`, now DNC → `dnc`, now Not interested → `not_interested`, email removed → `no_email`), so a lead changed
+after the preview or after queueing is still excluded. Skipped recipients are stored with their reason and shown in the
+results.
+
+### Monthly email limit (`emailsPerMonth`)
+
+Policy: **refuse the whole send up front**. Schedule and send-now compare the eligible audience with the emails left
+this billing period minus the company's other pending sends (scheduled audiences + queued recipients); if it doesn't fit
+→ **402** `{ code: 'LIMIT_REACHED', limit: 'emailsPerMonth', current, max, planId, requested, available }` (the standard
+upgrade prompt shows) and nothing is queued. Nothing is ever sent partially in silence: if the allowance shrinks after
+the send started (e.g. 1:1 emails), the recipients beyond it are skipped with reason **`limit`**, counted in
+`skipped_by.limit` and listed in the results. Every delivered email (and every test email) counts 1.
+
+### Queue and fairness
+
+Sending is a queue worker on the mock clock: one **slot every 5 s** sends at most **100** emails in total, taken
+**round-robin across companies, 25 per company per round**, starting from a rotating cursor; within a company FIFO
+(queued time, then the send, then the order). A company with a huge queue gets the same share per round as one with a
+small one, so it never delays another company. The worker is global (like the real worker), replays everything due up
+to "now" lazily on every authenticated request's lifecycle tick (`onLifecycleTick('marketing.queue')`) and on
+`POST /dev/billing/advance`, and is idempotent. Each email sent is logged as an activity on the lead (`type: 'email'`,
+"Bulk email sent to …: subject", user = the bulk email's creator); bulk sends don't move the lead's stage.
+
+### Simulations (mock only)
+
+Opens and replies are simulated deterministically from a hash of the recipient: about 45 % open 1–30 min after
+delivery and about 12 % reply 5–120 min after opening; counts and `opened_at` / `replied_at` appear once the mock clock
+passes them. Dev / test hook (read only when `import.meta.env.DEV || MODE === 'test'`):
+`window.__apexMarketingEngagement = 'all' | 'none'` forces every delivered email opened and replied (or none).
+
+### Isolation
+
+Every endpoint is in `src/shared/mocks/isolation/endpoints.ts` (company-list / -write / -item / -export with samples);
+foreign ids in bodies (lead `campaign_id`, bulk email `campaign_id` / `message_template_id` / `filters.owner_ids`,
+campaign `owner_id`) are in `REFS` of `scoped.isolation.test.ts`. Roles per the matrix:
+`src/app/isolation/marketing.isolation.test.ts`; rules: `src/shared/mocks/services/marketing.test.ts`. Persisted dev
+DB: `VERSION` 7 added the marketing stores.

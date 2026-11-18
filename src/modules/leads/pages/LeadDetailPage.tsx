@@ -62,6 +62,7 @@ import type { MessageChannel } from '@/modules/leads/api/messagesApi'
 import { Tooltip } from '@/shared/components/ui/Kbd'
 import { useCatalog } from '@/modules/services/hooks/useServices'
 import { CategoryIcon, ServiceChip, UnmatchedChip } from '@/modules/leads/components/ServiceFields'
+import { isParkedType } from '@/shared/domain/leadStatus'
 
 type Tab = 'overview' | 'activity' | 'notes' | 'tasks' | 'quotations'
 
@@ -404,12 +405,12 @@ function mainPath(statuses: StatusOption[]): StatusOption[] {
   const path: StatusOption[] = []
   let best = -1
   for (const s of statuses) {
-    if (s.kind === 'open' && s.probability > best) {
+    if (s.type === 'open' && s.probability > best) {
       path.push(s)
       best = s.probability
     }
   }
-  const won = statuses.find((s) => s.kind === 'won')
+  const won = statuses.find((s) => s.type === 'won')
   return won ? [...path, won] : path
 }
 
@@ -427,15 +428,15 @@ function StageBar({
   if (lookups.isLoading) return <Skeleton className="mt-5 h-6 w-full" />
   const current = lookups.status(status)
   const path = mainPath(lookups.statuses)
-  const offPath = current.kind === 'lost' || current.kind === 'parked'
+  const offPath = current.type === 'lost' || isParkedType(current.type)
   let position = path.findIndex((s) => s.key === status)
-  if (position < 0 && current.kind === 'open') {
+  if (position < 0 && current.type === 'open') {
     // Side state: sits on the last main step ordered before it.
     path.forEach((s, i) => {
-      if (s.kind === 'open' && s.order < current.order) position = i
+      if (s.type === 'open' && s.order < current.order) position = i
     })
   }
-  if (position < 0 && current.kind === 'won') position = path.length - 1
+  if (position < 0 && current.type === 'won') position = path.length - 1
 
   return (
     <ol aria-label="Pipeline stage" className="mt-5 flex gap-1">
@@ -458,11 +459,11 @@ function StageBar({
                 className={cn(
                   'h-1.5 w-full rounded-full transition-colors',
                   offPath
-                    ? current.kind === 'lost'
+                    ? current.type === 'lost'
                       ? 'bg-danger-100 dark:bg-danger-500/20'
                       : 'bg-sunken'
                     : done || here
-                      ? s.kind === 'won'
+                      ? s.type === 'won'
                         ? 'bg-success-500'
                         : 'bg-brand-500'
                       : 'bg-sunken group-hover:bg-line-strong',

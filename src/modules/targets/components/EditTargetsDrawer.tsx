@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useUpdateTargets } from '@/modules/targets/hooks/useTargets'
 import { isTracked, monthLabel } from '@/modules/targets/lib'
+import { useEventsEnabled } from '@/modules/events/hooks/useEventsEnabled'
 import { EVENTS_NA_LABEL } from '@/shared/lib/features'
 import {
   MAX_TARGET,
@@ -87,6 +88,7 @@ interface TargetsFormProps {
 
 function TargetsForm({ row, month, update, onSaved }: TargetsFormProps) {
   const toast = useToast()
+  const eventsOn = useEventsEnabled()
   const [draft, setDraft] = useState<Record<TargetKey, string>>(
     () => Object.fromEntries(TARGET_KEYS.map((k) => [k, row.values[k] > 0 ? String(row.values[k]) : ''])) as Record<TargetKey, string>,
   )
@@ -136,7 +138,7 @@ function TargetsForm({ row, month, update, onSaved }: TargetsFormProps) {
             id={`target-${k}`}
             label={TARGET_LABELS[k]}
             error={errors[k]}
-            hint={isTracked(k) ? `${row.actuals[k]} so far · ${TARGET_SOURCES[k]}` : `${EVENTS_NA_LABEL} · not counted in completion yet`}
+            hint={isTracked(k, eventsOn) ? `${row.actuals[k]} so far · ${TARGET_SOURCES[k]}` : `${EVENTS_NA_LABEL} · not counted in completion yet`}
           >
             <TextInput
               id={`target-${k}`}

@@ -7,7 +7,8 @@ export type CustomerStatus = Customer['status']
 export type Emirate = Exclude<Customer['emirate'], ''>
 
 export type ContractBilling = 'One-off' | 'Monthly' | 'Annual'
-export type ContractStatus = 'Active' | 'Expiring' | 'Expired' | 'Cancelled'
+/** contracts.status: draft | active | expired | cancelled | renewed (shared/domain/enums.ts). */
+export type ContractStatus = import('@/shared/domain/enums').ContractStatus
 
 /**
  * A signed contract for a customer. `value` is the amount per billing cycle in AED
@@ -22,12 +23,18 @@ export interface Contract {
   billing: ContractBilling
   startDate: string
   renewalDate: string
-  /** Stored as Active or Cancelled; the API derives Expiring (within the renewal alert window, Settings > Automation) and Expired (past). */
+  /** Stored as active or cancelled (draft / renewed reserved); the API reads an active contract past its renewal date as expired. */
   status: ContractStatus
   ownerId: string
+  /** contracts.quotation_id: the accepted quotation it was created from (Won flow), if any. */
+  quotationId?: string | null
+  /** contracts.created_by. */
+  createdBy?: string | null
 }
 
 export interface ContractRow extends Contract {
+  /** Active and within the renewal alert window (Settings > Automation): shown as "Expiring". */
+  renewalDue: boolean
   customerName: string
   ownerName: string
   serviceNames: string[]
@@ -119,6 +126,6 @@ export interface ContractInput {
 }
 
 export type ContractUpdateInput = Partial<Omit<ContractInput, 'customerId'>> & {
-  /** Only Active (reinstate) or Cancelled can be set; Expiring/Expired are derived. */
-  status?: 'Active' | 'Cancelled'
+  /** Only active (reinstate) or cancelled can be set; expired is derived from the renewal date. */
+  status?: 'active' | 'cancelled'
 }

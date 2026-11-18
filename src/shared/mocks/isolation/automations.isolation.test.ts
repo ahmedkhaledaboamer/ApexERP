@@ -86,12 +86,12 @@ describe('§2 Billing lifecycle', () => {
 describe('§2 Trial reminders of a new company', () => {
   it('a trial company’s reminders and expiry never touch Apex or Crest', async () => {
     const start = await api(null, 'POST', '/public/signup', {
-      body: { companyName: 'Isolation Trial Co', subdomain: 'iso-trial', country: 'AE', language: 'en', adminName: 'Trial Admin', adminEmail: 'admin@iso-trial.example', mobile: '0501234567', password: 'Sunny-Harbor-42', acceptTerms: true },
+      body: { company_name: 'Isolation Trial Co', subdomain: 'iso-trial', country: 'AE', language: 'en', admin_name: 'Trial Admin', admin_email: 'admin@iso-trial.example', mobile: '0501234567', password: 'Sunny-Harbor-42', accept_terms: true },
       headers: { 'X-Client-Id': 'iso-trial' },
     })
     expect(start.status, start.text).toBe(200)
-    expect((await api(null, 'POST', `/public/signup/${start.body.signupId}/verify`, { body: { code: start.body.devCode } })).status).toBe(200)
-    const done = await api(null, 'POST', `/public/signup/${start.body.signupId}/complete`, { body: { plan: 'trial' } })
+    expect((await api(null, 'POST', `/public/signup/${start.body.signup_id}/verify`, { body: { code: start.body.dev_code } })).status).toBe(200)
+    const done = await api(null, 'POST', `/public/signup/${start.body.signup_id}/complete`, { body: { plan: 'trial' } })
     expect(done.status, done.text).toBe(200)
     const trialCo = done.body.tenant?.id ?? done.body.session?.tenant?.id
     expect(trialCo).toBeTruthy()
@@ -124,7 +124,7 @@ describe('§2 Usage warnings', () => {
     const fresh = expectNewNotificationsOnlyFor(CREST, notes, 'usage warning')
     expect(fresh.some((n) => n.type === 'usage')).toBe(true)
     // Creating a lead then re-checks the warnings (once per threshold and period).
-    const lead = await api(adminToken(CREST), 'POST', '/leads', { body: { company: 'Usage Probe Co', contactName: 'Probe', mobile: '+966 55 555 0123', email: 'probe@usage-probe.sa', sourceType: 'Website', industry: 'Logistics' } })
+    const lead = await api(adminToken(CREST), 'POST', '/leads', { body: { company_name: 'Usage Probe Co', contact_name: 'Probe', phone: '+966 55 555 0123', email: 'probe@usage-probe.sa', source_id: 'Website', industry_id: 'Logistics' } })
     expect([200, 402]).toContain(lead.status)
     expect(sliceText(APEX), 'Crest usage warnings touched Apex').toBe(apex)
   })
@@ -139,7 +139,7 @@ describe('§2 Tasks, reminders and alerts', () => {
       const theirAlerts = await Promise.all(theirUsers.map(async (u) => stable((await api(userToken(u.id), 'GET', '/alerts')).body)))
       const notes = ids()
       const agent = users.find((u) => u.companyId === co && u.role === 'Sales Agent' && u.active !== false)!
-      const created = await api(adminToken(co), 'POST', '/tasks', { body: { title: 'Isolation overdue task', ownerId: agent.id, dueDate: day(-2), priority: 'High' } })
+      const created = await api(adminToken(co), 'POST', '/tasks', { body: { title: 'Isolation overdue task', owner_id: agent.id, due_date: day(-2), priority: 'high' } })
       expect(created.status, created.text).toBe(200)
       expectNewNotificationsOnlyFor(co, notes, 'task assignment')
       const agentAlerts = await api(userToken(agent.id), 'GET', '/alerts')
@@ -151,7 +151,7 @@ describe('§2 Tasks, reminders and alerts', () => {
 
     it(`${label(co)}: a contract renewal coming due alerts ${label(co)} only`, async () => {
       const theirAlerts = stable((await api(adminToken(them), 'GET', '/alerts')).body)
-      const c = contracts.find((x) => x.companyId === co && x.status !== 'Cancelled')!
+      const c = contracts.find((x) => x.companyId === co && x.status !== 'cancelled')!
       const before = stable((await api(adminToken(co), 'GET', '/alerts')).body)
       c.renewalDate = day(3)
       const mine = await api(adminToken(co), 'GET', '/alerts')
@@ -192,19 +192,19 @@ describe('§2 Tasks, reminders and alerts', () => {
   }
 
   it('winning a Crest lead creates customers, projects, tasks and notifications in Crest only', async () => {
-    const lead = (await api(adminToken(CREST), 'GET', '/leads')).body.find((l: { status: string; doNotContact: boolean }) => !['Won', 'Lost', 'Not interested'].includes(l.status) && !l.doNotContact)
-    const svc = (await api(adminToken(CREST), 'GET', '/services')).body.find((s: { active: boolean }) => s.active)
+    const lead = (await api(adminToken(CREST), 'GET', '/leads')).body.find((l: { status_id: string; do_not_contact: boolean }) => !['Won', 'Lost', 'Not interested'].includes(l.status_id) && !l.do_not_contact)
+    const svc = (await api(adminToken(CREST), 'GET', '/services')).body.find((s: { is_active: boolean }) => s.is_active)
     const apex = sliceText(APEX)
     const notes = ids()
-    const res = await api(adminToken(CREST), 'POST', `/leads/${lead.id}/won`, { body: { serviceIds: [svc.id], projectManagerId: 'u101', startDate: day(21), idempotencyKey: 'iso-won' } })
+    const res = await api(adminToken(CREST), 'POST', `/leads/${lead.id}/won`, { body: { service_ids: [svc.id], project_manager_id: 'u101', start_date: day(21), idempotency_key: 'iso-won' } })
     expect(res.status, res.text).toBe(200)
     expect(leaksIn(res.body, CREST)).toEqual([])
     expect(sliceText(APEX)).toBe(apex)
     expectNewNotificationsOnlyFor(CREST, notes, 'won')
     // The same idempotency key in Apex is independent (keys are per company).
-    const apexLead = (await api(adminToken(APEX), 'GET', '/leads')).body.find((l: { status: string; doNotContact: boolean }) => !['Won', 'Lost', 'Not interested'].includes(l.status) && !l.doNotContact)
-    const apexSvc = (await api(adminToken(APEX), 'GET', '/services')).body.find((s: { active: boolean }) => s.active)
-    const apexWin = await api(adminToken(APEX), 'POST', `/leads/${apexLead.id}/won`, { body: { serviceIds: [apexSvc.id], projectManagerId: 'u1', startDate: day(21), idempotencyKey: 'iso-won' } })
+    const apexLead = (await api(adminToken(APEX), 'GET', '/leads')).body.find((l: { status_id: string; do_not_contact: boolean }) => !['Won', 'Lost', 'Not interested'].includes(l.status_id) && !l.do_not_contact)
+    const apexSvc = (await api(adminToken(APEX), 'GET', '/services')).body.find((s: { is_active: boolean }) => s.is_active)
+    const apexWin = await api(adminToken(APEX), 'POST', `/leads/${apexLead.id}/won`, { body: { service_ids: [apexSvc.id], project_manager_id: 'u1', start_date: day(21), idempotency_key: 'iso-won' } })
     expect(apexWin.status, apexWin.text).toBe(200)
   })
 })

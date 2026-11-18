@@ -41,13 +41,16 @@ export function QuickAddTask({ link, allowLink = true, onCreated, placeholder = 
   const titleError = formState.errors.title?.message
 
   const submit = handleSubmit(async (v) => {
-    const finalLink: TaskLink | null = link ? { type: link.type, id: link.id } : pickedLink
+    // A preset project "link" sets the task's project (projectId); lead / customer / event are the related link.
+    const presetProject = link?.type === 'project' ? link.id : null
+    const finalLink: TaskLink | null = link && link.type !== 'project' ? { type: link.type, id: link.id } : presetProject ? null : pickedLink
     try {
       const t = await create.mutateAsync({
         title: v.title,
         dueDate: v.dueDate || null,
         ownerId: v.ownerId,
         link: finalLink,
+        ...(presetProject ? { projectId: presetProject } : {}),
       })
       toast.success('Task added', t.title)
       reset({ title: '', dueDate: getValues('dueDate'), ownerId: v.ownerId })

@@ -1,8 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { addDays, format } from 'date-fns'
 import type { LeadStatus } from '@/shared/types'
 import type { LeadRow, MoveLeadInput } from '@/modules/leads/types'
-import type { StatusOption, StatusRequirement } from '@/modules/settings/types'
+import type { StatusOption } from '@/modules/settings/types'
+import { requirementOf, type StageRequirement } from '@/shared/domain/leadStatus'
+import { addDaysIso } from '@/shared/lib/companyDay'
+import { companyTodayIso } from '@/modules/leads/lib/followUp'
 import { useLookups } from '@/shared/hooks/useLookups'
 import { composeLossReason } from '@/modules/leads/lossReason'
 import { useOpenWonDialog } from '@/modules/won/hooks'
@@ -11,14 +13,14 @@ import { Button } from '@/shared/components/ui/Button'
 import { Modal } from '@/shared/components/ui/Modal'
 import { Field, SelectInput, TextArea, TextInput } from '@/shared/components/form/Field'
 
-export type StageRequirement = StatusRequirement
+export type { StageRequirement }
 
 /**
- * What a lead must record before it can enter a stage (spec, section 4), as configured on the
- * status in Settings > Fixed lists (`status.requires`). Pass `useLookups().status(key)`.
+ * What a lead must record before it can enter a stage (spec, section 4), from the status's flags
+ * in Settings > Fixed lists (`requiresNextStep` / `requiresLossReason`). Pass `useLookups().status(key)`.
  */
-export function requirementFor(status: Pick<StatusOption, 'requires'>): StageRequirement {
-  return status.requires
+export function requirementFor(status: Pick<StatusOption, 'requiresNextStep' | 'requiresLossReason'>): StageRequirement {
+  return requirementOf(status)
 }
 
 export interface PendingMove {
@@ -41,7 +43,7 @@ export function StageChangeModal({ pending, onCancel, onConfirm }: StageChangeMo
   const [date, setDate] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
   const openWon = useOpenWonDialog()
-  // Won (the 'convert' requirement) is never a plain stage move: hand over to the Won dialog.
+  // Won (status type won) is never a plain stage move: hand over to the Won dialog.
   const isWonMove = !!pending && moveActionFor(lookups.status(pending.to)) === 'won'
 
   useEffect(() => {
@@ -56,7 +58,7 @@ export function StageChangeModal({ pending, onCancel, onConfirm }: StageChangeMo
     setReason('')
     setReasonDetail('')
     setNextStep(pending.lead.nextStep)
-    setDate(format(addDays(new Date(), 2), 'yyyy-MM-dd'))
+    setDate(addDaysIso(companyTodayIso(), 2))
     setErrors({})
   }, [pending])
 
@@ -71,7 +73,7 @@ export function StageChangeModal({ pending, onCancel, onConfirm }: StageChangeMo
     if (requirement === 'next-step') {
       if (!nextStep.trim()) next.nextStep = 'Describe the next step.'
       if (!date) next.date = 'Pick a date.'
-      else if (date < format(new Date(), 'yyyy-MM-dd')) next.date = 'The date can’t be in the past.'
+      else if (date < companyTodayIso()) next.date = 'The date can’t be in the past.'
     }
     setErrors(next)
     if (Object.keys(next).length > 0) return
@@ -80,7 +82,8 @@ export function StageChangeModal({ pending, onCancel, onConfirm }: StageChangeMo
     if (requirement === 'loss-reason') input.lossReason = composeLossReason(reason, reasonDetail)
     if (requirement === 'next-step') {
       input.nextStep = nextStep.trim()
-      input.nextFollowUpDate = new Date(`${date}T09:00:00`).toISOString()
+      // A company-local calendar date (yyyy-MM-dd), never a datetime.
+      input.nextFollowUpDate = date
     }
     onConfirm(input)
   }
@@ -159,10 +162,6 @@ const COPY: Record<
     title: (company, to) => `Move ${company} to ${to}`,
     description: 'Record what happens next and when, so the follow-up lands on the right day.',
     confirm: (to) => `Move to ${to}`,
-  },
-  convert: {
-    title: (company) => `Convert ${company} to a customer?`,
-    confirm: (to) => `Mark as ${to} and convert`,
   },
   none: {
     title: (company, to) => `Move ${company} to ${to}`,

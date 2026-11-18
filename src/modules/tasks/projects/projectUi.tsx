@@ -2,6 +2,12 @@ import { useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import type { AuditEntry } from '@/modules/settings/types'
 import type { ProjectRow, ProjectStatus, TaskPriority, TaskStatus, TaskView } from '@/modules/tasks/types'
+import {
+  PROJECT_STATUS_LABEL,
+  PROJECT_STATUS_TONE as ENUM_PROJECT_STATUS_TONE,
+  TASK_STATUS_LABEL,
+  TASK_STATUS_TONE as ENUM_TASK_STATUS_TONE,
+} from '@/modules/tasks/enums'
 import { cn } from '@/shared/lib/utils'
 import { Badge, type Tone } from '@/shared/components/ui/Badge'
 
@@ -12,40 +18,30 @@ export type ProjectDetail = ProjectRow & {
   canManage?: boolean
 }
 
-export const PROJECT_STATUS_TONE: Record<ProjectStatus, Tone> = {
-  Planned: 'sky',
-  Active: 'brand',
-  'On hold': 'amber',
-  Completed: 'green',
-  Cancelled: 'neutral',
-}
+export const PROJECT_STATUS_TONE: Record<ProjectStatus, Tone> = { ...ENUM_PROJECT_STATUS_TONE, active: 'brand' }
 
-export const TASK_STATUS_TONE: Record<TaskStatus, Tone> = {
-  'To do': 'neutral',
-  'In progress': 'blue',
-  Blocked: 'red',
-  Done: 'green',
-}
+export const TASK_STATUS_TONE: Record<TaskStatus, Tone> = ENUM_TASK_STATUS_TONE
 
 export const PRIORITY_TONE: Record<TaskPriority, Tone> = {
-  Low: 'neutral',
-  Medium: 'sky',
-  High: 'amber',
-  Urgent: 'red',
+  low: 'neutral',
+  medium: 'sky',
+  high: 'amber',
+  urgent: 'red',
 }
 
 /** SVG / chart colours per task status (SVG can't read Tailwind classes). */
 export const TASK_STATUS_COLOR: Record<TaskStatus, string> = {
-  'To do': '#a1a1aa',
-  'In progress': '#3b82f6',
-  Blocked: '#ef4444',
-  Done: '#10b981',
+  todo: '#a1a1aa',
+  in_progress: '#3b82f6',
+  review: '#14b8a6',
+  done: '#10b981',
+  cancelled: '#d4d4d8',
 }
 
 export function ProjectStatusBadge({ status }: { status: ProjectStatus }) {
   return (
     <Badge tone={PROJECT_STATUS_TONE[status]} variant="dot">
-      {status}
+      {PROJECT_STATUS_LABEL[status]}
     </Badge>
   )
 }
@@ -53,7 +49,7 @@ export function ProjectStatusBadge({ status }: { status: ProjectStatus }) {
 export function TaskStatusBadge({ status }: { status: TaskStatus }) {
   return (
     <Badge tone={TASK_STATUS_TONE[status]} variant="soft">
-      {status}
+      {TASK_STATUS_LABEL[status]}
     </Badge>
   )
 }

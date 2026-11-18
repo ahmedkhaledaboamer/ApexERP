@@ -2,7 +2,8 @@ import { useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import type { CustomerRow } from '@/modules/crm/types'
-import { CUSTOMER_STATUSES, CUSTOMER_STATUS_TONE, EMIRATES } from '@/modules/crm/constants'
+import { CUSTOMER_STATUSES, CUSTOMER_STATUS_LABEL, CUSTOMER_STATUS_TONE, EMIRATES } from '@/modules/crm/constants'
+import type { CustomerStatus } from '@/modules/crm/types'
 import { customerSchema, type CustomerValues } from '@/modules/crm/schemas'
 import { useUpdateCustomer } from '@/modules/crm/hooks/useCrm'
 import { useOwnerOptions } from '@/modules/crm/components/useOwnerOptions'
@@ -14,11 +15,12 @@ import { useToast } from '@/shared/components/ui/Toast'
 import { Field, SelectInput, TextArea, TextInput } from '@/shared/components/form/Field'
 import { useRegion } from '@/modules/tenancy/hooks'
 
-const STATUS_HINT = {
-  Active: 'Normal account',
-  VIP: 'Priority service',
-  Paused: 'On hold',
-} as const
+const STATUS_HINT: Record<CustomerStatus, string> = {
+  active: 'Normal account',
+  vip: 'Priority service',
+  paused: 'On hold',
+  churned: 'No longer a customer',
+}
 
 /** Edits status and company details. Name, industry and value came from the lead. */
 export function CustomerEditDrawer({ open, onClose, customer }: { open: boolean; onClose: () => void; customer: CustomerRow }) {
@@ -87,7 +89,7 @@ export function CustomerEditDrawer({ open, onClose, customer }: { open: boolean;
       <form id="customer-form" noValidate onSubmit={onSubmit} className="space-y-5">
         <fieldset>
           <legend className="mb-1.5 text-[0.8125rem] font-medium text-ink-2">Status</legend>
-          <div role="radiogroup" className="grid grid-cols-3 gap-2">
+          <div role="radiogroup" className="grid grid-cols-2 gap-2">
             {CUSTOMER_STATUSES.map((s) => {
               const on = status === s
               return (
@@ -104,7 +106,7 @@ export function CustomerEditDrawer({ open, onClose, customer }: { open: boolean;
                 >
                   <span className="flex items-center gap-1.5 text-[0.8125rem] font-medium">
                     <span className={cn('size-2 rounded-full', DOT[CUSTOMER_STATUS_TONE[s]])} aria-hidden />
-                    {s}
+                    {CUSTOMER_STATUS_LABEL[s]}
                   </span>
                   <span className="mt-0.5 block text-xs text-muted">{STATUS_HINT[s]}</span>
                 </button>

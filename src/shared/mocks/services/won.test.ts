@@ -80,7 +80,8 @@ describe('Won flow: POST /leads/:id/won', () => {
       const src = tpl.find((x) => x.id === t.templateTaskId)!
       const expected = isoDate(addWorkingDays(parseISO('2026-12-07'), src.dayOffset + Math.max(1, Math.ceil(src.hours / 8)) - 1))
       expect(t.dueDate).toBe(expected)
-      expect(t.link).toEqual({ type: 'project', id: res.projectIds[0] })
+      expect(t.link).toBeNull()
+      expect(t.projectId).toBe(res.projectIds[0])
     }
     // Role → person in the delivery department; unmatched roles fall back to the project manager.
     expect(generated.find((t) => t.description.startsWith('Developer'))?.ownerId).toBe('u14')
@@ -103,7 +104,7 @@ describe('Won flow: POST /leads/:id/won', () => {
     const q = quotations.find((x) => x.leadId === lead.id) ?? quotations[0]
     // Make it an accepted quotation for this lead with a 12-month recurring line.
     q.leadId = lead.id
-    q.status = 'Accepted'
+    q.status = 'accepted'
     q.items = [
       { id: 'L1', serviceId: 'S-201', description: 'CRM automation setup', quantity: 1, unit: 'project', unitPrice: 35000, discountPct: 0 },
       { id: 'L2', serviceId: 'S-102', description: 'Hosting & tuning', quantity: 12, unit: 'month', unitPrice: 2500, discountPct: 0 },
@@ -258,7 +259,7 @@ describe('Won flow: requirements', () => {
 
   it('a non-accepted quotation is refused (422 quotation_not_accepted) and the preview blocks on it', async () => {
     const lead = openLeadWithContact()
-    const q = quotations.find((x) => x.companyId === lead.companyId && x.status === 'Sent')!
+    const q = quotations.find((x) => x.companyId === lead.companyId && x.status === 'sent')!
     q.leadId = lead.id
     const preview = await previewWon(admin, lead.id, { quotationId: q.id })
     expect(preview.problems[0]).toContain(`${q.number} is Sent, not Accepted`)
@@ -268,14 +269,14 @@ describe('Won flow: requirements', () => {
     expect(err).toMatchObject({ status: 422, step: 'validate', code: 'quotation_not_accepted' })
     expect(wonStores()).toEqual(before)
     // Accepting it and winning in one go works (the dialog opens right after the accept).
-    q.status = 'Accepted'
+    q.status = 'accepted'
     const ok = await winLead(admin, lead.id, base({ quotationId: q.id }))
     expect(projects.find((p) => p.id === ok.projectIds[0])?.quotationId).toBe(q.id)
   })
 
   it('a quotation of another lead is refused (422)', async () => {
     const lead = openLeadWithContact()
-    const q = quotations.find((x) => x.companyId === lead.companyId && x.status === 'Accepted' && x.leadId !== lead.id)!
+    const q = quotations.find((x) => x.companyId === lead.companyId && x.status === 'accepted' && x.leadId !== lead.id)!
     await expect(winLead(admin, lead.id, base({ quotationId: q.id }))).rejects.toMatchObject({ status: 422, message: expect.stringMatching(/another lead/) })
   })
 
@@ -321,7 +322,7 @@ describe('Won flow: plan errors inside the flow keep code + details and roll eve
   it.each(STEPS)('402 LIMIT_REACHED at “%s”: full rollback, code + details preserved, step tagged', async (failAt) => {
     // Crest is on a plan with limits, so current / max are real numbers.
     const lead = crestProposalLead()
-    const q = quotations.find((x) => x.companyId === 'co_crest' && x.status === 'Accepted')!
+    const q = quotations.find((x) => x.companyId === 'co_crest' && x.status === 'accepted')!
     q.leadId = lead.id
     q.items = [{ id: 'L1', serviceId: 'S-901', description: 'Retainer', quantity: 12, unit: 'month', unitPrice: 1000, discountPct: 0 }]
     const input = { quotationId: q.id, serviceIds: ['S-901'], projectManagerId: 'u101', startDate: '2026-12-07', idempotencyKey: key() }
@@ -376,7 +377,7 @@ describe('Won flow: carry-over, audit and activities', () => {
   it('the customer 360 shows the lead’s contacts, notes and full history; audit covers customer, contract and each project', async () => {
     const lead = openLeadWithContact()
     notes.push({ companyId: lead.companyId, id: 'N-won-carry', leadId: lead.id, body: 'Carry me over', authorId: 'u1', createdAt: '2026-11-01T09:00:00.000Z' })
-    const q = quotations.find((x) => x.companyId === lead.companyId && x.status === 'Accepted')!
+    const q = quotations.find((x) => x.companyId === lead.companyId && x.status === 'accepted')!
     q.leadId = lead.id
     q.items = [{ id: 'L1', serviceId: 'S-101', description: 'Retainer', quantity: 6, unit: 'month', unitPrice: 2000, discountPct: 0 }]
     const historyBefore = activities.filter((a) => a.leadId === lead.id).length
@@ -420,7 +421,7 @@ describe('Won bypasses are closed', () => {
     nextStep: '', value: null, companyServices: [], recommendedServiceId: '', recommendedServiceText: '', notes: '', doNotContact: false,
   })
   const signed = () =>
-    lookupsFor('co_apex').statuses.push({ key: 'Signed', label: 'Signed', active: true, order: 99, probability: 100, kind: 'open', requires: 'convert', tone: 'green', color: '#10b981', system: false })
+    lookupsFor('co_apex').statuses.push({ key: 'Signed', label: 'Signed', active: true, order: 99, probability: 100, type: 'won', requiresNextStep: false, requiresLossReason: false, tone: 'green', color: '#10b981', system: false })
 
   it('import: a Won row is an error in the check and is never created; an open status still imports', async () => {
     const [check] = await checkImport(admin, [importRow('Won')])
@@ -433,7 +434,7 @@ describe('Won bypasses are closed', () => {
     expect((await runImport(admin, { rows: [importRow('Proposal')], decisions: { 2: 'import' }, ownerRule: 'auto' })).created).toBe(1)
   })
 
-  it('import: a custom status with requires "convert" is refused too', async () => {
+  it('import: a custom status of type won is refused too', async () => {
     signed()
     const [check] = await checkImport(admin, [importRow('Signed')])
     expect(check.errors.join(' ')).toMatch(/Won flow/)
@@ -449,7 +450,7 @@ describe('Won bypasses are closed', () => {
     expect(lead.customerId).toBeNull()
   })
 
-  it('stage: refuses kind won AND requires convert (409 use_won_flow)', async () => {
+  it('stage: refuses the built-in and a custom status of type won (409 use_won_flow)', async () => {
     const lead = openLeadWithContact()
     await expect(moveLeadStage(admin, { id: lead.id, status: 'Won' })).rejects.toMatchObject({ status: 409, code: 'use_won_flow' })
     signed()
@@ -458,7 +459,7 @@ describe('Won bypasses are closed', () => {
   })
 
   it('settings: a status leads sit in can’t be turned into a Won-flow status', async () => {
-    const statuses = lookupsFor('co_apex').statuses.map((s) => (s.key === 'Proposal' ? { ...s, requires: 'convert' as const } : s))
+    const statuses = lookupsFor('co_apex').statuses.map((s) => (s.key === 'Proposal' ? { ...s, type: 'won' as const } : s))
     await expect(saveLookupList(admin, 'statuses', statuses)).rejects.toMatchObject({ status: 422, message: expect.stringMatching(/only the Won flow/) })
   })
 })

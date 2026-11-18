@@ -2,7 +2,8 @@ import { http, HttpResponse, type HttpHandler } from 'msw'
 import type { PlatformAuditQuery, PlatformCompanyQuery, PlatformPermissionV2 } from '@/modules/platform/types'
 import * as svc from '@/shared/mocks/services/platform'
 import { startImpersonation } from '@/shared/mocks/services/auth'
-import { API, errorBody, requirePlatform, respond, userFrom } from './utils'
+import { API, errorBody, requirePlatform, respond, respondAs, userFrom } from './utils'
+import { companyAnnouncementMapper } from '@/shared/api/mappers'
 import { ApiError } from '@/shared/lib/apiError'
 
 const json = async <T,>(request: Request): Promise<T | null> => (await request.json().catch(() => null)) as T | null
@@ -110,7 +111,7 @@ export const platformHandlers: HttpHandler[] = [
     respond(() => svc.endAnnouncement(requirePlatform(request, 'announcements:manage'), p.id)),
   ),
   // Company app.
-  http.get(`${API}/announcements`, ({ request }) => respond(() => svc.companyAnnouncements(userFrom(request)))),
+  http.get(`${API}/announcements`, ({ request }) => respondAs(companyAnnouncementMapper, () => svc.companyAnnouncements(userFrom(request)))),
   http.post<{ id: string }>(`${API}/announcements/:id/dismiss`, ({ request, params: p }) =>
     respond(() => svc.dismissAnnouncement(userFrom(request), p.id)),
   ),

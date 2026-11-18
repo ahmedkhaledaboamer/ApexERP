@@ -100,6 +100,8 @@ export interface LeadCreateInput {
   serviceIds?: string[]
   /** ACTIVE catalog service id; null = none. Setting it clears any legacy `recommendedServiceText`. */
   recommendedServiceId?: string | null
+  /** leads.campaign_id: a campaign of the company (marketing attribution); null = none. */
+  campaignId?: string | null
   doNotContact?: boolean
   /** Optional first note, saved to the lead's notes. */
   note?: string
@@ -126,6 +128,7 @@ export type LeadUpdateInput = Partial<
     | 'companyServices'
     | 'serviceIds'
     | 'recommendedServiceId'
+    | 'campaignId'
   >
 > & {
   /** Replaces the lead's contacts; the first becomes the primary contact. */
@@ -202,6 +205,8 @@ export interface ImportRequest {
   /** Per row number; rows with duplicates default to skip. */
   decisions: Record<number, ImportDecision>
   ownerRule: ImportOwnerRule
+  /** leads.campaign_id for every imported lead (optional; a campaign of the company). */
+  campaignId?: string | null
 }
 
 export interface ImportFailure {

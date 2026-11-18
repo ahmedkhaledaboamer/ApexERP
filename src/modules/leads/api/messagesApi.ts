@@ -1,5 +1,6 @@
 import { http } from '@/shared/lib/axios'
 import type { ActivityView } from '@/modules/leads/types'
+import { sendMessageMapper, sendMessageResultMapper } from '@/shared/api/mappers'
 
 /** Channels the lead composer can send on. */
 export type MessageChannel = 'email' | 'whatsapp'
@@ -29,7 +30,7 @@ export interface SendMessageResult {
   email?: { from: string; subject: string; html: string }
 }
 
-/** Sends (mocked for now) an email or WhatsApp to a lead contact and logs it as an activity. */
+/** Sends (mocked for now) an email or WhatsApp to a lead contact and logs it as an activity. Snake_case on the wire (to_address, message_template_id). */
 export async function sendLeadMessage(leadId: string, input: SendMessageInput): Promise<SendMessageResult> {
-  return (await http.post<SendMessageResult>(`/leads/${encodeURIComponent(leadId)}/messages`, input)).data
+  return sendMessageResultMapper.fromApi((await http.post<unknown>(`/leads/${encodeURIComponent(leadId)}/messages`, sendMessageMapper.toApi(input))).data)
 }

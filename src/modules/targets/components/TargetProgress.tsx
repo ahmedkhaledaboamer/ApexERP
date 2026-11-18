@@ -3,6 +3,7 @@ import { cn } from '@/shared/lib/utils'
 import { EVENTS_NA_HINT, EVENTS_NA_LABEL } from '@/shared/lib/features'
 import { Tooltip } from '@/shared/components/ui/Kbd'
 import { hasTarget, isTracked, paceTone, pctOf, TONE_BAR, TONE_TEXT } from '@/modules/targets/lib'
+import { useEventsEnabled } from '@/modules/events/hooks/useEventsEnabled'
 import type { TargetKey } from '@/modules/targets/types'
 
 /**
@@ -43,7 +44,8 @@ interface TargetProgressProps {
 
 /** actual / target with a thin bar, coloured by how it compares with today's pace. A 0 target reads "No target". */
 export function TargetProgress({ kind, actual, target, elapsed, layout = 'cell', label, className }: TargetProgressProps) {
-  if (kind && !isTracked(kind)) {
+  const eventsOn = useEventsEnabled()
+  if (kind && !isTracked(kind, eventsOn)) {
     return (
       <div className={cn(layout === 'cell' ? 'min-w-[5.75rem]' : '', className)}>
         <div className="flex items-baseline justify-between gap-2 text-[0.8125rem]">

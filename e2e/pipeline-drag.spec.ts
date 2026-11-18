@@ -70,9 +70,11 @@ test('mouse: New → Interested asks for next step + date, then moves and persis
   const saved = await page.evaluate(async (leadId) => {
     const s = JSON.parse(localStorage.getItem('apexcrm.session') || '{}')
     const r = await fetch(`/api/leads/${leadId}`, { headers: { Authorization: `Bearer ${s.token}` } })
-    return (await r.json()) as { status: string; nextStep: string }
+    return (await r.json()) as { status_id: string; next_step: string; next_follow_up_date: string }
   }, id)
-  expect(saved).toMatchObject({ status: 'Interested', nextStep: 'Send the proposal' })
+  // The API speaks the leads columns; the follow-up is a calendar date (yyyy-MM-dd).
+  expect(saved).toMatchObject({ status_id: 'Interested', next_step: 'Send the proposal' })
+  expect(saved.next_follow_up_date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
 })
 
 test('keyboard: Space + → moves across columns (New → Contacted, Contacted → Interested)', async ({ page }) => {

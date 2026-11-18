@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { addDays, format, isBefore, parseISO, startOfDay } from 'date-fns'
 import { GanttChart } from 'lucide-react'
-import { TASK_STATUSES, type TaskView } from '@/modules/tasks/types'
+import { TASK_STATUSES, TASK_STATUS_LABEL, type TaskView } from '@/modules/tasks/types'
 import { addWorkingDays, isoDate, isWorkingDay, nextWorkingDay } from '@/modules/won/plan'
 import { getRegion } from '@/shared/lib/region'
 import { weekStartIso, workingWeekLabel } from '@/shared/lib/companyDay'
@@ -88,7 +88,7 @@ export function ProjectTimeline({ project: p }: { project: ProjectDetail }) {
         {TASK_STATUSES.map((s) => (
           <span key={s} className="flex items-center gap-1.5">
             <span className="h-2 w-3 rounded-sm" style={{ background: TASK_STATUS_COLOR[s] }} aria-hidden />
-            {s}
+            {TASK_STATUS_LABEL[s]}
           </span>
         ))}
         <span className="flex items-center gap-1.5">
@@ -155,8 +155,8 @@ export function ProjectTimeline({ project: p }: { project: ProjectDetail }) {
                         width: `${(b.end - b.start + 1) * DAY - 0.25}rem`,
                         background: TASK_STATUS_COLOR[t.status],
                       }}
-                      aria-label={`${t.title}: ${t.status}, ${days[b.start]} to ${t.dueDate ?? 'no due date'}${t.overdue ? ', overdue' : ''}`}
-                      title={`${t.title}\n${t.ownerName} · ${t.status}\n${fmtDate(days[b.start])} → ${t.dueDate ? fmtDate(t.dueDate) : 'no due date'}${b.estimated ? ' (start estimated)' : ''}`}
+                      aria-label={`${t.title}: ${TASK_STATUS_LABEL[t.status]}, ${days[b.start]} to ${t.dueDate ?? 'no due date'}${t.overdue ? ', overdue' : ''}`}
+                      title={`${t.title}\n${t.ownerName} · ${TASK_STATUS_LABEL[t.status]}\n${fmtDate(days[b.start])} → ${t.dueDate ? fmtDate(t.dueDate) : 'no due date'}${b.estimated ? ' (start estimated)' : ''}`}
                     />
                   </div>
                 </div>

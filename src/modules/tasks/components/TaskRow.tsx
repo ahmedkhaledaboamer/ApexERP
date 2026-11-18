@@ -3,7 +3,7 @@ import type { TaskStatus, TaskView } from '@/modules/tasks/types'
 import { cn } from '@/shared/lib/utils'
 import { Avatar } from '@/shared/components/ui/Avatar'
 import { Tooltip } from '@/shared/components/ui/Kbd'
-import { PriorityBadge, StatusMenu } from './TaskBadges'
+import { BlockedBadge, PriorityBadge, StatusMenu } from './TaskBadges'
 import { LinkChip } from './LinkChip'
 import { dueLabel } from './taskMeta'
 
@@ -17,9 +17,9 @@ interface TaskRowProps {
   showOwner?: boolean
 }
 
-/** Linear-style task row: status menu, title, priority, link, due, owner. Wraps on phones. */
+/** Linear-style task row: status menu, title, blocked badge, priority, link + project, due, owner. Wraps on phones. */
 export function TaskRow({ task, onOpen, onStatus, canEdit, hideLink, showOwner = true }: TaskRowProps) {
-  const done = task.status === 'Done'
+  const done = task.status === 'done' || task.status === 'cancelled'
   return (
     <li className="group flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md px-1.5 py-1.5 hover:bg-hover sm:flex-nowrap">
       <StatusMenu status={task.status} onChange={(s) => onStatus(task, s)} disabled={!canEdit || !task.canEdit} title={task.title} />
@@ -50,7 +50,16 @@ export function TaskRow({ task, onOpen, onStatus, canEdit, hideLink, showOwner =
             )}
           </span>
         )}
+        {task.blocked && <BlockedBadge reason={task.blockedReason} compact />}
+        {task.subtaskProgress.total > 0 && (
+          <span className="num text-xs text-muted" title="Sub-tasks done">
+            {task.subtaskProgress.done}/{task.subtaskProgress.total}
+          </span>
+        )}
         {!hideLink && <LinkChip link={task.linkView} maxWidthClass="max-w-40" />}
+        {!hideLink && task.projectId && task.projectName && (
+          <LinkChip link={{ type: 'project', id: task.projectId, label: task.projectName, available: true }} maxWidthClass="max-w-40" />
+        )}
         <PriorityBadge priority={task.priority} compact />
         <span
           className={cn(

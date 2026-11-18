@@ -6,21 +6,24 @@ import type {
   UserInput,
   UserUpdateInput,
 } from '@/modules/settings/users/types'
+import { departmentOptionMapper, settingsUserMapper } from '@/shared/api/mappers'
+
+/** Settings › Users: the users columns on the wire (department_id, manager_id, is_active…), mapped both ways. */
 
 export async function getSettingsUsers(): Promise<SettingsUserRow[]> {
-  return (await http.get<SettingsUserRow[]>('/settings/users')).data
+  return settingsUserMapper.fromApiList((await http.get<unknown>('/settings/users')).data)
 }
 
 export async function getDepartments(): Promise<Department[]> {
-  return (await http.get<Department[]>('/settings/departments')).data
+  return departmentOptionMapper.fromApiList((await http.get<unknown>('/settings/departments')).data)
 }
 
 export async function createUser(input: UserInput): Promise<SettingsUserRow> {
-  return (await http.post<SettingsUserRow>('/settings/users', input)).data
+  return settingsUserMapper.fromApi((await http.post<unknown>('/settings/users', settingsUserMapper.toApi(input as never))).data)
 }
 
 export async function updateUser(id: string, input: UserUpdateInput): Promise<SettingsUserRow> {
-  return (await http.patch<SettingsUserRow>(`/settings/users/${id}`, input)).data
+  return settingsUserMapper.fromApi((await http.patch<unknown>(`/settings/users/${id}`, settingsUserMapper.toApi(input as never))).data)
 }
 
 /**
@@ -37,9 +40,9 @@ export async function deactivateUser(id: string, confirm = false): Promise<Deact
     const body = res.data as { message: string; openLeads: number }
     return { status: 'confirm', openLeads: body.openLeads, message: body.message }
   }
-  return { status: 'deactivated', user: res.data as SettingsUserRow }
+  return { status: 'deactivated', user: settingsUserMapper.fromApi(res.data) }
 }
 
 export async function reactivateUser(id: string): Promise<SettingsUserRow> {
-  return (await http.post<SettingsUserRow>(`/settings/users/${id}/reactivate`)).data
+  return settingsUserMapper.fromApi((await http.post<unknown>(`/settings/users/${id}/reactivate`)).data)
 }

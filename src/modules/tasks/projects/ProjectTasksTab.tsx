@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { ListChecks, Paperclip, Plus, X } from 'lucide-react'
-import { TASK_PRIORITIES, TASK_STATUSES, type TaskStatus, type TaskView } from '@/modules/tasks/types'
+import { TASK_PRIORITIES, TASK_PRIORITY_LABEL, TASK_STATUSES, TASK_STATUS_LABEL, type TaskStatus, type TaskView } from '@/modules/tasks/types'
 import { quickTaskSchema, type QuickTaskValues } from '@/modules/tasks/projectSchemas'
 import { useCreateTask } from '@/modules/tasks/hooks/useTasks'
 import { useUsersQuery } from '@/modules/crm/hooks/useCrm'
@@ -27,7 +27,7 @@ export function ProjectTasksTab({ project: p }: { project: ProjectDetail }) {
   const [adding, setAdding] = useState(false)
   const openTask = useOpenTask()
   const groups = useMemo(() => TASK_STATUSES.map((s) => ({ status: s, tasks: p.tasks.filter((t) => t.status === s) })).filter((g) => g.tasks.length), [p.tasks])
-  const closed = p.status === 'Completed' || p.status === 'Cancelled'
+  const closed = p.status === 'completed' || p.status === 'cancelled'
 
   return (
     <div className="space-y-4">
@@ -69,10 +69,10 @@ export function ProjectTasksTab({ project: p }: { project: ProjectDetail }) {
         <TaskTable tasks={p.tasks} onOpen={openTask} />
       ) : (
         groups.map((g) => (
-          <section key={g.status} aria-label={g.status} className="space-y-2">
+          <section key={g.status} aria-label={TASK_STATUS_LABEL[g.status]} className="space-y-2">
             <h3 className="flex items-center gap-2 text-xs font-semibold text-ink-2">
               <span className="size-2 rounded-full" style={{ background: TASK_STATUS_COLOR[g.status as TaskStatus] }} aria-hidden />
-              {g.status}
+              {TASK_STATUS_LABEL[g.status]}
               <span className="num rounded bg-sunken px-1 text-[0.6875rem] font-normal text-muted">{g.tasks.length}</span>
             </h3>
             <TaskTable tasks={g.tasks} onOpen={openTask} hideStatus />
@@ -109,7 +109,7 @@ function TaskTable({ tasks, onOpen, hideStatus }: { tasks: TaskView[]; onOpen: (
               className="cursor-pointer hover:bg-hover/60 focus-visible:bg-hover focus-visible:outline-none"
             >
               <td className="max-w-[22rem] px-4 py-2.5">
-                <p className={cn('truncate font-medium', t.status === 'Done' ? 'text-muted line-through decoration-subtle' : 'text-ink')}>{t.title}</p>
+                <p className={cn('truncate font-medium', t.status === 'done' || t.status === 'cancelled' ? 'text-muted line-through decoration-subtle' : 'text-ink')}>{t.title}</p>
                 <p className="flex items-center gap-1.5 truncate text-xs text-muted">
                   <span className="font-mono">{t.id}</span>
                   {t.attachments.length > 0 && (
@@ -137,7 +137,7 @@ function TaskTable({ tasks, onOpen, hideStatus }: { tasks: TaskView[]; onOpen: (
               )}
               <td className="px-3 py-2.5">
                 <Badge tone={PRIORITY_TONE[t.priority]} variant="dot">
-                  {t.priority}
+                  {TASK_PRIORITY_LABEL[t.priority]}
                 </Badge>
               </td>
               <td className="num px-4 py-2.5 text-end text-xs whitespace-nowrap">
@@ -165,12 +165,12 @@ function QuickAdd({ project: p, onDone }: { project: ProjectDetail; onDone: () =
     formState: { errors },
   } = useForm<QuickTaskValues>({
     resolver: zodResolver(quickTaskSchema),
-    defaultValues: { title: '', ownerId: me?.id ?? p.managerId, dueDate: '', priority: 'Medium' },
+    defaultValues: { title: '', ownerId: me?.id ?? p.managerId, dueDate: '', priority: 'medium' },
   })
 
   const onSubmit = handleSubmit((v) => {
     create.mutate(
-      { title: v.title.trim(), projectId: p.id, link: { type: 'project', id: p.id }, ownerId: v.ownerId, dueDate: v.dueDate || null, priority: v.priority },
+      { title: v.title.trim(), projectId: p.id, ownerId: v.ownerId, dueDate: v.dueDate || null, priority: v.priority },
       {
         onSuccess: (t) => {
           toast.success('Task added', t.title)
@@ -205,7 +205,7 @@ function QuickAdd({ project: p, onDone }: { project: ProjectDetail; onDone: () =
         <SelectInput aria-label="Priority" {...register('priority')}>
           {TASK_PRIORITIES.map((pr) => (
             <option key={pr} value={pr}>
-              {pr}
+              {TASK_PRIORITY_LABEL[pr]}
             </option>
           ))}
         </SelectInput>

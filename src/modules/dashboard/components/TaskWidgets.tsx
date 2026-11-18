@@ -5,6 +5,7 @@ import { PATHS } from '@/app/paths'
 import { cn, fmtDate } from '@/shared/lib/utils'
 import { daysBetweenIso } from '@/shared/lib/companyDay'
 import { currentDay } from '@/modules/tasks/components/taskMeta'
+import { TASK_PRIORITY_LABEL, TASK_STATUS_LABEL } from '@/modules/tasks/enums'
 import { Card, CardHeader } from '@/shared/components/ui/Card'
 import { EmptyState } from '@/shared/components/ui/Feedback'
 import { StatCard } from '@/shared/components/ui/StatCard'
@@ -13,10 +14,10 @@ type TaskFigures = DashboardSummary['tasks']
 type NextTask = TaskFigures['next'][number]
 
 const PRIORITY_TONE: Record<NextTask['priority'], string> = {
-  Low: 'text-muted',
-  Medium: 'text-accent-700 dark:text-accent-300',
-  High: 'text-warning-700 dark:text-warning-500',
-  Urgent: 'text-danger-600 dark:text-danger-500',
+  low: 'text-muted',
+  medium: 'text-accent-700 dark:text-accent-300',
+  high: 'text-warning-700 dark:text-warning-500',
+  urgent: 'text-danger-600 dark:text-danger-500',
 }
 
 /** Current URL with `?task=<id>` set: opens the global task drawer over the dashboard. */
@@ -111,9 +112,10 @@ export function MyTasksCard({ data }: { data: TaskFigures }) {
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-medium">{t.title}</span>
                     <span className="block truncate text-xs text-muted">
-                      <span className={PRIORITY_TONE[t.priority]}>{t.priority}</span>
+                      <span className={PRIORITY_TONE[t.priority]}>{TASK_PRIORITY_LABEL[t.priority]}</span>
                       {' · '}
-                      {t.status}
+                      {TASK_STATUS_LABEL[t.status]}
+                      {t.blocked && ' · Blocked'}
                       {t.linkLabel && ` · ${t.linkLabel}`}
                     </span>
                   </span>

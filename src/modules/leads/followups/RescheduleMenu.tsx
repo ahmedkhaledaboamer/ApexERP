@@ -1,16 +1,18 @@
 import { useState } from 'react'
-import { addDays, format, nextMonday, setHours, startOfDay } from 'date-fns'
+import { format } from 'date-fns'
 import { CalendarDays, CalendarPlus, ChevronDown } from 'lucide-react'
 import { Button } from '@/shared/components/ui/Button'
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from '@/shared/components/ui/Menu'
 
-/** Follow-ups are stored as a moment; the mock uses 09:00 local on the chosen day. */
-export function followUpOn(day: Date): string {
-  return setHours(startOfDay(day), 9).toISOString()
-}
+import { addDaysIso, weekdayOfIso } from '@/shared/lib/companyDay'
+import { companyTodayIso } from '@/modules/leads/lib/followUp'
+
+/** A yyyy-MM-dd calendar date as a local Date, for date-fns labels only. */
+const dayOf = (iso: string) => new Date(`${iso}T00:00:00`)
 
 interface RescheduleMenuProps {
-  onPick: (iso: string, label: string) => void
+  /** `date` is the new follow-up as a company-local calendar date (yyyy-MM-dd). */
+  onPick: (date: string, label: string) => void
   loading?: boolean
   disabled?: boolean
 }
@@ -18,12 +20,13 @@ interface RescheduleMenuProps {
 /** Quick picks (tomorrow, in 2 days, next week) plus a date field for anything else. */
 export function RescheduleMenu({ onPick, loading, disabled }: RescheduleMenuProps) {
   const [custom, setCustom] = useState('')
-  const today = new Date()
-  const minDate = format(today, 'yyyy-MM-dd')
+  // Company-local today (tenant timezone); follow-ups are calendar dates.
+  const minDate = companyTodayIso()
   const picks = [
-    { label: 'Tomorrow', day: addDays(today, 1) },
-    { label: 'In 2 days', day: addDays(today, 2) },
-    { label: 'Next week', day: nextMonday(today) },
+    { label: 'Tomorrow', day: addDaysIso(minDate, 1) },
+    { label: 'In 2 days', day: addDaysIso(minDate, 2) },
+    // Next Monday (a Monday today → the one after).
+    { label: 'Next week', day: addDaysIso(minDate, ((8 - weekdayOfIso(minDate)) % 7) || 7) },
   ]
 
   return (
@@ -45,10 +48,10 @@ export function RescheduleMenu({ onPick, loading, disabled }: RescheduleMenuProp
             <MenuItem
               key={p.label}
               icon={<CalendarDays />}
-              hint={format(p.day, 'EEE d MMM')}
+              hint={format(dayOf(p.day), 'EEE d MMM')}
               onSelect={() => {
                 close()
-                onPick(followUpOn(p.day), p.label.toLowerCase())
+                onPick(p.day, p.label.toLowerCase())
               }}
             >
               {p.label}
@@ -60,10 +63,10 @@ export function RescheduleMenu({ onPick, loading, disabled }: RescheduleMenuProp
             onSubmit={(e) => {
               e.preventDefault()
               if (!custom) return
-              const day = new Date(`${custom}T00:00:00`)
+              const day = custom
               close()
               setCustom('')
-              onPick(followUpOn(day), format(day, 'EEE d MMM'))
+              onPick(day, format(dayOf(day), 'EEE d MMM'))
             }}
           >
             <label className="mb-1 block text-[0.6875rem] font-medium text-subtle" htmlFor="reschedule-date">

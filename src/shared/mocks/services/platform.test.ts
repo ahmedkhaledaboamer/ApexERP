@@ -665,7 +665,7 @@ describe('plan edits never break existing subscriptions', () => {
     expect((await api(tokenFor(crestAdmin()), 'GET', '/leads')).status).toBe(200)
     const trial = await trialCompany()
     await setPaymentMethod(trial, card)
-    expect((await api(tokenFor(trial), 'POST', '/billing/change-plan', { planId: 'business' })).body.code).toBe('invalid_plan')
+    expect((await api(tokenFor(trial), 'POST', '/billing/change-plan', { plan_id: 'business' })).body.code).toBe('invalid_plan')
     expect((await owner('POST', `/platform/companies/${APEX_ID}/actions`, { action: 'change_plan', planId: 'business', reason: REASON })).body.code).toBe('invalid_plan')
     // The platform list still has it.
     const all = (await owner('GET', '/platform/plans')).body as { id: string; active: boolean; subscribers: number }[]
@@ -743,10 +743,10 @@ describe('the trial converts to the selected plan', () => {
 
   it('POST /billing/trial-plan changes the selection (trialing only, Company Admin)', async () => {
     const admin = await trialCompany('starter')
-    const res = await api(tokenFor(admin), 'POST', '/billing/trial-plan', { planId: 'business' })
+    const res = await api(tokenFor(admin), 'POST', '/billing/trial-plan', { plan_id: 'business' })
     expect(res.status).toBe(200)
-    expect(res.body.subscription.selectedPlanId).toBe('business')
-    expect((await api(tokenFor(admin), 'POST', '/billing/trial-plan', { planId: 'enterprise' })).body.code).toBe('contact_sales')
+    expect(res.body.subscription.selected_plan_id).toBe('business')
+    expect((await api(tokenFor(admin), 'POST', '/billing/trial-plan', { plan_id: 'enterprise' })).body.code).toBe('contact_sales')
     expect((await apiError(setTrialPlan(crestAdmin(), { planId: 'business' }))).code).toBe('invalid_state')
     await setPaymentMethod(admin, card)
     advanceClock(billingSettings.trialDays + 1)
@@ -788,7 +788,7 @@ describe('announcements', () => {
     const a = (await create({ audience: { plans: ['business'], countries: ['SA'] } })).body
     expect(a.reach).toBe(1)
     expect((await list(crestAgent())).body.map((x: { id: string }) => x.id)).toEqual([a.id])
-    expect(Object.keys((await list(crestAgent())).body[0]).sort()).toEqual(['body', 'endsAt', 'id', 'title', 'tone'])
+    expect(Object.keys((await list(crestAgent())).body[0]).sort()).toEqual(['body', 'ends_at', 'id', 'title', 'tone'])
     expect((await list(apexAdmin())).body).toEqual([])
     expect((await api(tokenFor(crestAgent()), 'POST', `/announcements/${a.id}/dismiss`)).status).toBe(200)
     expect((await list(crestAgent())).body).toEqual([])

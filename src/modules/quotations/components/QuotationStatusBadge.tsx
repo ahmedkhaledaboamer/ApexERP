@@ -1,20 +1,14 @@
 import type { QuotationStatus } from '@/modules/quotations/types'
-import { Badge, type Tone } from '@/shared/components/ui/Badge'
+import { Badge } from '@/shared/components/ui/Badge'
+import { QUOTATION_STATUS_LABEL, QUOTATION_STATUS_TONE } from '@/shared/domain/enums'
 
-export const QUOTATION_STATUS_TONE: Record<QuotationStatus, Tone> = {
-  Draft: 'neutral',
-  Sent: 'blue',
-  Viewed: 'brand',
-  Accepted: 'green',
-  Rejected: 'red',
-  Expired: 'amber',
-}
+export { QUOTATION_STATUS_LABEL, QUOTATION_STATUS_TONE }
 
 /** Quotation status as a dot chip; `soft` gives the tinted pill for headers. */
 export function QuotationStatusBadge({ status, soft = false }: { status: QuotationStatus; soft?: boolean }) {
   return (
     <Badge tone={QUOTATION_STATUS_TONE[status]} variant={soft ? 'soft' : 'dot'}>
-      {status}
+      {QUOTATION_STATUS_LABEL[status]}
     </Badge>
   )
 }

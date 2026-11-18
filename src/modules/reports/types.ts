@@ -197,8 +197,8 @@ export interface OverdueFollowUp {
 export interface OverdueTask {
   taskId: string
   title: string
-  /** What the task is linked to; null for personal to-dos. */
-  linkType: TaskLinkType | null
+  /** What the task is about: its related link (lead, customer, event), else its project; null for personal to-dos. */
+  linkType: TaskLinkType | 'project' | null
   linkId: string | null
   /** Resolved label of the link (project name, lead company, customer name). */
   linkLabel: string | null

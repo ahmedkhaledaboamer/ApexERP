@@ -5,6 +5,8 @@ import { departments } from '@/shared/mocks/data/departments'
 import { quotations } from '@/shared/mocks/data/quotations'
 import { services, packages } from '@/shared/mocks/data/services'
 import { templates } from '@/shared/mocks/data/templates'
+import { campaigns } from '@/shared/mocks/data/marketing'
+import { events } from '@/shared/mocks/data/events'
 import { contracts } from '@/shared/mocks/data/contracts'
 import { tasks, projects } from '@/shared/mocks/data/tasks'
 import { restoreSnapshot, takeSnapshot } from '@/shared/mocks/persist/registry'
@@ -83,34 +85,36 @@ describe('Duplicate detection, search and uniqueness are per company', () => {
 
     it(`${label(co)}: template, service, package and department names of ${label(them)} are free to use`, async () => {
       const tpl = exclusive(templates, co, (t) => t.name)
-      const t = await api(adminToken(co), 'POST', '/templates', { body: { channel: 'email', name: tpl, purpose: 'First follow-up', subject: 'Hi', body: 'Hello there' } })
+      const t = await api(adminToken(co), 'POST', '/templates', { body: { type: 'email', name: tpl, purpose: 'First follow-up', subject: 'Hi', body: 'Hello there' } })
       expect(t.status, t.text).toBe(200)
       const svcName = exclusive(services, co, (s) => s.name)
       const base = one(services, co, (s) => s.active)
-      const s = await api(adminToken(co), 'POST', '/services', { body: { name: svcName, category: base.category, description: '', industries: [], pricingType: base.pricingType, price: 10, currency: base.currency, deliveryDays: 1 } })
+      const s = await api(adminToken(co), 'POST', '/services', { body: { name: svcName, category_id: base.category, description: '', industry_ids: [], pricing_type: base.pricingType, price: 10, currency_code: base.currency, delivery_days: 1 } })
       expect(s.status, s.text).toBe(200)
       const pkgName = exclusive(packages, co, (p) => p.name)
       const two = of(services, co, (x) => x.active).slice(0, 2)
-      const p = await api(adminToken(co), 'POST', '/services/packages', { body: { name: pkgName, description: '', items: two.map((x) => ({ serviceId: x.id, quantity: 1 })), packagePrice: 10, currency: base.currency } })
+      const p = await api(adminToken(co), 'POST', '/services/packages', { body: { name: pkgName, description: '', items: two.map((x) => ({ service_id: x.id, quantity: 1 })), price: 10, currency_code: base.currency } })
       expect(p.status, p.text).toBe(200)
       const deptName = exclusive(departments, co, (d) => d.name)
-      const d = await api(adminToken(co), 'POST', '/departments', { body: { name: deptName, parentId: null, headId: null } })
+      const d = await api(adminToken(co), 'POST', '/departments', { body: { name: deptName, parent_id: null, head_user_id: null } })
       expect(d.status, d.text).toBe(200)
     })
 
     it(`${label(co)}: list values (lookups) of ${label(them)} don't clash`, async () => {
-      const mine = (await api(adminToken(co), 'GET', '/lookups')).body.industries as { key: string; label: string }[]
-      const theirs = (await api(adminToken(them), 'GET', '/lookups')).body.industries as { key: string; label: string; active: boolean; order: number }[]
-      const extra = theirs.find((x) => !mine.some((m) => m.label.toLowerCase() === x.label.toLowerCase()))
+      // GET /lookups speaks the industries columns: id, name, is_active, sort_order.
+      const mine = (await api(adminToken(co), 'GET', '/lookups')).body.industries as { id: string; name: string }[]
+      const theirs = (await api(adminToken(them), 'GET', '/lookups')).body.industries as { id: string; name: string; is_active: boolean; sort_order: number }[]
+      const extra = theirs.find((x) => !mine.some((m) => m.name.toLowerCase() === x.name.toLowerCase()))
       if (!extra) throw new Error('no exclusive industry')
-      const res = await api(adminToken(co), 'PUT', '/lookups/industries', { body: { items: [...mine, { ...extra, order: mine.length }] } })
+      const res = await api(adminToken(co), 'PUT', '/lookups/industries', { body: { items: [...mine, { ...extra, sort_order: mine.length }] } })
       expect(res.status, res.text).toBe(200)
+      expect((res.body.industries as { name: string }[]).some((x) => x.name === extra.name)).toBe(true)
     })
 
     it(`${label(co)}: email uniqueness is platform-wide by design — 409 email_taken that never names ${label(them)}`, async () => {
       const theirEmail = users.find((u) => u.companyId === them)!.email
       const sales = one(departments, co, (x) => /sales/i.test(x.name))
-      const res = await api(adminToken(co), 'POST', '/settings/users', { body: { name: 'Probe', email: theirEmail, mobile: dial(co), role: 'Sales Agent', title: 'Rep', departmentId: sales.id, managerId: null } })
+      const res = await api(adminToken(co), 'POST', '/settings/users', { body: { name: 'Probe', email: theirEmail, mobile: dial(co), role: 'Sales Agent', title: 'Rep', department_id: sales.id, manager_id: null } })
       expect(res.status).toBe(409)
       expect(res.body.code).toBe('email_taken')
       expect(leaksIn(res.body, co)).toEqual([])
@@ -138,35 +142,45 @@ interface Ref {
 }
 
 const REFS: Ref[] = [
-  { name: 'task owner', method: 'POST', path: () => '/tasks', id: (co) => one(users, co, (u) => u.role === 'Sales Agent').id, body: (_co, id) => ({ title: 'Ref', ownerId: id }) },
-  { name: 'task follower', method: 'POST', path: () => '/tasks', id: (co) => one(users, co, (u) => u.role === 'Sales Agent').id, body: (_co, id) => ({ title: 'Ref', followerIds: [id] }) },
+  { name: 'task owner', method: 'POST', path: () => '/tasks', id: (co) => one(users, co, (u) => u.role === 'Sales Agent').id, body: (_co, id) => ({ title: 'Ref', owner_id: id }) },
+  { name: 'task follower', method: 'POST', path: () => '/tasks', id: (co) => one(users, co, (u) => u.role === 'Sales Agent').id, body: (_co, id) => ({ title: 'Ref', follower_ids: [id] }) },
   { name: 'task link lead', method: 'POST', path: () => '/tasks', id: (co) => openLead(co).id, body: (_co, id) => ({ title: 'Ref', link: { type: 'lead', id } }) },
-  { name: 'task project', method: 'POST', path: () => '/tasks', id: (co) => one(projects, co).id, body: (_co, id) => ({ title: 'Ref', projectId: id }) },
-  { name: 'contract customer', method: 'POST', path: () => '/contracts', id: (co) => one(customers, co).id, body: (co, id) => ({ customerId: id, title: 'Ref', serviceIds: [one(services, co, (s) => s.active).id], value: 1, billing: 'Monthly', startDate: day(1), renewalDate: day(300) }) },
-  { name: 'contract service', method: 'POST', path: () => '/contracts', id: (co) => one(services, co, (s) => s.active).id, body: (co, id) => ({ customerId: one(customers, co).id, title: 'Ref', serviceIds: [id], value: 1, billing: 'Monthly', startDate: day(1), renewalDate: day(300) }) },
-  { name: 'quotation lead', method: 'POST', path: () => '/quotations', id: (co) => openLead(co).id, body: (co, id) => ({ leadId: id, title: 'Ref', validUntil: day(30), items: [{ description: 'x', quantity: 1, unit: 'project', unitPrice: 1, discountPct: 0, serviceId: one(services, co, (s) => s.active).id }], notes: '', terms: '' }) },
-  { name: 'quotation service', method: 'POST', path: () => '/quotations', id: (co) => one(services, co, (s) => s.active).id, body: (co, id) => ({ leadId: openLead(co).id, title: 'Ref', validUntil: day(30), items: [{ description: 'x', quantity: 1, unit: 'project', unitPrice: 1, discountPct: 0, serviceId: id }], notes: '', terms: '' }) },
-  { name: 'project customer', method: 'POST', path: () => '/projects', id: (co) => one(customers, co).id, body: (co, id) => ({ name: 'Ref', customerId: id, serviceId: one(services, co, (s) => s.active).id, managerId: ADMIN[co], startDate: day(10), endDate: day(40), status: 'Planned', estimatedHours: 0, generateTasks: false }) },
-  { name: 'project manager', method: 'POST', path: () => '/projects', id: (co) => ADMIN[co], body: (co, id) => ({ name: 'Ref', customerId: one(customers, co).id, serviceId: one(services, co, (s) => s.active).id, managerId: id, startDate: day(10), endDate: day(40), status: 'Planned', estimatedHours: 0, generateTasks: false }) },
+  { name: 'task project', method: 'POST', path: () => '/tasks', id: (co) => one(projects, co).id, body: (_co, id) => ({ title: 'Ref', project_id: id }) },
+  { name: 'contract customer', method: 'POST', path: () => '/contracts', id: (co) => one(customers, co).id, body: (co, id) => ({ customer_id: id, title: 'Ref', service_ids: [one(services, co, (s) => s.active).id], cycle_value: 1, billing_period: 'Monthly', start_date: day(1), renewal_date: day(300) }) },
+  { name: 'contract service', method: 'POST', path: () => '/contracts', id: (co) => one(services, co, (s) => s.active).id, body: (co, id) => ({ customer_id: one(customers, co).id, title: 'Ref', service_ids: [id], cycle_value: 1, billing_period: 'Monthly', start_date: day(1), renewal_date: day(300) }) },
+  { name: 'quotation lead', method: 'POST', path: () => '/quotations', id: (co) => openLead(co).id, body: (co, id) => ({ lead_id: id, title: 'Ref', valid_until: day(30), items: [{ description: 'x', quantity: 1, unit: 'project', unit_price: 1, discount_percent: 0, service_id: one(services, co, (s) => s.active).id }], notes: '', terms: '' }) },
+  { name: 'quotation service', method: 'POST', path: () => '/quotations', id: (co) => one(services, co, (s) => s.active).id, body: (co, id) => ({ lead_id: openLead(co).id, title: 'Ref', valid_until: day(30), items: [{ description: 'x', quantity: 1, unit: 'project', unit_price: 1, discount_percent: 0, service_id: id }], notes: '', terms: '' }) },
+  { name: 'project customer', method: 'POST', path: () => '/projects', id: (co) => one(customers, co).id, body: (co, id) => ({ name: 'Ref', customer_id: id, service_id: one(services, co, (s) => s.active).id, manager_id: ADMIN[co], start_date: day(10), end_date: day(40), status: 'planned', estimated_hours: 0, generate_tasks: false }) },
+  { name: 'project manager', method: 'POST', path: () => '/projects', id: (co) => ADMIN[co], body: (co, id) => ({ name: 'Ref', customer_id: one(customers, co).id, service_id: one(services, co, (s) => s.active).id, manager_id: id, start_date: day(10), end_date: day(40), status: 'planned', estimated_hours: 0, generate_tasks: false }) },
   { name: 'contact record', method: 'POST', path: () => '/contacts', id: (co) => openLead(co).id, body: (co, id) => ({ recordType: 'lead', recordId: id, name: 'Ref', title: '', mobile: dial(co), email: 'ref@example.org', isDecisionMaker: false }) },
   { name: 'lead owner', method: 'PATCH', path: (co) => `/leads/${openLead(co).id}`, id: (co) => one(users, co, (u) => u.role === 'Sales Agent').id, body: (_co, id) => ({ ownerId: id }) },
-  { name: 'lead services', method: 'PATCH', path: (co) => `/leads/${openLead(co).id}`, id: (co) => one(services, co, (s) => s.active).id, body: (_co, id) => ({ serviceIds: [id] }) },
-  { name: 'move members user', method: 'POST', path: () => '/departments/move-members', id: (co) => one(users, co, (u) => u.role === 'Sales Agent').id, body: (co, id) => ({ userIds: [id], toDepartmentId: one(departments, co, (d) => d.active).id }) },
-  { name: 'move members target', method: 'POST', path: () => '/departments/move-members', id: (co) => one(departments, co, (d) => d.active).id, body: (co, id) => ({ userIds: [one(users, co, (u) => u.role === 'Sales Agent').id], toDepartmentId: id }) },
-  { name: 'department head', method: 'POST', path: () => '/departments', id: (co) => one(users, co, (u) => u.role === 'Sales Manager').id, body: (_co, id) => ({ name: 'Ref Dept', parentId: null, headId: id }) },
-  { name: 'department parent', method: 'POST', path: () => '/departments', id: (co) => one(departments, co, (d) => d.active).id, body: (_co, id) => ({ name: 'Ref Dept', parentId: id, headId: null }) },
-  { name: 'user department', method: 'POST', path: () => '/settings/users', id: (co) => one(departments, co, (d) => d.active).id, body: (co, id) => ({ name: 'Ref', email: `ref-${co}@example.org`, mobile: dial(co), role: 'Sales Agent', title: 'Rep', departmentId: id, managerId: null }) },
-  { name: 'user manager', method: 'POST', path: () => '/settings/users', id: (co) => one(users, co, (u) => u.role === 'Sales Manager').id, body: (co, id) => ({ name: 'Ref', email: `ref-${co}@example.org`, mobile: dial(co), role: 'Sales Agent', title: 'Rep', departmentId: one(departments, co, (d) => /sales/i.test(d.name)).id, managerId: id }) },
-  { name: 'won project manager', method: 'POST', path: (co) => `/leads/${openLead(co).id}/won`, id: (co) => ADMIN[co], body: (co, id) => ({ serviceIds: [one(services, co, (s) => s.active).id], projectManagerId: id, startDate: day(20), idempotencyKey: `ref-${co}` }) },
-  { name: 'won service', method: 'POST', path: (co) => `/leads/${openLead(co).id}/won`, id: (co) => one(services, co, (s) => s.active).id, body: (co, id) => ({ serviceIds: [id], projectManagerId: ADMIN[co], startDate: day(20), idempotencyKey: `ref-${co}` }) },
-  { name: 'won quotation', method: 'POST', path: (co) => `/leads/${openLead(co).id}/won`, id: (co) => one(quotations, co).id, body: (co, id) => ({ quotationId: id, serviceIds: [one(services, co, (s) => s.active).id], projectManagerId: ADMIN[co], startDate: day(20), idempotencyKey: `ref-${co}` }) },
-  { name: 'message template', method: 'POST', path: (co) => `/leads/${openLead(co).id}/messages`, id: (co) => one(templates, co, (t) => t.active).id, body: (co, id) => ({ channel: 'email', to: openLead(co).contactEmail, subject: 'x', body: 'x', templateId: id }) },
-  { name: 'package service', method: 'POST', path: () => '/services/packages', id: (co) => of(services, co, (s) => s.active)[1].id, body: (co, id) => ({ name: 'Ref package', description: '', items: [{ serviceId: one(services, co, (s) => s.active).id, quantity: 1 }, { serviceId: id, quantity: 1 }], packagePrice: 1 }) },
-  { name: 'report owner filter', method: 'GET', path: () => '/reports/sales', id: (co) => one(users, co, (u) => u.role === 'Sales Agent').id, query: (id) => `?from=${day(-300)}&to=${day(0)}&ownerId=${id}` },
-  { name: 'report department filter', method: 'GET', path: () => '/reports/sales', id: (co) => one(departments, co, (d) => d.active).id, query: (id) => `?from=${day(-300)}&to=${day(0)}&departmentId=${id}` },
-  { name: 'quotations lead filter', method: 'GET', path: () => '/quotations', id: (co) => one(quotations, co).leadId, query: (id) => `?leadId=${id}` },
-  { name: 'tasks owner filter', method: 'GET', path: () => '/tasks', id: (co) => one(tasks, co).ownerId, query: (id) => `?ownerId=${id}&includeDone=true` },
-  { name: 'audit user filter', method: 'GET', path: () => '/audit-log', id: (co) => ADMIN[co], query: (id) => `?userId=${id}` },
+  { name: 'lead services', method: 'PATCH', path: (co) => `/leads/${openLead(co).id}`, id: (co) => one(services, co, (s) => s.active).id, body: (_co, id) => ({ service_ids: [id] }) },
+  { name: 'move members user', method: 'POST', path: () => '/departments/move-members', id: (co) => one(users, co, (u) => u.role === 'Sales Agent').id, body: (co, id) => ({ user_ids: [id], to_department_id: one(departments, co, (d) => d.active).id }) },
+  { name: 'move members target', method: 'POST', path: () => '/departments/move-members', id: (co) => one(departments, co, (d) => d.active).id, body: (co, id) => ({ user_ids: [one(users, co, (u) => u.role === 'Sales Agent').id], to_department_id: id }) },
+  { name: 'department head', method: 'POST', path: () => '/departments', id: (co) => one(users, co, (u) => u.role === 'Sales Manager').id, body: (_co, id) => ({ name: 'Ref Dept', parent_id: null, head_user_id: id }) },
+  { name: 'department parent', method: 'POST', path: () => '/departments', id: (co) => one(departments, co, (d) => d.active).id, body: (_co, id) => ({ name: 'Ref Dept', parent_id: id, head_user_id: null }) },
+  { name: 'user department', method: 'POST', path: () => '/settings/users', id: (co) => one(departments, co, (d) => d.active).id, body: (co, id) => ({ name: 'Ref', email: `ref-${co}@example.org`, mobile: dial(co), role: 'Sales Agent', title: 'Rep', department_id: id, manager_id: null }) },
+  { name: 'user manager', method: 'POST', path: () => '/settings/users', id: (co) => one(users, co, (u) => u.role === 'Sales Manager').id, body: (co, id) => ({ name: 'Ref', email: `ref-${co}@example.org`, mobile: dial(co), role: 'Sales Agent', title: 'Rep', department_id: one(departments, co, (d) => /sales/i.test(d.name)).id, manager_id: id }) },
+  { name: 'won project manager', method: 'POST', path: (co) => `/leads/${openLead(co).id}/won`, id: (co) => ADMIN[co], body: (co, id) => ({ service_ids: [one(services, co, (s) => s.active).id], project_manager_id: id, start_date: day(20), idempotency_key: `ref-${co}` }) },
+  { name: 'won service', method: 'POST', path: (co) => `/leads/${openLead(co).id}/won`, id: (co) => one(services, co, (s) => s.active).id, body: (co, id) => ({ service_ids: [id], project_manager_id: ADMIN[co], start_date: day(20), idempotency_key: `ref-${co}` }) },
+  { name: 'won quotation', method: 'POST', path: (co) => `/leads/${openLead(co).id}/won`, id: (co) => one(quotations, co).id, body: (co, id) => ({ quotation_id: id, service_ids: [one(services, co, (s) => s.active).id], project_manager_id: ADMIN[co], start_date: day(20), idempotency_key: `ref-${co}` }) },
+  { name: 'message template', method: 'POST', path: (co) => `/leads/${openLead(co).id}/messages`, id: (co) => one(templates, co, (t) => t.active).id, body: (co, id) => ({ channel: 'email', to_address: openLead(co).contactEmail, subject: 'x', body: 'x', message_template_id: id }) },
+  { name: 'package service', method: 'POST', path: () => '/services/packages', id: (co) => of(services, co, (s) => s.active)[1].id, body: (co, id) => ({ name: 'Ref package', description: '', items: [{ service_id: one(services, co, (s) => s.active).id, quantity: 1 }, { service_id: id, quantity: 1 }], price: 1 }) },
+  { name: 'report owner filter', method: 'GET', path: () => '/reports/sales', id: (co) => one(users, co, (u) => u.role === 'Sales Agent').id, query: (id) => `?from=${day(-300)}&to=${day(0)}&owner_id=${id}` },
+  { name: 'report department filter', method: 'GET', path: () => '/reports/sales', id: (co) => one(departments, co, (d) => d.active).id, query: (id) => `?from=${day(-300)}&to=${day(0)}&department_id=${id}` },
+  { name: 'quotations lead filter', method: 'GET', path: () => '/quotations', id: (co) => one(quotations, co).leadId, query: (id) => `?lead_id=${id}` },
+  { name: 'tasks owner filter', method: 'GET', path: () => '/tasks', id: (co) => one(tasks, co).ownerId, query: (id) => `?owner_id=${id}&include_done=true` },
+  { name: 'lead campaign', method: 'PATCH', path: (co) => `/leads/${openLead(co).id}`, id: (co) => one(campaigns, co).id, body: (_co, id) => ({ campaign_id: id }) },
+  { name: 'campaign owner', method: 'POST', path: () => '/marketing/campaigns', id: (co) => ADMIN[co], body: (_co, id) => ({ name: 'Ref campaign', channel: 'ads', owner_id: id }) },
+  { name: 'bulk email campaign', method: 'POST', path: () => '/marketing/emails', id: (co) => one(campaigns, co).id, body: (_co, id) => ({ name: 'Ref email', campaign_id: id }) },
+  { name: 'bulk email template', method: 'POST', path: () => '/marketing/emails', id: (co) => one(templates, co, (t) => t.active && t.channel === 'email').id, body: (_co, id) => ({ name: 'Ref email', message_template_id: id }) },
+  { name: 'bulk email owner filter', method: 'POST', path: () => '/marketing/emails', id: (co) => one(users, co, (u) => u.role === 'Sales Agent').id, body: (_co, id) => ({ name: 'Ref email', filters: { owner_ids: [id] } }) },
+  { name: 'event owner', method: 'POST', path: () => '/events', id: (co) => one(users, co, (u) => u.role === 'Sales Agent').id, body: (_co, id) => ({ name: 'Ref event', type: 'meeting', start_date: day(10), owner_id: id }) },
+  { name: 'event team on create', method: 'POST', path: () => '/events', id: (co) => one(users, co, (u) => u.role === 'Sales Agent').id, body: (_co, id) => ({ name: 'Ref event', type: 'meeting', start_date: day(10), team_ids: [id] }) },
+  { name: 'event team member', method: 'POST', path: (co) => `/events/${one(events, co, (e) => e.status === 'confirmed').id}/team`, id: (co) => one(users, co, (u) => u.role === 'Management').id, body: (_co, id) => ({ user_id: id }) },
+  { name: 'event owner change', method: 'PATCH', path: (co) => `/events/${one(events, co, (e) => e.status === 'confirmed').id}`, id: (co) => one(users, co, (u) => u.role === 'Management').id, body: (_co, id) => ({ owner_id: id }) },
+  { name: 'task link event', method: 'POST', path: () => '/tasks', id: (co) => one(events, co).id, body: (_co, id) => ({ title: 'Ref', link: { type: 'event', id } }) },
+  { name: 'audit user filter', method: 'GET', path: () => '/audit-log', id: (co) => ADMIN[co], query: (id) => `?user_id=${id}` },
 ]
 
 describe('Ids of the other company in a body or query behave like ids that don’t exist', () => {
@@ -218,9 +232,9 @@ describe('Exports, reports and the dashboard hold only own rows; key numbers equ
       const res = await api(adminToken(co), 'GET', '/dashboard/summary?period=12m')
       expect(res.status).toBe(200)
       expect(leaksIn(res.body, co)).toEqual([])
-      expect(res.body.totalLeads).toBe(of(leads, co).length)
+      expect(res.body.total_leads).toBe(of(leads, co).length)
       const closed = ['Won', 'Lost', 'Not interested', 'Cold']
-      expect(res.body.openLeads).toBe(of(leads, co, (l) => !closed.includes(l.status)).length)
+      expect(res.body.open_leads).toBe(of(leads, co, (l) => !closed.includes(l.status)).length)
     })
 
     it(`${label(co)}: GET /reports/sales and POST /reports/custom`, async () => {
@@ -230,9 +244,9 @@ describe('Exports, reports and the dashboard hold only own rows; key numbers equ
       expect(res.status, res.text).toBe(200)
       expect(leaksIn(res.body, co)).toEqual([])
       const inRange = of(leads, co, (l) => l.createdAt.slice(0, 10) >= from && l.createdAt.slice(0, 10) <= to)
-      expect(res.body.kpis.leadsCreated).toBe(inRange.length)
+      expect(res.body.kpis.leads_created).toBe(inRange.length)
       const acts = activities.filter((a) => of(leads, co).some((l) => l.id === a.leadId)).length
-      expect(res.body.kpis.leadsCreated + acts).toBeGreaterThan(0)
+      expect(res.body.kpis.leads_created + acts).toBeGreaterThan(0)
       const custom = await api(adminToken(co), 'POST', '/reports/custom', { body: { from, to, dimension: 'owner', measure: 'count' } })
       expect(custom.status, custom.text).toBe(200)
       expect(leaksIn(custom.body, co)).toEqual([])

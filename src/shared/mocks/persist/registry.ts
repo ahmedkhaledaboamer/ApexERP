@@ -8,7 +8,7 @@
  * Bump VERSION whenever the *shape* of a stored record changes in a way old saved data would
  * break (store additions/removals are picked up automatically through the name hash).
  */
-export const VERSION = 3
+export const VERSION = 8 // 5: database alignment part B (task enums, blocked flag, sub-tasks, time entries, attachments sizeBytes/mimeType, lead status history); 6: part A (lead status type/flags, follow-up dates, customer/quotation/contract enums, quotation viewedAt); 7: marketing (campaigns, campaign costs, bulk emails, recipients, leads.campaignId); 8: events (events, event team, attendees, history, leads.eventId, Crest Event source)
 
 export interface StoreAdapter {
   /** A structured-clone-able value (it is cloned on save and on restore). */

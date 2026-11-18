@@ -2,14 +2,13 @@ import type { Tone } from '@/shared/components/ui/Badge'
 
 /* ---------------- Fixed lists (spec: Settings > Fixed lists) ---------------- */
 
-/**
- * What a status means for the pipeline:
- * open = being worked; parked = Cold, no automatic follow-ups; won / lost = decided.
- */
-export type StatusKind = 'open' | 'parked' | 'won' | 'lost'
+import type { LeadStatusType } from '@/shared/domain/leadStatus'
 
-/** What must be recorded before a lead can enter the status (spec section 4). */
-export type StatusRequirement = 'none' | 'next-step' | 'loss-reason' | 'convert'
+/**
+ * What a status means for the pipeline (lead_statuses.type): open = being worked; cold / parked =
+ * out of the pipeline, no automatic follow-ups; won / lost = decided. See shared/domain/leadStatus.ts.
+ */
+export type StatusType = LeadStatusType
 
 export interface ListOption {
   /** Stable id stored on records. Never changes once created; labels can. */
@@ -31,8 +30,11 @@ export interface ListOption {
 export interface StatusOption extends ListOption {
   /** Win probability for the weighted forecast, 0..100. */
   probability: number
-  kind: StatusKind
-  requires: StatusRequirement
+  type: StatusType
+  /** Entering needs a next step and its follow-up date (e.g. Interested, Meeting). */
+  requiresNextStep: boolean
+  /** Entering needs a reason from the loss-reasons list (e.g. Lost, Not interested). */
+  requiresLossReason: boolean
   tone: Tone
   /** Hex for charts. */
   color: string

@@ -1,22 +1,19 @@
-import type { Tone } from '@/shared/components/ui/Badge'
-import type { ContractBilling, ContractStatus, CustomerStatus, Emirate } from '@/modules/crm/types'
+import type { ContractBilling, Emirate } from '@/modules/crm/types'
+import type { ContractDisplayStatus } from '@/shared/domain/enums'
 
-export const CUSTOMER_STATUSES: CustomerStatus[] = ['Active', 'VIP', 'Paused']
+/** Customer and contract status enums live in shared/domain/enums.ts (one copy for UI, mocks and docs). */
+export {
+  CONTRACT_DISPLAY_ORDER,
+  CONTRACT_STATUS_LABEL,
+  CONTRACT_STATUS_TONE,
+  contractDisplayStatus,
+  CUSTOMER_STATUS_LABEL,
+  CUSTOMER_STATUS_TONE,
+  CUSTOMER_STATUS_ORDER as CUSTOMER_STATUSES,
+} from '@/shared/domain/enums'
 
-export const CUSTOMER_STATUS_TONE: Record<CustomerStatus, Tone> = {
-  Active: 'green',
-  VIP: 'brand',
-  Paused: 'amber',
-}
-
-export const CONTRACT_STATUSES: ContractStatus[] = ['Active', 'Expiring', 'Expired', 'Cancelled']
-
-export const CONTRACT_STATUS_TONE: Record<ContractStatus, Tone> = {
-  Active: 'green',
-  Expiring: 'amber',
-  Expired: 'red',
-  Cancelled: 'neutral',
-}
+/** Contract statuses always offered in the list filter (draft and renewed appear when present). */
+export const CONTRACT_FILTER_STATUSES: readonly ContractDisplayStatus[] = ['active', 'expiring', 'expired', 'cancelled']
 
 export const BILLINGS: ContractBilling[] = ['One-off', 'Monthly', 'Annual']
 

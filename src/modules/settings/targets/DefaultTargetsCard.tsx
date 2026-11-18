@@ -12,6 +12,7 @@ import {
   type TargetValues,
 } from '@/modules/targets/types'
 import { isTracked } from '@/modules/targets/lib'
+import { useEventsEnabled } from '@/modules/events/hooks/useEventsEnabled'
 import { EVENTS_NA_NOTE } from '@/shared/lib/features'
 import { useLeaveGuard } from '@/modules/leads/import/useLeaveGuard'
 import { cn } from '@/shared/lib/utils'
@@ -80,6 +81,7 @@ export function DefaultTargetsCard({ canEdit }: { canEdit: boolean }) {
 function DefaultsForm({ saved, canEdit }: { saved: TargetValues; canEdit: boolean }) {
   const toast = useToast()
   const save = useSaveTargetDefaults()
+  const eventsOn = useEventsEnabled()
   const [draft, setDraft] = useState<Draft>(() => toDraft(saved))
   const [showErrors, setShowErrors] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
@@ -123,7 +125,7 @@ function DefaultsForm({ saved, canEdit }: { saved: TargetValues; canEdit: boolea
             const changed = draft[k].trim() !== base[k]
             return (
               <div key={k}>
-                <label htmlFor={id} className="mb-1.5 flex items-center gap-1.5 text-[0.8125rem] font-medium text-ink-2" title={isTracked(k) ? TARGET_SOURCES[k] : EVENTS_NA_NOTE}>
+                <label htmlFor={id} className="mb-1.5 flex items-center gap-1.5 text-[0.8125rem] font-medium text-ink-2" title={isTracked(k, eventsOn) ? TARGET_SOURCES[k] : EVENTS_NA_NOTE}>
                   {TARGET_LABELS[k]}
                   {changed && <span className="size-1.5 rounded-full bg-warning-500" aria-label="changed" />}
                 </label>
@@ -149,7 +151,7 @@ function DefaultsForm({ saved, canEdit }: { saved: TargetValues; canEdit: boolea
                 </div>
                 <p id={`${id}-hint`} className={cn('mt-1.5 text-xs', error ? 'text-danger-600 dark:text-danger-500' : 'text-muted')}>
                   {error ||
-                    (!isTracked(k)
+                    (!isTracked(k, eventsOn)
                       ? 'Can be set now. Shows n/a and isn’t counted until Events is enabled.'
                       : optional
                       ? 'No target unless set here or per agent.'

@@ -278,7 +278,7 @@ function realUsage(companyId: string, key: LimitKey, sub: BillingSubscription): 
       return leads.filter((l) => l.companyId === companyId).length + contacts.filter((c) => c.companyId === companyId).length
     case 'storageMb': {
       let bytes = 0
-      for (const t of tasks) if (t.companyId === companyId) for (const a of t.attachments) bytes += a.size
+      for (const t of tasks) if (t.companyId === companyId) for (const a of t.attachments) bytes += a.sizeBytes
       return round2(bytes / (1024 * 1024))
     }
     case 'emailsPerMonth':
@@ -592,12 +592,24 @@ function nextEvent(sub: Tenant<BillingSubscription>): LifecycleEvent | null {
   return events.reduce((a, b) => (b.at < a.at ? b : a))
 }
 
+const tickHooks = new Map<string, (companyId: string, until: number) => unknown>()
+
+/**
+ * Registers a time-based job run with the lifecycle for a company (e.g. quotations expiring past
+ * their validity). Keyed by name so a re-executed module (HMR) replaces its hook.
+ */
+export function onLifecycleTick(name: string, hook: (companyId: string, until: number) => unknown): void {
+  tickHooks.set(name, hook)
+}
+
 /**
  * Applies every transition and reminder due up to `until` (default: the mock clock's now), in time
  * order, each at its own time. Idempotent; called lazily for the caller's company on every
  * authenticated request and for all companies by POST /dev/billing/advance.
  */
 export function runLifecycle(companyId: string, until = nowMs()): void {
+  // Other domains' time-based jobs (quotation expiry) ride on the same lazy, idempotent tick.
+  for (const hook of tickHooks.values()) hook(companyId, until)
   const sub = subscriptionOf(companyId)
   if (!sub) return
   for (let i = 0; i < 1000; i++) {

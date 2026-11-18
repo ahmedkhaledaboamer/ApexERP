@@ -1,10 +1,10 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { Controller, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, OctagonAlert, Unlock } from 'lucide-react'
 import type { TaskLinkType, TaskUpdateInput, TaskView } from '@/modules/tasks/types'
-import { TASK_PRIORITIES, TASK_STATUSES } from '@/modules/tasks/types'
-import { useTaskQuery, useUpdateTask } from '@/modules/tasks/hooks/useTasks'
+import { TASK_PRIORITIES, TASK_PRIORITY_LABEL, TASK_STATUSES, TASK_STATUS_LABEL } from '@/modules/tasks/types'
+import { useProjectsQuery, useTaskQuery, useUpdateTask } from '@/modules/tasks/hooks/useTasks'
 import { taskFormSchema, TASK_TITLE_MAX, type TaskFormValues } from '@/modules/tasks/schemas'
 import { fmtDate } from '@/shared/lib/utils'
 import { Badge } from '@/shared/components/ui/Badge'
@@ -20,9 +20,10 @@ import { FollowersPicker } from './FollowersPicker'
 import { TaskComments } from './TaskComments'
 import { TaskAttachments } from './TaskAttachments'
 import { TaskHistory } from './TaskHistory'
-import { PriorityBadge, StatusIcon, TaskStatusBadge } from './TaskBadges'
-import { BlockedReasonModal } from './BlockedReasonModal'
-import { useActiveUsers, useAssignableUsers, useTaskPermissions } from './useTaskActions'
+import { BlockedBadge, PriorityBadge, StatusIcon, TaskStatusBadge } from './TaskBadges'
+import { TaskSubtasks } from './TaskSubtasks'
+import { TaskTimeEntries } from './TaskTimeEntries'
+import { useActiveUsers, useAssignableUsers, useTaskBlocking, useTaskPermissions } from './useTaskActions'
 
 function toForm(t: TaskView): TaskFormValues {
   return {
@@ -35,8 +36,8 @@ function toForm(t: TaskView): TaskFormValues {
     dueDate: t.dueDate ?? '',
     linkType: t.link?.type ?? '',
     linkId: t.link?.id ?? '',
+    projectId: t.projectId ?? '',
     estimatedHours: t.estimatedHours,
-    loggedHours: t.loggedHours,
   }
 }
 
@@ -54,14 +55,15 @@ function diff(t: TaskView, v: TaskFormValues): TaskUpdateInput {
   if (due !== t.dueDate) out.dueDate = due
   const link = v.linkType && v.linkId ? { type: v.linkType, id: v.linkId } : null
   if ((link ? `${link.type}:${link.id}` : '') !== (t.link ? `${t.link.type}:${t.link.id}` : '')) out.link = link
+  const projectId = v.projectId || null
+  if (!t.parentTaskId && projectId !== t.projectId) out.projectId = projectId
   if (v.estimatedHours !== t.estimatedHours) out.estimatedHours = v.estimatedHours
-  if (v.loggedHours !== t.loggedHours) out.loggedHours = v.loggedHours
   return out
 }
 
-type Section = 'comments' | 'attachments' | 'activity'
+type Section = 'comments' | 'time' | 'attachments' | 'activity'
 
-/** Task drawer: every field, comments with @mentions, attachments and the activity history. */
+/** Task drawer: every field, sub-tasks, comments with @mentions, time entries, attachments and the activity history. */
 export function TaskDrawer({ taskId, onClose }: { taskId: string | null; onClose: () => void }) {
   const query = useTaskQuery(taskId)
   const task = query.data
@@ -88,7 +90,7 @@ export function TaskDrawer({ taskId, onClose }: { taskId: string | null; onClose
             {task.completedAt && (
               <>
                 <span aria-hidden>·</span>
-                <span>Done {fmtDate(task.completedAt, 'd MMM')}</span>
+                <span id="task-completed-at">Done {fmtDate(task.completedAt, 'd MMM')}</span>
               </>
             )}
           </span>
@@ -119,8 +121,8 @@ function TaskEditor({ task, onClose }: { task: TaskView; onClose: () => void }) 
   // Page rule (role + writable workspace) and the server's per-task rule (TaskView.canEdit).
   const editBlock = perms.editBlock(task)
   const canEdit = editBlock === null
-  // Saving a move to Blocked asks why first (the API refuses Blocked without a reason).
-  const [askReason, setAskReason] = useState<TaskUpdateInput | null>(null)
+  const blocking = useTaskBlocking()
+  const projects = useProjectsQuery()
   const { users: active, all } = useActiveUsers()
   const { users: assignable } = useAssignableUsers([task.ownerId])
   const [section, setSection] = useState<Section>('comments')
@@ -155,10 +157,6 @@ function TaskEditor({ task, onClose }: { task: TaskView; onClose: () => void }) 
       reset(toForm(task))
       return
     }
-    if (input.status === 'Blocked') {
-      setAskReason(input)
-      return
-    }
     await send(input)
   })
 
@@ -173,6 +171,7 @@ function TaskEditor({ task, onClose }: { task: TaskView; onClose: () => void }) 
       {/* Summary chips */}
       <div className="flex flex-wrap items-center gap-2">
         <TaskStatusBadge status={task.status} />
+        {task.blocked && <BlockedBadge reason={task.blockedReason} />}
         <PriorityBadge priority={task.priority} />
         {task.overdue && (
           <Badge tone="red" icon={<AlertTriangle />}>
@@ -180,10 +179,30 @@ function TaskEditor({ task, onClose }: { task: TaskView; onClose: () => void }) 
           </Badge>
         )}
         <LinkChip link={task.linkView} maxWidthClass="max-w-64" />
-        {task.projectName && task.linkView?.type !== 'project' && (
-          <LinkChip link={{ type: 'project', id: task.projectId!, label: task.projectName, available: true }} maxWidthClass="max-w-64" />
+        {task.projectId && task.projectName && (
+          <LinkChip link={{ type: 'project', id: task.projectId, label: task.projectName, available: true }} maxWidthClass="max-w-64" />
+        )}
+        {canEdit && task.status !== 'done' && task.status !== 'cancelled' && (
+          <span className="ms-auto">
+            {task.blocked ? (
+              <Button write variant="secondary" size="xs" id="task-unblock" loading={blocking.pending} onClick={() => blocking.unblock(task)}>
+                <Unlock />
+                Unblock
+              </Button>
+            ) : (
+              <Button write variant="secondary" size="xs" id="task-block" onClick={() => blocking.block(task)}>
+                <OctagonAlert />
+                Block…
+              </Button>
+            )}
+          </span>
         )}
       </div>
+      {task.blocked && task.blockedReason && (
+        <p id="task-blocked-reason" className="-mt-3 text-xs text-warning-700 dark:text-warning-500">
+          Blocked{task.blockedAt ? ` since ${fmtDate(task.blockedAt, 'd MMM')}` : ''}: {task.blockedReason}
+        </p>
+      )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field id={`${id}-title`} label="Title" required error={errors.title?.message} className="sm:col-span-2">
@@ -195,14 +214,18 @@ function TaskEditor({ task, onClose }: { task: TaskView; onClose: () => void }) 
         <Field id={`${id}-status`} label="Status">
           <SelectInput id={`${id}-status`} {...register('status')} disabled={ro}>
             {TASK_STATUSES.map((s) => (
-              <option key={s}>{s}</option>
+              <option key={s} value={s}>
+                {TASK_STATUS_LABEL[s]}
+              </option>
             ))}
           </SelectInput>
         </Field>
         <Field id={`${id}-priority`} label="Priority">
           <SelectInput id={`${id}-priority`} {...register('priority')} disabled={ro}>
             {TASK_PRIORITIES.map((p) => (
-              <option key={p}>{p}</option>
+              <option key={p} value={p}>
+                {TASK_PRIORITY_LABEL[p]}
+              </option>
             ))}
           </SelectInput>
         </Field>
@@ -243,7 +266,7 @@ function TaskEditor({ task, onClose }: { task: TaskView; onClose: () => void }) 
           id={`${id}-link`}
           label="Linked record"
           error={errors.linkId?.message}
-          hint="Lead, customer or project. Events can be linked once the Events module is enabled."
+          hint="One lead, customer or event (the project is its own field). Events can be linked once the Events module is enabled."
           className="sm:col-span-2"
         >
           <LinkPicker
@@ -270,17 +293,25 @@ function TaskEditor({ task, onClose }: { task: TaskView; onClose: () => void }) 
             {...register('estimatedHours', { valueAsNumber: true })}
           />
         </Field>
-        <Field id={`${id}-logged`} label="Logged hours" error={errors.loggedHours?.message}>
-          <TextInput
-            id={`${id}-logged`}
-            type="number"
-            min={0}
-            step={0.5}
-            inputMode="decimal"
-            readOnly={ro}
-            invalid={!!errors.loggedHours}
-            {...register('loggedHours', { valueAsNumber: true })}
-          />
+        <Field
+          id={`${id}-project`}
+          label="Project"
+          hint={task.parentTaskId ? 'A sub-task belongs to its parent’s project.' : task.subtaskProgress.total ? 'Its sub-tasks move with it.' : undefined}
+        >
+          <SelectInput id={`${id}-project`} {...register('projectId')} disabled={ro || !!task.parentTaskId}>
+            <option value="">No project</option>
+            {(projects.data ?? []).map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+            {task.projectId && !(projects.data ?? []).some((p) => p.id === task.projectId) && (
+              <option value={task.projectId}>{task.projectName ?? task.projectId}</option>
+            )}
+          </SelectInput>
+        </Field>
+        <Field id={`${id}-logged`} label="Logged hours" hint="The sum of the task’s time entries (Time tab).">
+          <TextInput id={`${id}-logged`} value={`${task.loggedHours} h`} readOnly />
         </Field>
       </div>
 
@@ -297,33 +328,28 @@ function TaskEditor({ task, onClose }: { task: TaskView; onClose: () => void }) 
       )}
     </form>
 
-      <section aria-label="Comments, attachments and activity">
+      <TaskSubtasks task={task} canEdit={canEdit} />
+
+      <section aria-label="Comments, time, attachments and activity">
         <Tabs<Section>
           label="Task sections"
           value={section}
           onChange={setSection}
           items={[
             { id: 'comments', label: 'Comments', count: task.comments.length },
+            { id: 'time', label: 'Time', count: task.timeEntries.length },
             { id: 'attachments', label: 'Attachments', count: task.attachments.length },
             { id: 'activity', label: 'Activity', count: task.history.length },
           ]}
         />
         <div role="tabpanel" id={`tab-panel-${section}`} aria-labelledby={`tab-${section}`} className="pt-4">
           {section === 'comments' && <TaskComments taskId={task.id} comments={task.comments} users={active} allUsers={all} />}
+          {section === 'time' && <TaskTimeEntries task={task} canEdit={canEdit} />}
           {section === 'attachments' && <TaskAttachments taskId={task.id} attachments={task.attachments} allUsers={all} canEdit={canEdit} />}
           {section === 'activity' && <TaskHistory events={task.history} allUsers={all} />}
         </div>
       </section>
-      <BlockedReasonModal
-        open={!!askReason}
-        taskTitle={task.title}
-        onClose={() => setAskReason(null)}
-        onConfirm={(reason) => {
-          const input = askReason
-          setAskReason(null)
-          if (input) void send({ ...input, blockedReason: reason })
-        }}
-      />
+      {blocking.dialog}
       {!canEdit && (
         <p id="task-drawer-readonly" className="text-xs text-muted">
           Read only: {editBlock}{' '}

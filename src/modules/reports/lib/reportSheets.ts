@@ -4,6 +4,7 @@ import { ACTIVITY_LABELS, ACTIVITY_TYPES } from '@/shared/lib/constants'
 import type { CustomReport, ReportId, SalesReport } from '@/modules/reports/types'
 import { DIMENSION_LABELS, MEASURE_LABELS, REPORT_TITLES } from '@/modules/reports/lib/reportCatalog'
 import { XL, type ExportSheet } from '@/modules/reports/lib/exportExcel'
+import { TASK_PRIORITY_LABEL, TASK_STATUS_LABEL } from '@/modules/tasks/enums'
 
 /** Dates in the workspace's date format. */
 const d = (iso: string) => fmtDate(iso)
@@ -138,7 +139,7 @@ export function sheetsFor(id: ReportId, r: SalesReport): ExportSheet[] {
           name: 'Overdue tasks',
           title: 'Overdue tasks',
           columns: [{ header: 'Task', width: 32 }, { header: 'Linked to', width: 30 }, { header: 'Link type', width: 12 }, { header: 'Owner', width: 20 }, { header: 'Due', width: 14 }, { header: 'Days overdue', format: XL.int, width: 14 }, { header: 'Priority' }, { header: 'Status', width: 14 }],
-          rows: r.overdueTasks.map((t) => [t.title, t.linkLabel ?? 'Personal', t.linkType ?? '', t.ownerName, d(t.dueDate), t.daysOverdue, t.priority, t.status]),
+          rows: r.overdueTasks.map((t) => [t.title, t.linkLabel ?? 'Personal', t.linkType ?? '', t.ownerName, d(t.dueDate), t.daysOverdue, TASK_PRIORITY_LABEL[t.priority], TASK_STATUS_LABEL[t.status]]),
         },
       ]
   }

@@ -58,7 +58,7 @@ function usageOf(id: string): ServiceUsage {
   const leadsRecommending = leads.filter((l) => l.recommendedServiceId === id).length
   const leadsInterested = leads.filter((l) => l.serviceIds.includes(id)).length
   const quotationCount = quotations.filter((q) => q.items.some((it) => it.serviceId === id)).length
-  const customerIds = new Set(contracts.filter((c) => c.status !== 'Cancelled' && c.serviceIds.includes(id)).map((c) => c.customerId))
+  const customerIds = new Set(contracts.filter((c) => c.status !== 'cancelled' && c.serviceIds.includes(id)).map((c) => c.customerId))
   return { leadsRecommending, leadsInterested, quotations: quotationCount, customers: customerIds.size }
 }
 
@@ -137,7 +137,7 @@ export async function getService(user: User, id: string): Promise<ServiceDetail>
         createdAt: q.createdAt,
       }
     })
-  const customerIds = [...new Set(contracts.filter((c) => c.status !== 'Cancelled' && c.serviceIds.includes(id)).map((c) => c.customerId))]
+  const customerIds = [...new Set(contracts.filter((c) => c.status !== 'cancelled' && c.serviceIds.includes(id)).map((c) => c.customerId))]
   return delay({
     ...toRow(s),
     template: projectTemplateFor(id),

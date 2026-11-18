@@ -13,6 +13,7 @@ import { addMembership, companyById, syncMembership } from '@/shared/mocks/data/
 import { CodedApiError, getInTenant, scoped, tenantOf } from '@/shared/mocks/tenant'
 import { assertCapacity, noteUsage } from '@/shared/mocks/services/billing'
 import { EMAIL_IN_OTHER_COMPANY, userWithEmail } from '@/shared/mocks/data/identity'
+import { isParkedType } from '@/shared/domain/leadStatus'
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -30,8 +31,8 @@ export class ConfirmRequiredError extends ApiError {
 function openLeadsOf(u: User): number {
   return leads.filter((l) => {
     if (l.ownerId !== u.id) return false
-    const kind = statusOf(u.companyId, l.status)?.kind ?? 'open'
-    return kind === 'open' || kind === 'parked'
+    const type = statusOf(u.companyId, l.status)?.type ?? 'open'
+    return type === 'open' || isParkedType(type)
   }).length
 }
 

@@ -1,4 +1,5 @@
 import type { Lead, LeadStatus, User } from '@/shared/types'
+import { recordLeadStatusChange } from '@/shared/mocks/data/leadStatusHistory'
 import type {
   Quotation,
   QuotationDecision,
@@ -10,14 +11,15 @@ import type {
   QuotationUpdateInput,
 } from '@/modules/quotations/types'
 import {
-  AWAITING_STATUSES,
   DEFAULT_VALIDITY_DAYS,
   addDaysIso,
   computeTotals,
-  daysUntil,
   fmtIn,
   todayIso,
 } from '@/modules/quotations/lib/totals'
+import { isOneOf, QUOTATION_AWAITING, QUOTATION_DECISIONS, QUOTATION_STATUS_LABEL } from '@/shared/domain/enums'
+import { companyDayOf } from '@/shared/mocks/selectors/company'
+import { nowMs } from '@/shared/mocks/clock'
 import { can, inScope, scopeOf } from '@/shared/lib/permissions'
 import { activities, leads } from '@/shared/mocks/db'
 import { CREST_SEED_QUOTATION_BASE, quotations } from '@/shared/mocks/data/quotations'
@@ -26,7 +28,7 @@ import { companyById } from '@/shared/mocks/data/tenancy'
 import { delay, fail, ownerName } from '@/shared/mocks/server'
 import { statusOf, SYSTEM_STATUS } from '@/shared/mocks/data/lookups'
 import { findInTenant, scoped, stamp, tenantOf, type Tenant } from '@/shared/mocks/tenant'
-import { assertCapacity, recordUsage } from '@/shared/mocks/services/billing'
+import { assertCapacity, onLifecycleTick, recordUsage } from '@/shared/mocks/services/billing'
 import { salesTeamOf, untenant } from '@/shared/mocks/services/leads'
 
 /* ------------------------------------------------------------------------------------------
@@ -48,24 +50,36 @@ function regionalDefaults(companyId: string): { currency: string; vatPct: number
 function isBeforeProposal(companyId: string, status: LeadStatus): boolean {
   const proposal = statusOf(companyId, SYSTEM_STATUS.proposal)
   const current = statusOf(companyId, status)
-  return !!proposal?.active && current?.kind === 'open' && current.order < proposal.order
+  return !!proposal?.active && current?.type === 'open' && current.order < proposal.order
 }
 
 const UNITS = ['project', 'month', 'hour'] as const
 const CURRENCY_RE = /^[A-Z]{3}$/
 
-/** Sent or Viewed quotations past their last valid day read as Expired. */
-function effectiveStatus(q: QuotationRecord): QuotationStatus {
-  if (AWAITING_STATUSES.includes(q.status) && daysUntil(q.validUntil) < 0) return 'Expired'
-  return q.status
+/**
+ * Expiry: a sent or viewed quotation whose `validUntil` (last valid day) is before the company's
+ * today (timezone, mock clock) becomes `expired`. Stored, not just displayed. Accepted / rejected
+ * quotations never expire. Runs lazily on every quotation read and on the lifecycle tick that every
+ * authenticated request (and Dev › advance clock) runs for the company (services/billing.ts).
+ */
+export function expireQuotations(companyId: string, at: number = nowMs()): number {
+  const today = companyDayOf(companyId, new Date(at)).today
+  let n = 0
+  for (const q of quotations) {
+    if (q.companyId !== companyId || !QUOTATION_AWAITING.includes(q.status) || q.validUntil >= today) continue
+    q.status = 'expired'
+    q.updatedAt = new Date(at).toISOString()
+    n++
+  }
+  return n
 }
+onLifecycleTick('quotations.expiry', expireQuotations)
 
 function toView(q: Tenant<QuotationRecord>): Quotation {
   const lead = leads.find((l) => l.id === q.leadId && l.companyId === q.companyId)
   const ownerId = lead?.ownerId ?? q.createdBy
   return {
     ...untenant(q),
-    status: effectiveStatus(q),
     customerId: lead?.customerId ?? q.customerId,
     ownerId,
     ownerName: ownerName(ownerId),
@@ -89,6 +103,7 @@ async function requireSales(user: User): Promise<void> {
 /** Finds a quotation the user may see; with `write`, also checks they may change it. */
 async function quotationFor(user: User, id: string, write = false): Promise<Tenant<QuotationRecord>> {
   await requireSales(user)
+  expireQuotations(tenantOf(user))
   const q = findInTenant(quotations, user, (x) => x.id === id)
   if (!q) return fail('That quotation doesn’t exist.', 404)
   if (!canSee(user, companyLead(user, q.leadId))) {
@@ -209,6 +224,7 @@ function clean(
 
 export async function getQuotations(user: User, filter: { leadId?: string } = {}): Promise<Quotation[]> {
   await requireSales(user)
+  expireQuotations(tenantOf(user))
   if (filter.leadId) {
     const lead = companyLead(user, filter.leadId)
     if (!lead) return fail('That lead doesn’t exist.', 404)
@@ -245,13 +261,14 @@ export async function createQuotation(user: User, input: QuotationInput): Promis
     company: lead.company,
     contactName: lead.contactName,
     contactEmail: lead.contactEmail,
-    status: 'Draft',
+    status: 'draft',
     ...result.value,
     createdBy: user.id,
     createdAt: now,
     updatedAt: now,
     sentAt: null,
     decidedAt: null,
+    viewedAt: null,
   }, user)
   quotations.push(record)
   return delay(toView(record))
@@ -259,7 +276,7 @@ export async function createQuotation(user: User, input: QuotationInput): Promis
 
 export async function updateQuotation(user: User, id: string, input: QuotationUpdateInput): Promise<Quotation> {
   const q = await quotationFor(user, id, true)
-  if (q.status !== 'Draft') return fail(`${q.number} was already sent, so it can’t be edited. Duplicate it instead.`, 409)
+  if (q.status !== 'draft') return fail(`${q.number} was already sent, so it can’t be edited. Duplicate it instead.`, 409)
   const result = clean(q.companyId, input, q)
   if ('error' in result) return fail(result.error, 422)
   Object.assign(q, result.value, { updatedAt: new Date().toISOString() })
@@ -269,7 +286,7 @@ export async function updateQuotation(user: User, id: string, input: QuotationUp
 /** Draft → Sent. Moves an earlier-stage lead to Proposal and logs the email on its timeline. */
 export async function sendQuotation(user: User, id: string): Promise<Quotation> {
   const q = await quotationFor(user, id, true)
-  if (q.status !== 'Draft') return fail(`${q.number} was already sent.`, 409)
+  if (q.status !== 'draft') return fail(`${q.number} was already sent.`, 409)
   const lead = companyLead(user, q.leadId)
   if (!lead) return fail('The lead for this quotation no longer exists.', 422)
   if (lead.doNotContact) return fail(`${lead.company} is marked Do Not Contact, so emails are blocked.`, 422)
@@ -282,11 +299,12 @@ export async function sendQuotation(user: User, id: string): Promise<Quotation> 
   assertCapacity(q.companyId, 'emailsPerMonth')
 
   const now = new Date().toISOString()
-  q.status = 'Sent'
+  q.status = 'sent'
   q.sentAt = now
   q.updatedAt = now
 
   if (isBeforeProposal(lead.companyId, lead.status)) {
+    recordLeadStatusChange(lead, lead.status, SYSTEM_STATUS.proposal, { changedBy: null, reason: `Quotation ${q.number} sent`, at: now })
     lead.status = SYSTEM_STATUS.proposal
     lead.stageChangedAt = now
     lead.nextStep = 'Walk through the quotation and confirm the start date'
@@ -308,16 +326,33 @@ export async function sendQuotation(user: User, id: string): Promise<Quotation> 
   return delay(toView(q))
 }
 
-/** Records the client's answer on a Sent or Viewed quotation. */
+/**
+ * The client opened the shared document / link (the mock's "Open as customer" view stands in for the
+ * public link a real backend would sign). sent → viewed, once, with `viewedAt`. Other statuses are
+ * left as they are (a draft hasn't been shared; decided and expired ones stay decided / expired).
+ */
+export async function markQuotationViewed(user: User, id: string): Promise<Quotation> {
+  const q = await quotationFor(user, id)
+  if (q.status === 'draft') return fail('Send the quotation before sharing it with the client.', 409)
+  if (q.status === 'sent') {
+    const now = new Date(nowMs()).toISOString()
+    q.status = 'viewed'
+    q.viewedAt = now
+    q.updatedAt = now
+  }
+  return delay(toView(q))
+}
+
+/** Records the client's answer on a sent or viewed quotation. An expired one can't be accepted. */
 export async function setQuotationStatus(user: User, id: string, status: QuotationDecision): Promise<Quotation> {
   const q = await quotationFor(user, id, true)
-  if (status !== 'Accepted' && status !== 'Rejected') return fail('Status must be Accepted or Rejected.', 422)
-  const current = effectiveStatus(q)
-  if (current === 'Expired') {
+  if (!isOneOf(QUOTATION_DECISIONS, status)) return fail(`Status must be ${QUOTATION_DECISIONS.join(' or ')}.`, 422)
+  const current: QuotationStatus = q.status
+  if (current === 'expired') {
     return fail(`${q.number} expired on ${q.validUntil}. Duplicate it to send a fresh quotation.`, 409)
   }
-  if (!AWAITING_STATUSES.includes(current)) {
-    return fail(current === 'Draft' ? 'Send the quotation before recording an answer.' : `${q.number} is already ${current}.`, 409)
+  if (!QUOTATION_AWAITING.includes(current)) {
+    return fail(current === 'draft' ? 'Send the quotation before recording an answer.' : `${q.number} is already ${QUOTATION_STATUS_LABEL[current]}.`, 409)
   }
   const now = new Date().toISOString()
   q.status = status
@@ -342,7 +377,7 @@ export async function duplicateQuotation(user: User, id: string): Promise<Quotat
     company: lead?.company ?? source.company,
     contactName: lead?.contactName ?? source.contactName,
     contactEmail: lead?.contactEmail ?? source.contactEmail,
-    status: 'Draft',
+    status: 'draft',
     items: source.items.map((it, i) => ({ ...it, id: `${newId}-${i + 1}` })),
     validUntil: addDaysIso(DEFAULT_VALIDITY_DAYS),
     createdBy: user.id,
@@ -350,6 +385,7 @@ export async function duplicateQuotation(user: User, id: string): Promise<Quotat
     updatedAt: now,
     sentAt: null,
     decidedAt: null,
+    viewedAt: null,
   }
   quotations.push(record)
   return delay(toView(record))

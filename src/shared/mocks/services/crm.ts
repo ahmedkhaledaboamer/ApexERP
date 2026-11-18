@@ -25,6 +25,7 @@ import { automationRulesFor, SYSTEM_STATUS } from '@/shared/mocks/data/lookups'
 import { findInTenant, scoped, stamp, tenantOf, type Tenant } from '@/shared/mocks/tenant'
 import { assertCapacity, noteUsage } from '@/shared/mocks/services/billing'
 import { companyUser, countryOf, salesTeamOf, untenant } from '@/shared/mocks/services/leads'
+import { CONTRACT_SETTABLE, CUSTOMER_STATUSES, isOneOf } from '@/shared/domain/enums'
 
 /**
  * CRM mock API: customers (won companies), contacts across leads and customers, and contracts.
@@ -74,12 +75,16 @@ function daysTo(iso: string): number {
   return differenceInCalendarDays(parseISO(iso), new Date())
 }
 
+/** Stored status, with an active contract past its renewal date read as `expired` (lazily, on read). */
 function effectiveStatus(c: Tenant<Contract>): ContractStatus {
-  if (c.status === 'Cancelled') return 'Cancelled'
+  if (c.status === 'active' && daysTo(c.renewalDate) < 0) return 'expired'
+  return c.status
+}
+
+/** Active and inside the renewal alert window (Settings > Automation): the UI shows it as Expiring. */
+function renewalDue(c: Tenant<Contract>): boolean {
   const days = daysTo(c.renewalDate)
-  if (days < 0) return 'Expired'
-  if (days <= renewalAlertDays(c.companyId)) return 'Expiring'
-  return 'Active'
+  return effectiveStatus(c) === 'active' && days <= renewalAlertDays(c.companyId)
 }
 
 function annualValue(c: Contract): number {
@@ -96,7 +101,7 @@ function mrrOf(c: Contract): number {
 function billedToDate(c: Contract): number {
   const start = parseISO(c.startDate)
   if (start > new Date()) return 0
-  const end = c.status === 'Cancelled' ? new Date(Math.min(Date.now(), parseISO(c.renewalDate).getTime())) : new Date()
+  const end = c.status === 'cancelled' ? new Date(Math.min(Date.now(), parseISO(c.renewalDate).getTime())) : new Date()
   const months = Math.max(1, differenceInCalendarMonths(end, start) + 1)
   if (c.billing === 'Monthly') return c.value * months
   if (c.billing === 'Annual') return c.value * Math.ceil(months / 12)
@@ -105,10 +110,11 @@ function billedToDate(c: Contract): number {
 
 function contractRow(c: Tenant<Contract>): ContractRow {
   const status = effectiveStatus(c)
-  const live = status === 'Active' || status === 'Expiring'
+  const live = status === 'active'
   return {
     ...untenant(c),
     status,
+    renewalDue: renewalDue(c),
     customerName: customers.find((x) => x.id === c.customerId)?.name ?? 'Unknown customer',
     ownerName: ownerName(c.ownerId),
     serviceNames: c.serviceIds.map((id) => services.find((s) => s.id === id)?.name ?? id),
@@ -118,7 +124,7 @@ function contractRow(c: Tenant<Contract>): ContractRow {
   }
 }
 
-const isLive = (c: ContractRow) => c.status === 'Active' || c.status === 'Expiring'
+const isLive = (c: ContractRow) => c.status === 'active'
 
 /* ---------------- Customers ---------------- */
 
@@ -194,8 +200,8 @@ export async function getCustomer(user: User, id: string): Promise<CustomerDetai
 /** Edits status and company details. Owner changes need team or full scope, like leads. */
 export async function updateCustomer(user: User, id: string, input: CustomerUpdateInput): Promise<CustomerRow> {
   const customer = await customerFor(user, id, true)
-  if (input.status !== undefined && !['Active', 'Paused', 'VIP'].includes(input.status)) {
-    return fail('Status must be Active, Paused or VIP.', 422)
+  if (input.status !== undefined && !isOneOf(CUSTOMER_STATUSES, input.status)) {
+    return fail(`Status must be one of ${CUSTOMER_STATUSES.join(', ')}.`, 422)
   }
   if (input.emirate !== undefined && input.emirate !== '') {
     // Emirates only exist for UAE companies; elsewhere the field stays empty.
@@ -385,8 +391,8 @@ function validateContract(
   }
   if (!validDate(merged.startDate) || !validDate(merged.renewalDate)) return 'Enter valid start and renewal dates.'
   if (parseISO(merged.renewalDate) <= parseISO(merged.startDate)) return 'The renewal date must be after the start date.'
-  if (input.status !== undefined && !['Active', 'Cancelled'].includes(input.status)) {
-    return 'A contract can only be set Active or Cancelled; expiry is worked out from the renewal date.'
+  if (input.status !== undefined && !isOneOf(CONTRACT_SETTABLE, input.status)) {
+    return 'A contract can only be set active or cancelled; expiry is worked out from the renewal date.'
   }
   return null
 }
@@ -430,7 +436,7 @@ export async function createContract(user: User, input: ContractInput): Promise<
       billing: input.billing,
       startDate: parseISO(input.startDate).toISOString(),
       renewalDate: parseISO(input.renewalDate).toISOString(),
-      status: 'Active' as ContractStatus,
+      status: 'active' as ContractStatus,
       ownerId,
     },
     user,

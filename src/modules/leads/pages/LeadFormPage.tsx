@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNod
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Controller, useFieldArray, useForm, useWatch, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { addDays, format } from 'date-fns'
+import { addDaysIso } from '@/shared/lib/companyDay'
+import { isIsoDate } from '@/shared/domain/followUp'
+import { companyTodayIso } from '@/modules/leads/lib/followUp'
 import {
   AlertTriangle,
   Ban,
@@ -118,14 +120,13 @@ function EditLoader({ id, isManager }: { id: string; isManager: boolean }) {
  * Form
  * ---------------------------------------------------------------------------------------- */
 
-function toDateInput(iso: string | null | undefined): string {
-  if (!iso) return ''
-  const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? '' : format(d, 'yyyy-MM-dd')
+/** Follow-ups are company-local calendar dates (yyyy-MM-dd): the date input's value as is. */
+function toDateInput(date: string | null | undefined): string {
+  return isIsoDate(date) ? date : ''
 }
 
 function fromDateInput(value: string): string | null {
-  return value ? new Date(`${value}T09:00:00`).toISOString() : null
+  return value || null
 }
 
 /** Active lookup items as options, plus the record's current value if it has since been deactivated. */
@@ -150,7 +151,7 @@ function defaultsFor(lead: LeadDetail | undefined, startStatus: string): LeadFor
       lossReason: '',
       ownerId: '',
       value: '',
-      nextFollowUpDate: format(addDays(new Date(), 1), 'yyyy-MM-dd'),
+      nextFollowUpDate: addDaysIso(companyTodayIso(), 1),
       nextStep: '',
       companyServices: [],
       serviceIds: [],
@@ -746,7 +747,7 @@ function LeadForm({ lead, isManager }: { lead?: LeadDetail; isManager: boolean }
                 </div>
               )}
 
-              {lead && target.requires === 'loss-reason' && status !== lead.status && (
+              {lead && target.requiresLossReason && status !== lead.status && (
                 <Field id="lf-loss" label="Reason" required error={errors.lossReason?.message} className="sm:col-span-2">
                   <SelectInput id="lf-loss" invalid={!!errors.lossReason} {...register('lossReason')}>
                     <option value="">Choose…</option>
@@ -787,7 +788,7 @@ function LeadForm({ lead, isManager }: { lead?: LeadDetail; isManager: boolean }
               <Field
                 id="lf-next-step"
                 label="Next step"
-                required={target.requires === 'next-step'}
+                required={target.requiresNextStep}
                 error={errors.nextStep?.message}
                 className="sm:col-span-2"
               >

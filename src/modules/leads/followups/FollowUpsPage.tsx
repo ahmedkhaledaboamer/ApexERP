@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { addDays, differenceInCalendarDays, endOfDay, format, isTomorrow, startOfDay } from 'date-fns'
+import { format } from 'date-fns'
 import { AlertTriangle, CalendarCheck, CalendarClock, CalendarOff, CalendarRange, PartyPopper, X } from 'lucide-react'
 import { PATHS } from '@/app/paths'
 import { followUpState } from '@/modules/leads/components/FollowUpLabel'
@@ -11,7 +11,9 @@ import { useCurrentUser } from '@/store/hooks'
 import { can, scopeOf, SCOPE_LABELS } from '@/shared/lib/permissions'
 import { useLookups } from '@/shared/hooks/useLookups'
 import { useLeadAlerts } from '@/modules/alerts/hooks/useAlerts'
-import { toDate } from '@/shared/lib/utils'
+import { addDaysIso } from '@/shared/lib/companyDay'
+import { daysLate as daysLateOn } from '@/shared/domain/followUp'
+import { companyTodayIso } from '@/modules/leads/lib/followUp'
 import { Avatar } from '@/shared/components/ui/Avatar'
 import { Button } from '@/shared/components/ui/Button'
 import { Card } from '@/shared/components/ui/Card'
@@ -36,14 +38,17 @@ interface Group {
   leads: LeadRow[]
 }
 
-/** Which bucket an open lead falls in; `null` for closed leads and follow-ups beyond the week. */
-function bucketOf(lead: LeadRow, horizon: Date, closedKeys: readonly string[]): View | null {
+/** A yyyy-MM-dd calendar date as a local Date, for date-fns labels only (no timezone shift). */
+const dayOf = (iso: string) => new Date(`${iso}T00:00:00`)
+
+/**
+ * Which bucket an open lead falls in; `null` for closed leads and follow-ups beyond the week.
+ * Dates are company-local yyyy-MM-dd, compared with the company's today (`today`).
+ */
+function bucketOf(lead: LeadRow, today: string, horizon: string, closedKeys: readonly string[]): View | null {
   if (closedKeys.includes(lead.status)) return null
-  const state = followUpState(lead.nextFollowUpDate, lead.status, closedKeys)
-  if (state === 'upcoming') {
-    const d = toDate(lead.nextFollowUpDate)
-    return d && d <= horizon ? 'upcoming' : null
-  }
+  const state = followUpState(lead.nextFollowUpDate, lead.status, closedKeys, today)
+  if (state === 'upcoming') return lead.nextFollowUpDate && lead.nextFollowUpDate <= horizon ? 'upcoming' : null
   return state
 }
 
@@ -77,6 +82,8 @@ function FollowUps({ scope, canEdit }: { scope: ReturnType<typeof scopeOf>; canE
   const lookups = useLookups()
   const leadAlerts = useLeadAlerts()
   const closedKeys = lookups.closedStatusKeys
+  // The company's today (tenant timezone), not the browser's.
+  const today = companyTodayIso()
   const [logFor, setLogFor] = useState<LeadRow | null>(null)
 
   function setParam(key: string, value: string) {
@@ -100,19 +107,19 @@ function FollowUps({ scope, canEdit }: { scope: ReturnType<typeof scopeOf>; canE
   }, [all, owner, search])
 
   const buckets = useMemo(() => {
-    const horizon = endOfDay(addDays(new Date(), UPCOMING_DAYS))
+    const horizon = addDaysIso(today, UPCOMING_DAYS)
     const out: Record<View, LeadRow[]> = { overdue: [], today: [], upcoming: [], none: [] }
     for (const l of narrowed) {
-      const b = bucketOf(l, horizon, closedKeys)
+      const b = bucketOf(l, today, horizon, closedKeys)
       if (b) out[b].push(l)
     }
     const byDate = (a: LeadRow, b: LeadRow) =>
       (a.nextFollowUpDate ?? '').localeCompare(b.nextFollowUpDate ?? '') || a.company.localeCompare(b.company)
     for (const v of VIEWS) out[v].sort(v === 'none' ? (a, b) => b.createdAt.localeCompare(a.createdAt) : byDate)
     return out
-  }, [narrowed, closedKeys])
+  }, [narrowed, closedKeys, today])
 
-  const groups = useMemo(() => groupsFor(view, buckets[view]), [view, buckets])
+  const groups = useMemo(() => groupsFor(view, buckets[view], today), [view, buckets, today])
   const filtered = !!search || !!owner
 
   function reschedule(lead: LeadRow, iso: string, label: string) {
@@ -155,10 +162,10 @@ function FollowUps({ scope, canEdit }: { scope: ReturnType<typeof scopeOf>; canE
                 icon={<AlertTriangle />}
                 value={buckets.overdue.length}
                 alert={buckets.overdue.length > 0}
-                hint={buckets.overdue.length ? `${buckets.overdue.filter((l) => daysLate(l) >= 3).length} are 3+ days late` : 'Nothing overdue'}
+                hint={buckets.overdue.length ? `${buckets.overdue.filter((l) => daysLateOn(l.nextFollowUpDate, today) >= 3).length} are 3+ days late` : 'Nothing overdue'}
                 to={tabHref(params, 'overdue')}
               />
-              <StatCard label="Due today" icon={<CalendarClock />} value={buckets.today.length} hint={format(new Date(), 'EEEE d MMM')} to={tabHref(params, 'today')} />
+              <StatCard label="Due today" icon={<CalendarClock />} value={buckets.today.length} hint={format(dayOf(today), 'EEEE d MMM')} to={tabHref(params, 'today')} />
               <StatCard label="Upcoming this week" icon={<CalendarRange />} value={buckets.upcoming.length} hint={`Next ${UPCOMING_DAYS} days`} to={tabHref(params, 'upcoming')} />
               <StatCard
                 label="Without a follow-up date"
@@ -300,13 +307,9 @@ function FollowUps({ scope, canEdit }: { scope: ReturnType<typeof scopeOf>; canE
 
 /* ---------------- Grouping ---------------- */
 
-function daysLate(lead: LeadRow): number {
-  const d = toDate(lead.nextFollowUpDate)
-  return d ? differenceInCalendarDays(startOfDay(new Date()), d) : 0
-}
-
-function groupsFor(view: View, leads: LeadRow[]): Group[] {
+function groupsFor(view: View, leads: LeadRow[], today: string): Group[] {
   if (leads.length === 0) return []
+  const daysLate = (l: LeadRow) => daysLateOn(l.nextFollowUpDate, today)
   if (view === 'overdue') {
     // Most late first, so the worst ones are at the top.
     const late3 = leads.filter((l) => daysLate(l) >= 3)
@@ -318,18 +321,18 @@ function groupsFor(view: View, leads: LeadRow[]): Group[] {
       { id: 'late-1', label: '1 day late', tone: 'warning' as const, leads: late1 },
     ].filter((g) => g.leads.length > 0)
   }
-  if (view === 'today') return [{ id: 'today', label: `Today · ${format(new Date(), 'EEEE d MMM')}`, tone: 'brand', leads }]
+  if (view === 'today') return [{ id: 'today', label: `Today · ${format(dayOf(today), 'EEEE d MMM')}`, tone: 'brand', leads }]
   if (view === 'none') return [{ id: 'none', label: 'No follow-up date set', leads }]
   const byDay = new Map<string, LeadRow[]>()
   for (const l of leads) {
-    const d = toDate(l.nextFollowUpDate)
-    if (!d) continue
-    const dayKey = format(d, 'yyyy-MM-dd')
+    const dayKey = l.nextFollowUpDate
+    if (!dayKey) continue
     byDay.set(dayKey, [...(byDay.get(dayKey) ?? []), l])
   }
+  const tomorrow = addDaysIso(today, 1)
   return [...byDay.entries()].map(([day, list]) => {
-    const d = new Date(`${day}T00:00:00`)
-    return { id: day, label: isTomorrow(d) ? `Tomorrow · ${format(d, 'EEEE d MMM')}` : format(d, 'EEEE d MMM'), leads: list }
+    const d = dayOf(day)
+    return { id: day, label: day === tomorrow ? `Tomorrow · ${format(d, 'EEEE d MMM')}` : format(d, 'EEEE d MMM'), leads: list }
   })
 }
 

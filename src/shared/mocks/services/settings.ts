@@ -15,9 +15,8 @@ import { auditLog, diff, recordAudit } from '@/shared/mocks/data/audit'
 import { delay, fail } from '@/shared/mocks/server'
 import { scoped, tenantOf } from '@/shared/mocks/tenant'
 import { leads } from '@/shared/mocks/db'
+import { isLeadStatusType } from '@/shared/domain/leadStatus'
 
-const KINDS = ['open', 'parked', 'won', 'lost'] as const
-const REQUIRES = ['none', 'next-step', 'loss-reason', 'convert'] as const
 const TONES = ['neutral', 'brand', 'blue', 'sky', 'green', 'amber', 'red', 'pink', 'teal'] as const
 
 function canView(user: User) {
@@ -150,31 +149,38 @@ export async function saveLookupList(user: User, list: LookupList, items: unknow
       if (!Number.isFinite(probability) || probability < 0 || probability > 100) {
         return fail(`Probability for “${b.label}” must be 0–100.`, 422)
       }
-      const kind = (r.kind ?? prev?.kind ?? 'open') as StatusOption['kind']
-      const requires = (r.requires ?? prev?.requires ?? 'none') as StatusOption['requires']
+      const type: unknown = r.type ?? prev?.type ?? 'open'
       const tone = (r.tone ?? prev?.tone ?? 'neutral') as StatusOption['tone']
-      if (!KINDS.includes(kind)) return fail(`“${b.label}” has an unknown kind.`, 422)
-      if (!REQUIRES.includes(requires)) return fail(`“${b.label}” has an unknown requirement.`, 422)
+      if (!isLeadStatusType(type)) return fail(`“${b.label}” has an unknown type.`, 422)
+      const requiresNextStep: unknown = r.requiresNextStep ?? prev?.requiresNextStep ?? false
+      const requiresLossReason: unknown = r.requiresLossReason ?? prev?.requiresLossReason ?? false
+      if (typeof requiresNextStep !== 'boolean' || typeof requiresLossReason !== 'boolean') {
+        return fail(`“${b.label}”: the requirement flags must be true or false.`, 422)
+      }
+      if (requiresNextStep && requiresLossReason) return fail(`“${b.label}” can require a next step or a loss reason, not both.`, 422)
+      if (type === 'won' && (requiresNextStep || requiresLossReason)) {
+        return fail(`“${b.label}” is a Won status: the Won flow records what it needs.`, 422)
+      }
       if (!TONES.includes(tone)) return fail(`“${b.label}” has an unknown colour.`, 422)
-      if (prev?.system && prev.kind !== kind) return fail(`“${b.label}” is built in; its kind can’t change.`, 422)
-      // Turning a status that leads sit in into a Won-flow status would make them "won" without a
+      // Turning a status that leads sit in into a Won status would make them "won" without a
       // customer or projects (a Won bypass): only the Won flow may put a lead there.
-      const wonFlow = (k: string, r2: string) => k === 'won' || r2 === 'convert'
-      if (prev && !wonFlow(prev.kind, prev.requires) && wonFlow(kind, requires) && scoped(leads, user).some((l) => l.status === b.key)) {
+      if (prev && prev.type !== 'won' && type === 'won' && scoped(leads, user).some((l) => l.status === b.key)) {
         return fail(`Leads are in “${b.label}”: move them out before making it a Won status (only the Won flow can win a lead).`, 422)
       }
+      if (prev?.system && prev.type !== type) return fail(`“${b.label}” is built in; its type can’t change.`, 422)
       next.push({
         ...b,
         probability: Math.round(probability),
-        kind,
-        requires,
+        type,
+        requiresNextStep,
+        requiresLossReason,
         tone,
         color: /^#[0-9a-f]{6}$/i.test(String(r.color)) ? String(r.color) : (prev?.color ?? '#94a3b8'),
         system: prev?.system ?? false,
       })
     }
     for (const k of ['open', 'won', 'lost'] as const) {
-      if (!next.some((s) => s.kind === k && s.active)) return fail(`Keep at least one active “${k}” status.`, 422)
+      if (!next.some((s) => s.type === k && s.active)) return fail(`Keep at least one active “${k}” status.`, 422)
     }
     recordAudit(user, {
       action: 'update',

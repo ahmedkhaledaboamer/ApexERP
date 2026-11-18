@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { ListChecks, PartyPopper, X } from 'lucide-react'
 import type { TaskLinkType, TaskPriority, TaskView } from '@/modules/tasks/types'
-import { TASK_LINK_TYPES, TASK_PRIORITIES } from '@/modules/tasks/types'
+import { TASK_LINK_TYPES, TASK_PRIORITIES, TASK_PRIORITY_LABEL } from '@/modules/tasks/types'
 import { useProjectsQuery, useTasksQuery } from '@/modules/tasks/hooks/useTasks'
 import { Can } from '@/shared/components/permissions'
 import { Button } from '@/shared/components/ui/Button'
@@ -54,7 +54,7 @@ export default function MyTasksPage() {
     )
   }, [query.data, priority, projectId, linkType])
 
-  const open = (query.data ?? []).filter((t) => t.status !== 'Done')
+  const open = (query.data ?? []).filter((t) => t.status !== 'done' && t.status !== 'cancelled')
   const overdue = open.filter((t) => t.overdue).length
   const anyFilter = !!(priority || projectId || linkType)
 
@@ -73,7 +73,9 @@ export default function MyTasksPage() {
           <SelectInput aria-label="Priority" value={priority} onChange={(e) => setParam('priority', e.target.value)} className="h-8 w-36 text-xs">
             <option value="">All priorities</option>
             {TASK_PRIORITIES.map((p) => (
-              <option key={p}>{p}</option>
+              <option key={p} value={p}>
+                {TASK_PRIORITY_LABEL[p]}
+              </option>
             ))}
           </SelectInput>
           <SelectInput

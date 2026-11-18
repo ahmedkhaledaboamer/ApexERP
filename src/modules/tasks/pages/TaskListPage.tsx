@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { createColumnHelper, type FilterFn, type Table } from '@tanstack/react-table'
 import { List, X } from 'lucide-react'
 import type { TaskStatus, TaskView } from '@/modules/tasks/types'
-import { TASK_LINK_TYPES, TASK_PRIORITIES, TASK_STATUSES } from '@/modules/tasks/types'
+import { TASK_LINK_TYPES, TASK_PRIORITIES, TASK_PRIORITY_LABEL, TASK_STATUSES, TASK_STATUS_LABEL } from '@/modules/tasks/types'
 import { useTasksQuery } from '@/modules/tasks/hooks/useTasks'
 import { projectPath } from '@/app/paths'
 import { cn } from '@/shared/lib/utils'
@@ -14,7 +14,7 @@ import { EmptyState } from '@/shared/components/ui/Feedback'
 import { SearchInput } from '@/shared/components/form/Field'
 import { PageBody } from '@/shared/components/layout/PageHeader'
 import { ColumnPicker, DataTable, FacetFilter, useDataTable, type FacetOption } from '@/shared/components/data-table'
-import { PriorityBadge, StatusMenu } from '@/modules/tasks/components/TaskBadges'
+import { BlockedBadge, PriorityBadge, StatusMenu } from '@/modules/tasks/components/TaskBadges'
 import { LinkChip, LinkTypeIcon } from '@/modules/tasks/components/LinkChip'
 import { TaskPageFrame } from '@/modules/tasks/components/TaskPageFrame'
 import { dueLabel, LINK_LABEL, PRIORITY_RANK, PRIORITY_TONE, STATUS_TONE } from '@/modules/tasks/components/taskMeta'
@@ -37,7 +37,7 @@ export default function TaskListPage() {
     columns,
     globalFilter: search,
     globalFilterFn: taskSearch,
-    defaultHidden: ['projectName'],
+    defaultHidden: [],
     defaultSorting: [{ id: 'dueDate', desc: false }],
     getRowId: (r) => r.id,
   })
@@ -138,7 +138,7 @@ function Facets({ table, data }: { table: Table<TaskView>; data: TaskView[] }) {
         'Status',
         TASK_STATUSES.map((s) => ({
           value: s,
-          label: s,
+          label: TASK_STATUS_LABEL[s],
           icon: <span className={cn('size-2 rounded-full', DOT[STATUS_TONE[s]])} aria-hidden />,
           count: count((r) => r.status === s),
         })),
@@ -148,7 +148,7 @@ function Facets({ table, data }: { table: Table<TaskView>; data: TaskView[] }) {
         'Priority',
         TASK_PRIORITIES.map((p) => ({
           value: p,
-          label: p,
+          label: TASK_PRIORITY_LABEL[p],
           icon: <span className={cn('size-2 rounded-full', DOT[PRIORITY_TONE[p]])} aria-hidden />,
           count: count((r) => r.priority === p),
         })),
@@ -181,8 +181,18 @@ function buildColumns(canEdit: boolean, onStatus: (t: TaskView, s: TaskStatus) =
       meta: { width: 320 },
       cell: ({ row }) => (
         <div className="min-w-0">
-          <p className={cn('truncate font-medium', row.original.status === 'Done' ? 'text-muted line-through' : 'text-ink')}>{row.original.title}</p>
-          <p className="truncate font-mono text-xs text-muted">{row.original.id}</p>
+          <p className={cn('truncate font-medium', row.original.status === 'done' || row.original.status === 'cancelled' ? 'text-muted line-through' : 'text-ink')}>
+            {row.original.title}
+          </p>
+          <p className="flex items-center gap-1.5 truncate font-mono text-xs text-muted">
+            {row.original.id}
+            {row.original.blocked && <BlockedBadge reason={row.original.blockedReason} compact />}
+            {row.original.subtaskProgress.total > 0 && (
+              <span className="num font-sans" title="Sub-tasks done">
+                {row.original.subtaskProgress.done}/{row.original.subtaskProgress.total}
+              </span>
+            )}
+          </p>
         </div>
       ),
     }),

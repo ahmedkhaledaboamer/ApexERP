@@ -23,7 +23,7 @@ function body(over: Partial<ProjectCreateBody> = {}): ProjectCreateBody {
     managerId: 'u10',
     startDate: '2026-12-07',
     endDate: '2027-01-29',
-    status: 'Planned',
+    status: 'planned',
     estimatedHours: 0,
     ...over,
   }
@@ -41,7 +41,7 @@ describe('Projects: scope (tasks column of the matrix)', () => {
     await expect(getProject(agent, created.id)).rejects.toMatchObject({ status: 403 })
 
     const t = structuredClone(tasks.find((x) => x.projectId)!)
-    tasks.push({ ...t, id: 'TK-AGENT-1', ownerId: agent.id, followerIds: [], projectId: created.id, link: { type: 'project', id: created.id } })
+    tasks.push({ ...t, id: 'TK-AGENT-1', ownerId: agent.id, followerIds: [], projectId: created.id, link: null })
     expect((await listProjects(agent)).some((p) => p.id === created.id)).toBe(true)
     expect((await getProject(agent, created.id)).tasks.map((x) => x.id)).toContain('TK-AGENT-1')
   })
@@ -59,7 +59,7 @@ describe('Projects: scope (tasks column of the matrix)', () => {
     const created = await createProject(admin, body({ name: 'Team scope test', generateTasks: false }))
     expect((await listProjects(salesManager)).some((p) => p.id === created.id)).toBe(false)
     const t = structuredClone(tasks.find((x) => x.projectId)!)
-    tasks.push({ ...t, id: 'TK-TEAM-1', ownerId: 'u5', followerIds: [], projectId: created.id, link: { type: 'project', id: created.id } })
+    tasks.push({ ...t, id: 'TK-TEAM-1', ownerId: 'u5', followerIds: [], projectId: created.id, link: null })
     expect((await listProjects(salesManager)).some((p) => p.id === created.id)).toBe(true)
   })
 })
@@ -75,8 +75,9 @@ describe('Projects: create', () => {
     for (const t of generated) {
       expect(t.dueDate).toMatch(/^\d{4}-\d{2}-\d{2}$/)
       expect(t.dueDate! >= '2026-12-07').toBe(true)
-      expect(t.link).toEqual({ type: 'project', id: row.id })
-      expect(t.status).toBe('To do')
+      expect(t.link).toBeNull()
+      expect(t.projectId).toBe(row.id)
+      expect(t.status).toBe('todo')
       expect(t.dayOffset).not.toBeNull()
     }
     expect(row.taskCount).toBe(tpl.length)
@@ -108,32 +109,32 @@ describe('Projects: progress and update', () => {
     const row = await createProject(admin, body({ name: 'Progress test' }))
     expect(row.progress).toBe(0)
     const list = tasksForProject(row.id)
-    list[0].status = 'Done'
+    list[0].status = 'done'
     const total = list.reduce((s, t) => s + t.estimatedHours, 0)
     const detail = await getProject(admin, row.id)
     expect(detail.progress).toBe(Math.round((list[0].estimatedHours / total) * 100))
     expect(detail.progress).toBe(projectProgress(row.id))
     expect(detail.doneCount).toBe(1)
-    for (const t of list) t.status = 'Done'
+    for (const t of list) t.status = 'done'
     expect((await getProject(admin, row.id)).progress).toBe(100)
   })
 
   it('Completed is blocked while tasks are open, unless forced', async () => {
     const row = await createProject(admin, body({ name: 'Completion test' }))
-    await expect(updateProject(deliveryHead, row.id, { status: 'Completed' })).rejects.toMatchObject({ status: 409 })
-    expect(projects.find((p) => p.id === row.id)!.status).toBe('Planned')
-    const forced = await updateProject(deliveryHead, row.id, { status: 'Completed', force: true })
-    expect(forced.status).toBe('Completed')
+    await expect(updateProject(deliveryHead, row.id, { status: 'completed' })).rejects.toMatchObject({ status: 409 })
+    expect(projects.find((p) => p.id === row.id)!.status).toBe('planned')
+    const forced = await updateProject(deliveryHead, row.id, { status: 'completed', force: true })
+    expect(forced.status).toBe('completed')
     expect(auditLog[0]).toMatchObject({ entity: 'project', entityId: row.id, changes: [{ field: 'status', from: 'Planned', to: 'Completed' }] })
 
     const other = await createProject(admin, body({ name: 'Completion test 2' }))
-    for (const t of tasksForProject(other.id)) t.status = 'Done'
-    expect((await updateProject(admin, other.id, { status: 'Completed' })).status).toBe('Completed')
+    for (const t of tasksForProject(other.id)) t.status = 'done'
+    expect((await updateProject(admin, other.id, { status: 'completed' })).status).toBe('completed')
   })
 
   it('only managers update; end date can’t be before start', async () => {
     const row = await createProject(admin, body({ name: 'Update rules' }))
-    await expect(updateProject(developer, row.id, { status: 'Active' })).rejects.toMatchObject({ status: 403 })
+    await expect(updateProject(developer, row.id, { status: 'active' })).rejects.toMatchObject({ status: 403 })
     await expect(updateProject(admin, row.id, { endDate: '2026-11-01' })).rejects.toMatchObject({ status: 422 })
     const moved = await updateProject(admin, row.id, { managerId: 'u3', startDate: '2026-12-08' })
     expect(moved.managerName).toBe('Karim Nasser')

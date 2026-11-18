@@ -17,6 +17,7 @@ import { matchServiceText } from '@/modules/services/match'
 import type { CountryCode } from '@/modules/tenancy/types'
 import type { Tenant } from '@/shared/mocks/tenant'
 import { registerArray } from '@/shared/mocks/persist/registry'
+import { toFollowUpDate } from '@/shared/domain/followUp'
 
 /**
  * In-memory data the service functions read from. Dates are relative to the moment the
@@ -201,6 +202,9 @@ const SEED: Seed[] = [
 
 const NOW = new Date()
 
+/** A seeded follow-up `days` from now, as the company-local calendar date (yyyy-MM-dd) it falls on. */
+const seedFollowUp = (days: number, timezone: string): string => toFollowUpDate(addDays(NOW, days).toISOString(), timezone) as string
+
 /** Company ids of the seeded tenants (kept local: db.ts can't import data/tenancy, which imports users from here). */
 const APEX = 'co_apex'
 const CREST = 'co_crest'
@@ -312,7 +316,8 @@ const apexLeads: Tenant<Lead>[] = SEED.map(
     stageChangedAt: subDays(NOW, Math.min(createdDaysAgo, ((i * 7) % 19) + 1)).toISOString(),
     ownerId,
     value,
-    nextFollowUpDate: followUpInDays === null ? null : addDays(NOW, followUpInDays).toISOString(),
+    // Company-local calendar date (Apex: Asia/Dubai).
+    nextFollowUpDate: followUpInDays === null ? null : seedFollowUp(followUpInDays, 'Asia/Dubai'),
     createdAt: subDays(NOW, createdDaysAgo).toISOString(),
     doNotContact: dnc ?? false,
     nextStep: NEXT_STEPS[status] ?? '',
@@ -419,7 +424,8 @@ const crestLeads: Tenant<Lead>[] = CREST_SEED.map(
       stageChangedAt: subDays(NOW, Math.min(createdDaysAgo, ((i * 5) % 17) + 1)).toISOString(),
       ownerId,
       value,
-      nextFollowUpDate: followUpInDays === null ? null : addDays(NOW, followUpInDays).toISOString(),
+      // Company-local calendar date (Crest: Asia/Riyadh).
+      nextFollowUpDate: followUpInDays === null ? null : seedFollowUp(followUpInDays, 'Asia/Riyadh'),
       createdAt: subDays(NOW, createdDaysAgo).toISOString(),
       doNotContact: dnc ?? false,
       nextStep: CREST_NEXT_STEPS[status] ?? '',
@@ -479,7 +485,7 @@ export function customerFromLead(
     website: websiteFromLead(lead),
     address: opts.address ?? '',
     emirate: (opts.country ?? 'AE') === 'AE' ? emirateFromLead(lead) : '',
-    status: opts.status ?? 'Active',
+    status: opts.status ?? 'active',
     wonValue: lead.value,
     wonAt: opts.wonAt,
     sourceType: lead.sourceType,
@@ -510,7 +516,7 @@ export const customers: Tenant<Customer>[] = [
         id: l.customerId as string,
         wonAt: l.stageChangedAt,
         address: SEED_ADDRESSES[l.company] ?? '',
-        status: l.value >= 140000 ? 'VIP' : l.company === 'Sahara Rent A Car' ? 'Paused' : 'Active',
+        status: l.value >= 140000 ? 'vip' : l.company === 'Sahara Rent A Car' ? 'paused' : 'active',
         country: 'AE',
       }),
     ),
@@ -521,7 +527,7 @@ export const customers: Tenant<Customer>[] = [
         id: l.customerId as string,
         wonAt: l.stageChangedAt,
         address: SEED_ADDRESSES[l.company] ?? '',
-        status: l.value >= 500000 ? 'VIP' : 'Active',
+        status: l.value >= 500000 ? 'vip' : 'active',
         country: 'SA',
       }),
     ),

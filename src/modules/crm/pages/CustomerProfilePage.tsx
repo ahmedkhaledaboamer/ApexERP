@@ -29,7 +29,7 @@ import type { ContractRow, CustomerDetail, CustomerStatus } from '@/modules/crm/
 import { leadPath, newQuotationPath, PATHS } from '@/app/paths'
 import { crmKeys } from '@/modules/crm/queryKeys'
 import { useCustomerQuery, useUpdateCustomer } from '@/modules/crm/hooks/useCrm'
-import { BILLING_SUFFIX, CUSTOMER_STATUSES, CUSTOMER_STATUS_TONE } from '@/modules/crm/constants'
+import { BILLING_SUFFIX, contractDisplayStatus, CUSTOMER_STATUSES, CUSTOMER_STATUS_LABEL, CUSTOMER_STATUS_TONE } from '@/modules/crm/constants'
 import { useAutomationRules } from '@/shared/hooks/useAutomationRules'
 import { useLookups } from '@/shared/hooks/useLookups'
 import { ContractStatusBadge, CustomerStatusBadge, RenewsIn } from '@/modules/crm/components/CrmBadges'
@@ -111,7 +111,7 @@ function CustomerRecord({ id, canEdit }: { id: string; canEdit: boolean }) {
   }
 
   const c = query.data
-  const expiring = c.contracts.filter((k) => k.status === 'Expiring')
+  const expiring = c.contracts.filter((k) => contractDisplayStatus(k) === 'expiring')
   const record = { type: 'Customer' as const, id: c.id, name: c.name }
 
   function changeStatus(status: CustomerStatus) {
@@ -119,7 +119,7 @@ function CustomerRecord({ id, canEdit }: { id: string; canEdit: boolean }) {
     updateStatus.mutate(
       { id: c.id, input: { status } },
       {
-        onSuccess: () => toast.success(`Marked ${status}`, c.name),
+        onSuccess: () => toast.success(`Marked ${CUSTOMER_STATUS_LABEL[status]}`, c.name),
         onError: (e) => toast.error('Status not changed', e.message),
       },
     )
@@ -345,7 +345,7 @@ function StatusMenu({ current, onPick, busy }: { current: CustomerStatus; onPick
               onPick(s)
             }}
           >
-            {s}
+            {CUSTOMER_STATUS_LABEL[s]}
           </MenuItem>
         ))
       }
@@ -403,7 +403,7 @@ function Overview({
 }) {
   const catalog = useCatalog()
   // Catalog ids from live and past contracts; names and icons come from the catalog (inactive still resolve).
-  const purchased = [...new Set(c.contracts.filter((k) => k.status !== 'Cancelled').flatMap((k) => k.serviceIds))]
+  const purchased = [...new Set(c.contracts.filter((k) => k.status !== 'cancelled').flatMap((k) => k.serviceIds))]
   const decisionMakers = c.contacts.filter((x) => x.isDecisionMaker).length
 
   return (
@@ -590,11 +590,11 @@ function ContractsCard({
       ) : (
         <ul className="divide-y divide-line border-t border-line">
           {contracts.map((k) => (
-            <li key={k.id} className={cn('flex flex-wrap items-start gap-x-4 gap-y-2 px-5 py-3.5', k.status === 'Cancelled' && 'opacity-70')}>
+            <li key={k.id} className={cn('flex flex-wrap items-start gap-x-4 gap-y-2 px-5 py-3.5', k.status === 'cancelled' && 'opacity-70')}>
               <div className="min-w-0 flex-1 basis-64">
                 <p className="flex flex-wrap items-center gap-2 text-[0.8125rem] font-medium">
                   <span className="truncate">{k.title}</span>
-                  <ContractStatusBadge status={k.status} />
+                  <ContractStatusBadge status={contractDisplayStatus(k)} />
                 </p>
                 <p className="mt-1 flex flex-wrap gap-1">
                   {k.serviceNames.map((s) => (
@@ -614,7 +614,7 @@ function ContractsCard({
                 </p>
                 <p className="mt-0.5 text-xs">
                   <span className="text-muted">Renews </span>
-                  <RenewsIn days={k.daysToRenewal} cancelled={k.status === 'Cancelled'} />
+                  <RenewsIn days={k.daysToRenewal} cancelled={k.status === 'cancelled'} />
                 </p>
                 <p className="num text-xs text-muted">{fmtDate(k.renewalDate)}</p>
               </div>

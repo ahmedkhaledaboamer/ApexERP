@@ -5,8 +5,8 @@ import { cn, fmtDate } from '@/shared/lib/utils'
 /** Validity date, highlighted when an open quotation is about to lapse or has lapsed. */
 export function ValidUntil({ date, status, className }: { date: string; status: QuotationStatus; className?: string }) {
   const days = daysUntil(date)
-  const watching = AWAITING_STATUSES.includes(status) || status === 'Draft'
-  const expired = status === 'Expired' || (watching && days < 0)
+  const watching = AWAITING_STATUSES.includes(status) || status === 'draft'
+  const expired = status === 'expired' || (watching && days < 0)
   const soon = watching && !expired && days <= 7
 
   return (

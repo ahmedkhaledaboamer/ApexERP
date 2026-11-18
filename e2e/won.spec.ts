@@ -33,6 +33,11 @@ async function apiGet<T = any>(page: Page, path: string): Promise<{ status: numb
 
 const wonDialog = (page: Page) => page.getByRole('dialog').filter({ hasText: 'Review what will happen' })
 
+/** The lead fields these tests check (the API speaks the leads columns: status_id, customer_id, won_at). */
+function leadFields(body: Record<string, unknown>) {
+  return { status: body.status_id, customerId: body.customer_id ?? null, wonAt: body.won_at ?? null }
+}
+
 async function openLead(page: Page, id: string) {
   await page.goto(`/leads/${id}`)
   await page.getByRole('button', { name: 'Win deal' }).click()
@@ -63,17 +68,29 @@ test('drag a Proposal lead to Won → the dialog shows what will happen → conf
   await expect(page.locator('h1')).toContainText(COMPANY)
   const projectId = page.url().split('/').pop()!
 
-  const lead = await apiGet(page, `/leads/${LEAD}`)
-  expect(lead.body).toMatchObject({ status: 'Won' })
-  const customerId = lead.body.customerId as string
+  const lead = leadFields((await apiGet(page, `/leads/${LEAD}`)).body)
+  expect(lead.status).toBe('Won')
+  const customerId = lead.customerId as string
   expect(customerId).toBeTruthy()
+  // leads.won_at is set by the Won flow.
+  expect(lead.wonAt).toBeTruthy()
   const customer = await apiGet(page, `/customers/${customerId}`)
   expect(customer.body.name).toBe(COMPANY)
   expect(customer.body.contacts).toHaveLength(2)
-  expect(customer.body.recentActivities[0].summary).toMatch(/^Won by/)
+  // contacts.customer_id: the lead's contacts now belong to the customer too (still on the lead, nothing copied).
+  for (const c of customer.body.contacts as Record<string, unknown>[]) {
+    expect(c.lead_id).toBe(LEAD)
+    expect(c.customer_id).toBe(customerId)
+  }
+  expect(customer.body.recent_activities[0].summary).toMatch(/^Won by/)
   const project = await apiGet(page, `/projects/${projectId}`)
-  expect(project.body).toMatchObject({ managerId: 'u10', customerId })
+  expect(project.body).toMatchObject({ manager_id: 'u10', customer_id: customerId, status: 'planned', lead_id: LEAD })
   expect(project.body.tasks).toHaveLength(8)
+  // Template tasks: design statuses / priorities, the project as its own column (no project link).
+  for (const t of project.body.tasks as { status: string; priority: string; link: unknown; project_id: string }[]) {
+    expect(t).toMatchObject({ status: 'todo', link: null, project_id: projectId })
+    expect(['low', 'medium', 'high', 'urgent']).toContain(t.priority)
+  }
   expect(project.body.audit).toHaveLength(1)
 
   // The customer 360 shows the carried-over contacts and history.
@@ -98,10 +115,15 @@ test('accepting a quotation → Win now → the same dialog with the contract', 
   await expect(dialog).toContainText('Projects (3)')
   await dialog.getByRole('button', { name: 'Confirm Won' }).click()
   await expect(page).toHaveURL(/\/projects\/[^/]+$/)
-  const lead = await apiGet(page, `/leads/${LEAD}`)
-  expect(lead.body.status).toBe('Won')
-  const contracts = await apiGet<{ customerId: string }[]>(page, '/contracts')
-  expect(contracts.body.some((c) => c.customerId === lead.body.customerId)).toBe(true)
+  const lead = leadFields((await apiGet(page, `/leads/${LEAD}`)).body)
+  expect(lead.status).toBe('Won')
+  const contracts = await apiGet<Record<string, unknown>[]>(page, '/contracts')
+  const customerId = lead.customerId
+  expect(contracts.body.some((c) => c.customer_id === customerId && c.quotation_id === 'Q-1012')).toBe(true)
+  // The accepted quotation gets customer_id and accepted_at.
+  const quote = await apiGet(page, '/quotations/Q-1012')
+  expect(quote.body.customer_id).toBe(customerId)
+  expect(quote.body.accepted_at).toBeTruthy()
 })
 
 test('a lead without a contact: the dialog shows the blocking requirement', async ({ page }) => {
@@ -111,7 +133,7 @@ test('a lead without a contact: the dialog shows the blocking requirement', asyn
     const r = await fetch('/api/leads', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.token}` },
-      body: JSON.stringify({ company: 'No Contact Trading E2E', contactName: '', mobile: '', email: '', sourceType: 'Website', industry: 'Logistics' }),
+      body: JSON.stringify({ company_name: 'No Contact Trading E2E', contact_name: '', phone: '', email: '', source_id: 'Website', industry_id: 'Logistics' }),
     })
     return { status: r.status, body: await r.json() }
   })
@@ -134,8 +156,7 @@ test('a failure at a step: the dialog names the step and nothing changed', async
   await dialog.getByRole('button', { name: 'Confirm Won' }).click()
   await expect(dialog.getByRole('alert')).toContainText('Failed at: projects. Nothing was saved.')
   await expect(dialog.getByRole('button', { name: 'Retry' })).toBeVisible()
-  const lead = await apiGet(page, `/leads/${LEAD}`)
-  expect(lead.body).toMatchObject({ status: 'Proposal', customerId: null })
+  expect(leadFields((await apiGet(page, `/leads/${LEAD}`)).body)).toMatchObject({ status: 'Proposal', customerId: null, wonAt: null })
   const after = await apiGet<unknown[]>(page, '/projects')
   expect(after.body).toHaveLength(before.body.length)
   const customers = await apiGet<{ name: string }[]>(page, '/customers')
@@ -159,6 +180,5 @@ test('a plan limit inside the flow: the dialog says which limit with Upgrade, th
   await expect(problem).toContainText('Everything was rolled back')
   await expect(problem.getByRole('button', { name: 'Upgrade' })).toBeVisible()
   await expect(wonDialog(page).getByRole('alert').first()).toContainText('Failed at: customer')
-  const lead = await apiGet(page, `/leads/${LEAD}`)
-  expect(lead.body).toMatchObject({ status: 'Proposal', customerId: null })
+  expect(leadFields((await apiGet(page, `/leads/${LEAD}`)).body)).toMatchObject({ status: 'Proposal', customerId: null, wonAt: null })
 })

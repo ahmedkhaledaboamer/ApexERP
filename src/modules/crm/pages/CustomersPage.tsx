@@ -6,7 +6,7 @@ import type { Scope } from '@/shared/types'
 import { customerPath, PATHS } from '@/app/paths'
 import { useCustomersQuery } from '@/modules/crm/hooks/useCrm'
 import type { CustomerRow } from '@/modules/crm/types'
-import { CUSTOMER_STATUSES, CUSTOMER_STATUS_TONE } from '@/modules/crm/constants'
+import { CUSTOMER_STATUSES, CUSTOMER_STATUS_LABEL, CUSTOMER_STATUS_TONE } from '@/modules/crm/constants'
 import { useAutomationRules } from '@/shared/hooks/useAutomationRules'
 import { useLookups } from '@/shared/hooks/useLookups'
 import type { LookupsApi } from '@/shared/hooks/useLookups'
@@ -152,11 +152,11 @@ function Kpis({ rows, loading }: { rows: CustomerRow[] | undefined; loading: boo
       </section>
     )
   }
-  const vip = rows.filter((r) => r.status === 'VIP').length
+  const vip = rows.filter((r) => r.status === 'vip').length
   const value = rows.reduce((s, r) => s + r.activeContractValue, 0)
   const contracts = rows.reduce((s, r) => s + r.activeContracts, 0)
   const renewing = rows.filter((r) => r.daysToRenewal !== null && r.daysToRenewal <= rules.renewalAlertDays).length
-  const paused = rows.filter((r) => r.status === 'Paused').length
+  const paused = rows.filter((r) => r.status === 'paused').length
 
   return (
     <section aria-label="Customer figures" className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
@@ -207,7 +207,7 @@ function Facets({ table, data, lookups }: { table: Table<CustomerRow>; data: Cus
         'Status',
         CUSTOMER_STATUSES.map((s) => ({
           value: s,
-          label: s,
+          label: CUSTOMER_STATUS_LABEL[s],
           icon: <span className={`size-2 rounded-full ${DOT[CUSTOMER_STATUS_TONE[s]]}`} aria-hidden />,
           count: count((r) => r.status === s),
         })),

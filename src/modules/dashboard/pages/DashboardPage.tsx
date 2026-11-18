@@ -25,6 +25,7 @@ import { useLeadsQuery } from '@/modules/leads/hooks/useLeads'
 import { FollowUpLabel, followUpState } from '@/modules/leads/components/FollowUpLabel'
 import type { LeadRow } from '@/modules/leads/types'
 import { isTracked } from '@/modules/targets/lib'
+import { useEventsEnabled } from '@/modules/events/hooks/useEventsEnabled'
 import { TargetNotTracked } from '@/modules/targets/components/TargetProgress'
 import { useCurrentUser } from '@/store/hooks'
 import { scopeOf } from '@/shared/lib/permissions'
@@ -43,6 +44,7 @@ import { Button } from '@/shared/components/ui/Button'
 import { Segmented, type SegmentedOption } from '@/shared/components/ui/Segmented'
 import { useRegion } from '@/modules/tenancy/hooks'
 import { OnboardingChecklist } from '@/modules/onboarding/OnboardingChecklist'
+import { isParkedType } from '@/shared/domain/leadStatus'
 
 const C = { brand: 'var(--color-brand-600)', blue: '#2563eb', green: '#10b981', amber: '#f59e0b', grey: '#d4d4d0' }
 
@@ -360,9 +362,10 @@ function Legend({ color, label, line }: { color: string; label: string; line?: b
 
 function TargetCard({ data }: { data: DashboardSummary }) {
   // A target of 0 means "no target": those kinds are hidden and don't move the gauge. Kinds not
-  // tracked yet (events, until EVENTS_ENABLED) show "n/a" and never count, even with a target.
-  const set = data.targets.filter((t) => t.target > 0 && isTracked(t.key))
-  const notTracked = data.targets.filter((t) => t.target > 0 && !isTracked(t.key))
+  // tracked for the company (events, without the Events module) show "n/a" and never count, even with a target.
+  const eventsOn = useEventsEnabled()
+  const set = data.targets.filter((t) => t.target > 0 && isTracked(t.key, eventsOn))
+  const notTracked = data.targets.filter((t) => t.target > 0 && !isTracked(t.key, eventsOn))
   const actual = set.reduce((s, t) => s + t.actual, 0)
   const target = set.reduce((s, t) => s + t.target, 0)
   const pct = target ? (actual / target) * 100 : 0
@@ -429,12 +432,12 @@ function StageCard({ leads, loading }: { leads?: LeadRow[]; loading: boolean }) 
   const lookups = useLookups()
   // Active open stages in their configured order, then parked ones (e.g. Cold) at the end.
   const rows = useMemo(() => {
-    const stages = lookups.statuses.filter((s) => s.kind === 'open' || s.kind === 'parked')
+    const stages = lookups.statuses.filter((s) => s.type === 'open' || isParkedType(s.type))
     return stages.map((s) => {
       const inStage = (leads ?? []).filter((l) => l.status === s.key)
       return {
         status: s.key,
-        label: s.kind === 'parked' ? `${s.label} (parked)` : s.label,
+        label: isParkedType(s.type) ? `${s.label} (parked)` : s.label,
         color: s.color,
         count: inStage.length,
         value: inStage.reduce((t, l) => t + l.value, 0),
