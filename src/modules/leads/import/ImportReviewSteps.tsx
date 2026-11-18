@@ -1,8 +1,11 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { AlertTriangle, CheckCircle2, Copy, Download, ExternalLink, FileWarning, ListChecks, RotateCcw, UserCheck, XCircle } from 'lucide-react'
+import { AlertTriangle, ArrowUpRight, CheckCircle2, Copy, Download, ExternalLink, FileWarning, Gauge, ListChecks, RotateCcw, UserCheck, XCircle } from 'lucide-react'
 import type { ImportCheckRow, ImportDecision, ImportOwnerRule, ImportResult } from '@/modules/leads/types'
 import { leadPath, PATHS } from '@/app/paths'
+import { formatLimitValue } from '@/modules/billing/gating'
+import { useBillingAccess } from '@/modules/billing/hooks'
+import { SETTINGS_PATHS } from '@/modules/settings/components/SettingsLayout'
 import { cn } from '@/shared/lib/utils'
 import { Badge } from '@/shared/components/ui/Badge'
 import { Button } from '@/shared/components/ui/Button'
@@ -368,7 +371,7 @@ export function ResultView({
   reporting: boolean
   onRestart: () => void
 }) {
-  const allGood = result.failed.length === 0
+  const allGood = result.failed.length === 0 && !(result.skippedForLimit > 0)
   return (
     <div className="mx-auto max-w-3xl space-y-5">
       <Card>
@@ -387,7 +390,9 @@ export function ResultView({
           <p className="mt-1 max-w-md text-[0.8125rem] text-muted">
             {allGood
               ? 'Review the new leads with the team, starting with the ones due for follow-up.'
-              : 'Some rows didn’t import. Download the report, fix them in the file and import just those rows.'}
+              : result.failed.length === 0
+                ? 'Your plan’s limit stopped the import before every row was added.'
+                : 'Some rows didn’t import. Download the report, fix them in the file and import just those rows.'}
           </p>
           <div className="mt-6 grid w-full grid-cols-3 gap-3">
             <Tile label="Created" value={result.created} tone="green" />
@@ -412,6 +417,8 @@ export function ResultView({
         </CardBody>
       </Card>
 
+      {result.skippedForLimit > 0 && <LimitReport result={result} />}
+
       {result.failed.length > 0 && (
         <Card>
           <CardHeader icon={<XCircle />} title={`Failed · ${result.failed.length}`} />
@@ -427,6 +434,42 @@ export function ResultView({
             ))}
           </ul>
         </Card>
+      )}
+    </div>
+  )
+}
+
+/** Rows the plan's leads & contacts limit kept out of the import, with the way to more room. */
+function LimitReport({ result }: { result: ImportResult }) {
+  const { canManage } = useBillingAccess()
+  const n = result.skippedForLimit
+  const max = result.limitReached?.max
+  return (
+    <div
+      id="import-limit-report"
+      role="status"
+      data-skipped={n}
+      className="flex flex-wrap items-start gap-3 rounded-card border border-warning-100 bg-warning-50 px-4 py-3 text-[0.8125rem] text-warning-700 dark:border-warning-500/20 dark:bg-warning-500/10 dark:text-warning-500"
+    >
+      <Gauge className="mt-0.5 size-4 shrink-0" aria-hidden />
+      <p className="min-w-0 flex-1">
+        <span className="font-semibold">
+          {n.toLocaleString()} {n === 1 ? 'row wasn’t' : 'rows weren’t'} imported
+        </span>{' '}
+        because your plan’s limit
+        {max !== undefined ? ` of ${formatLimitValue('leadsContacts', max)}` : ''} leads & contacts was reached.{' '}
+        {canManage ? 'Upgrade, then import the remaining rows from the report.' : 'Ask your company administrator to upgrade the plan.'}
+      </p>
+      {canManage && (
+        <Link
+          id="import-limit-upgrade"
+          to={SETTINGS_PATHS.billing}
+          data-leave-ok
+          className="inline-flex shrink-0 items-center gap-1 font-medium underline-offset-2 hover:underline"
+        >
+          Upgrade plan
+          <ArrowUpRight className="size-3.5" aria-hidden />
+        </Link>
       )}
     </div>
   )

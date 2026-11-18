@@ -6,7 +6,7 @@ import { fmtInt, fmtPct } from './chartKit'
 
 export function KpiStrip({ kpis }: { kpis: ReportKpis }) {
   return (
-    <section aria-label="Key figures" className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2 md:grid-cols-3 2xl:grid-cols-6 print:grid-cols-3">
+    <section aria-label="Key figures" className="grid grid-cols-1 gap-4 min-[26.25rem]:grid-cols-2 md:grid-cols-3 2xl:grid-cols-6 print:grid-cols-3">
       <StatCard label="Leads created" icon={<UserPlus />} value={fmtInt(kpis.leadsCreated)} hint="New in the period" />
       <StatCard label="Won value" icon={<CircleDollarSign />} value={fmtCompactMoney(kpis.wonValue)} hint={`${kpis.wonCount} ${kpis.wonCount === 1 ? 'deal' : 'deals'} won`} />
       <StatCard

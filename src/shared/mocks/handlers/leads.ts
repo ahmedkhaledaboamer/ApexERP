@@ -10,16 +10,15 @@ export const leadHandlers = [
   // Before /leads/:id so "duplicates" isn't read as an id.
   http.get(`${API}/leads/duplicates`, ({ request }) => {
     const url = new URL(request.url)
-    return respond(() => {
-      userFrom(request)
-      return svc.checkDuplicates({
+    return respond(() =>
+      svc.checkDuplicates(userFrom(request), {
         company: url.searchParams.get('company') ?? '',
         email: url.searchParams.get('email') ?? '',
         emails: (url.searchParams.get('emails') ?? '').split(',').filter(Boolean),
         website: url.searchParams.get('website') ?? '',
         excludeId: url.searchParams.get('excludeId') ?? undefined,
-      })
-    })
+      }),
+    )
   }),
   // Also before /leads/:id.
   http.get(`${API}/leads/owners`, ({ request }) => respond(() => svc.getLeadOwners(userFrom(request)))),

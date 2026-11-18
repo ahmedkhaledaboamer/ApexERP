@@ -12,6 +12,7 @@ import { Button } from '@/shared/components/ui/Button'
 import { Drawer } from '@/shared/components/ui/Drawer'
 import { useToast } from '@/shared/components/ui/Toast'
 import { Field, SelectInput, TextArea, TextInput } from '@/shared/components/form/Field'
+import { useRegion } from '@/modules/tenancy/hooks'
 
 const STATUS_HINT = {
   Active: 'Normal account',
@@ -21,6 +22,7 @@ const STATUS_HINT = {
 
 /** Edits status and company details. Name, industry and value came from the lead. */
 export function CustomerEditDrawer({ open, onClose, customer }: { open: boolean; onClose: () => void; customer: CustomerRow }) {
+  const region = useRegion()
   const update = useUpdateCustomer()
   const toast = useToast()
   const owners = useOwnerOptions()
@@ -76,7 +78,7 @@ export function CustomerEditDrawer({ open, onClose, customer }: { open: boolean;
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" form="customer-form" loading={update.isPending} disabled={!isDirty}>
+          <Button write type="submit" form="customer-form" loading={update.isPending} disabled={!isDirty}>
             Save changes
           </Button>
         </>
@@ -112,19 +114,22 @@ export function CustomerEditDrawer({ open, onClose, customer }: { open: boolean;
         </fieldset>
 
         <Field id="cu-website" label="Website" error={errors.website?.message}>
-          <TextInput id="cu-website" type="url" inputMode="url" placeholder="https://company.ae" invalid={!!errors.website} {...register('website')} />
+          <TextInput id="cu-website" type="url" inputMode="url" placeholder="https://company.com" invalid={!!errors.website} {...register('website')} />
         </Field>
 
-        <Field id="cu-emirate" label="Emirate" error={errors.emirate?.message}>
-          <SelectInput id="cu-emirate" invalid={!!errors.emirate} {...register('emirate')}>
-            <option value="">Not set</option>
-            {EMIRATES.map((e) => (
-              <option key={e} value={e}>
-                {e}
-              </option>
-            ))}
-          </SelectInput>
-        </Field>
+        {/* Emirates only apply to UAE workspaces (or a customer that already has one). */}
+        {(region.country === 'AE' || !!customer.emirate) && (
+          <Field id="cu-emirate" label="Emirate" error={errors.emirate?.message}>
+            <SelectInput id="cu-emirate" invalid={!!errors.emirate} {...register('emirate')}>
+              <option value="">Not set</option>
+              {EMIRATES.map((e) => (
+                <option key={e} value={e}>
+                  {e}
+                </option>
+              ))}
+            </SelectInput>
+          </Field>
+        )}
 
         <Field id="cu-address" label="Address" error={errors.address?.message}>
           <TextArea id="cu-address" className="min-h-20" placeholder="Office, building, street, area" invalid={!!errors.address} {...register('address')} />

@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { createColumnHelper, type FilterFn, type Table } from '@tanstack/react-table'
-import { CalendarClock, CheckCircle2, FileText, Percent, Plus, Wallet, X } from 'lucide-react'
+import { CalendarClock, CheckCircle2, ExternalLink, FileText, MoreHorizontal, Percent, Plus, Trophy, Wallet, X } from 'lucide-react'
 import type { Quotation } from '@/modules/quotations/types'
 import { newQuotationPath, quotationPath } from '@/app/paths'
 import { useQuotationsQuery } from '@/modules/quotations/hooks/useQuotations'
@@ -14,11 +14,14 @@ import { useCurrentUser } from '@/store/hooks'
 import { Avatar } from '@/shared/components/ui/Avatar'
 import { Badge, DOT } from '@/shared/components/ui/Badge'
 import { Button } from '@/shared/components/ui/Button'
+import { Menu, MenuItem } from '@/shared/components/ui/Menu'
+import { useOpenWonDialog } from '@/modules/won/hooks'
 import { EmptyState, Skeleton } from '@/shared/components/ui/Feedback'
 import { StatCard } from '@/shared/components/ui/StatCard'
 import { SearchInput } from '@/shared/components/form/Field'
 import { PageBody, PageHeader } from '@/shared/components/layout/PageHeader'
 import { ColumnPicker, DataTable, FacetFilter, useDataTable, type FacetOption } from '@/shared/components/data-table'
+import { useReadOnly } from '@/shared/lib/readOnly'
 
 export default function QuotationsPage() {
   const user = useCurrentUser()
@@ -29,21 +32,27 @@ export default function QuotationsPage() {
       <PageBody>
         <EmptyState
           title="Quotations aren’t part of your role"
-          body={`${user.role} has no access to Sales & CRM. Ask a System Admin if you need it.`}
+          body={`${user.role} has no access to Sales & CRM. Ask a Company Admin if you need it.`}
         />
       </PageBody>
     )
   }
-  return <QuotationsList scopeLabel={SCOPE_LABELS[scope]} canCreate={can(user.role, 'sales', 'create')} />
+  return (
+    <QuotationsList scopeLabel={SCOPE_LABELS[scope]} canCreate={can(user.role, 'sales', 'create')} canEdit={can(user.role, 'sales', 'edit')} />
+  )
 }
 
-function QuotationsList({ scopeLabel, canCreate }: { scopeLabel: string; canCreate: boolean }) {
+function QuotationsList({ scopeLabel, canCreate, canEdit }: { scopeLabel: string; canCreate: boolean; canEdit: boolean }) {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const search = params.get('q') ?? ''
   const query = useQuotationsQuery()
   const data = useMemo(() => query.data ?? [], [query.data])
-  const columns = useMemo(() => buildColumns(), [])
+  const openWon = useOpenWonDialog()
+  const columns = useMemo(
+    () => buildColumns(canEdit ? { onOpen: (q) => navigate(quotationPath(q.id)), onWin: (q) => openWon(q.leadId, q.id) } : null),
+    [canEdit, navigate, openWon],
+  )
 
   const table = useDataTable({
     id: 'quotations',
@@ -76,7 +85,7 @@ function QuotationsList({ scopeLabel, canCreate }: { scopeLabel: string; canCrea
         }
         actions={
           canCreate && (
-            <Button onClick={() => navigate(newQuotationPath())}>
+            <Button write onClick={() => navigate(newQuotationPath())}>
               <Plus />
               New quotation
             </Button>
@@ -130,7 +139,7 @@ function QuotationsList({ scopeLabel, canCreate }: { scopeLabel: string; canCrea
               }
               action={
                 data.length === 0 && canCreate ? (
-                  <Button size="sm" onClick={() => navigate(newQuotationPath())}>
+                  <Button write size="sm" onClick={() => navigate(newQuotationPath())}>
                     <Plus />
                     New quotation
                   </Button>
@@ -249,8 +258,13 @@ const inSet: FilterFn<Quotation> = (row, id, values: string[] | undefined) =>
 
 const col = createColumnHelper<Quotation>()
 
-function buildColumns() {
-  return [
+interface RowHandlers {
+  onOpen: (q: Quotation) => void
+  onWin: (q: Quotation) => void
+}
+
+function buildColumns(handlers: RowHandlers | null) {
+  const columns = [
     col.accessor('number', {
       header: 'Number',
       enableHiding: false,
@@ -305,6 +319,59 @@ function buildColumns() {
       cell: ({ getValue }) => <span className="num whitespace-nowrap text-muted">{fmtDate(getValue())}</span>,
     }),
   ]
+  if (!handlers) return columns
+  return [
+    ...columns,
+    col.display({
+      id: 'actions',
+      enableHiding: false,
+      meta: { width: 48, align: 'end' },
+      cell: ({ row }) => <RowActions quotation={row.original} {...handlers} />,
+    }),
+  ]
+}
+
+/** Row menu: open, and "Win deal" on an accepted quotation whose lead isn't a customer yet. */
+function RowActions({ quotation: q, onOpen, onWin }: { quotation: Quotation } & RowHandlers) {
+  const readOnly = useReadOnly()
+  const canWin = !readOnly && q.status === 'Accepted' && !q.customerId
+  return (
+    <span onClick={(e) => e.stopPropagation()} className="inline-flex">
+      <Menu
+        className="w-48"
+        trigger={(props) => (
+          <Button variant="ghost" size="xs" iconOnly aria-label={`Actions for ${q.number}`} {...props}>
+            <MoreHorizontal />
+          </Button>
+        )}
+      >
+        {(close) => (
+          <>
+            <MenuItem
+              icon={<ExternalLink />}
+              onSelect={() => {
+                close()
+                onOpen(q)
+              }}
+            >
+              Open
+            </MenuItem>
+            {canWin && (
+              <MenuItem
+                icon={<Trophy />}
+                onSelect={() => {
+                  close()
+                  onWin(q)
+                }}
+              >
+                Win deal
+              </MenuItem>
+            )}
+          </>
+        )}
+      </Menu>
+    </span>
+  )
 }
 
 const quotationSearch: FilterFn<Quotation> = (row, _columnId, value: string) => {

@@ -6,7 +6,7 @@ import { cn, fmtMoney } from '@/shared/lib/utils'
 import { useCurrentUser } from '@/store/hooks'
 import { Badge, type Tone } from '@/shared/components/ui/Badge'
 
-/** Edit rights on the catalog (System Admin, Management, Sales Manager by the matrix). */
+/** Edit rights on the catalog (Company Admin, Management, Sales Manager by the matrix). */
 export function useServicesAccess(): { canEdit: boolean } {
   const user = useCurrentUser()
   return { canEdit: !!user && can(user.role, 'services', 'edit') }

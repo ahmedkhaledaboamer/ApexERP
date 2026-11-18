@@ -1,6 +1,13 @@
 export const PATHS = {
   index: '/',
   login: '/login',
+  /** Public sign-up (product level, no workspace). */
+  signup: '/signup',
+  /** Sign-in page of one workspace (its public branding), e.g. /w/crest. */
+  workspaceLogin: '/w/:subdomain',
+  workspaceLoginAlt: '/w/:subdomain/login',
+  legalTerms: '/legal/terms',
+  legalPrivacy: '/legal/privacy',
   dashboard: '/dashboard',
   followUps: '/follow-ups',
   account: '/account',
@@ -19,6 +26,12 @@ export const PATHS = {
   quotationDetail: '/sales/quotations/:id',
   salesTargets: '/sales/targets',
   salesReports: '/sales/reports',
+  myTasks: '/tasks/my',
+  taskBoard: '/tasks/board',
+  taskList: '/tasks/list',
+  taskCalendar: '/tasks/calendar',
+  projects: '/projects',
+  projectDetail: '/projects/:id',
   departments: '/departments',
   orgChart: '/departments/org-chart',
   departmentDetail: '/departments/:id',
@@ -26,9 +39,16 @@ export const PATHS = {
   serviceDetail: '/services/:id',
   servicePackages: '/services/packages',
   serviceTemplates: '/services/templates',
+  /** Platform console: outside any workspace (TenantProvider exempts /platform). */
+  platform: '/platform',
+  platformLogin: '/platform/login',
 } as const
 
 const enc = encodeURIComponent
+
+export function workspaceLoginPath(subdomain: string): string {
+  return `/w/${enc(subdomain)}`
+}
 
 export function leadPath(id: string): string {
   return `/leads/${enc(id)}`
@@ -38,6 +58,9 @@ export function leadEditPath(id: string): string {
 }
 export function customerPath(id: string): string {
   return `/crm/customers/${enc(id)}`
+}
+export function projectPath(id: string): string {
+  return `/projects/${enc(id)}`
 }
 export function departmentPath(id: string): string {
   return `/departments/${enc(id)}`

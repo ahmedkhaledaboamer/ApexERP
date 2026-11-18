@@ -50,7 +50,7 @@ export interface QuotationRecord {
   /** Stored status. Sent/Viewed quotations past `validUntil` read as Expired. */
   status: QuotationStatus
   items: QuotationItem[]
-  /** UAE VAT, 5 by default. */
+  /** VAT percent; the workspace rate (Settings > Company) by default. */
   vatPct: number
   /** One currency per quotation (ISO code); AED by default. Totals use it whatever the lines say. */
   currency: string

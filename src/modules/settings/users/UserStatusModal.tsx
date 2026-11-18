@@ -77,7 +77,7 @@ export function UserStatusModal({ user, onClose }: Props) {
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant={deactivating ? 'danger' : 'primary'} loading={pending} onClick={confirm}>
+          <Button write variant={deactivating ? 'danger' : 'primary'} loading={pending} onClick={confirm}>
             {deactivating ? (openLeads > 0 ? 'Deactivate anyway' : 'Deactivate') : 'Reactivate'}
           </Button>
         </>

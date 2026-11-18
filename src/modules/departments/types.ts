@@ -66,13 +66,17 @@ export interface DepartmentTask {
   title: string
   ownerId: string
   ownerName: string
-  dueDate: string
+  dueDate: string | null
   status: string
   priority: string
   overdue: boolean
   /** The lead the task belongs to (lead tasks until the Tasks module exists). */
   leadId: string | null
   leadCompany: string | null
+  /** Project tasks: the project they belong to. */
+  projectId: string | null
+  /** Label of whatever the task is linked to (lead, customer, project). */
+  linkLabel: string | null
 }
 
 /** Sales-related figures only for now (spec: headcount, leads owned, targets, overdue follow-ups). */

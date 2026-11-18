@@ -127,11 +127,11 @@ export default function ServiceDetailPage() {
             </div>
             <Can module="services" action="edit">
               <div className="flex flex-wrap items-center gap-2">
-                <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
+                <Button write variant="secondary" size="sm" onClick={() => setEditing(true)}>
                   <Pencil />
                   Edit
                 </Button>
-                <Button
+                <Button write
                   variant="secondary"
                   size="sm"
                   loading={activation.pendingId === s.id}

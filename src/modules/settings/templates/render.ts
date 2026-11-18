@@ -1,4 +1,8 @@
-import { isKnownVariable, VARIABLES } from './variables'
+import { canonicalKey, isKnownVariable, VARIABLES } from './variables'
+import { getRegion } from '@/shared/lib/region'
+import { fmtMoney } from '@/shared/lib/utils'
+import { MOBILE_RULES, mobileSample } from '@/shared/lib/phone'
+import { taxLabel } from '@/shared/lib/taxNumber'
 
 /**
  * Pure template rendering. No React, no I/O: safe to use from the editor preview, the
@@ -29,7 +33,8 @@ export function unknownMarker(key: string): string {
 }
 
 function lookup(ctx: TemplateContext, key: string): string {
-  const [group, field] = key.split('.')
+  // Deprecated aliases (`company.legalName`) read the canonical value (`company.legal_name`).
+  const [group, field] = canonicalKey(key).split('.')
   const v = ctx[group]?.[field]
   return v === null || v === undefined ? '' : String(v)
 }
@@ -63,6 +68,16 @@ export function renderTemplate(text: string, ctx: TemplateContext, opts: { missi
     .join('')
 }
 
+/**
+ * Fills only the known variables that have a value in `ctx`; everything else (known but empty,
+ * unknown) stays as written, `{{key}}`, so a later check can flag it.
+ */
+export function fillKnown(text: string, ctx: TemplateContext): string {
+  return renderSegments(text, ctx)
+    .map((s) => (s.kind === 'empty' || s.kind === 'unknown' ? `{{${s.key}}}` : s.text))
+    .join('')
+}
+
 /** Every variable key used, unique, in order of first use (includes unknown ones). */
 export function findVariables(text: string): string[] {
   const seen = new Set<string>()
@@ -75,9 +90,22 @@ export function unknownVariables(text: string): string[] {
   return findVariables(text).filter((k) => !isKnownVariable(k))
 }
 
-/** A context filled with every variable's sample value, for previews without real data. */
-export function sampleContext(): TemplateContext {
+/**
+ * A context filled with every variable's sample value, for previews without real data. Money,
+ * phone and company samples follow the workspace (currency, country, display name).
+ */
+export function sampleContext(workspace: { companyName?: string } = {}): TemplateContext {
   const ctx: Record<string, Record<string, string>> = {}
   for (const v of VARIABLES) (ctx[v.group] ??= {})[v.field] = v.sample
+  const { country, currency } = getRegion()
+  const dial = MOBILE_RULES[country].dialCode
+  ctx.quotation = { ...ctx.quotation, total: fmtMoney(48_300, currency) }
+  ctx.agent = { ...ctx.agent, mobile: mobileSample(country) }
+  ctx.company = {
+    ...ctx.company,
+    ...(workspace.companyName ? { name: workspace.companyName } : {}),
+    phone: `+${dial} 4 000 0000`,
+    tax_label: taxLabel(country),
+  }
   return ctx
 }

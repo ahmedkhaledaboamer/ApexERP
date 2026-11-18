@@ -8,7 +8,9 @@ import {
   useDroppable,
   useSensor,
   useSensors,
+  KeyboardCode,
   type DragEndEvent,
+  type KeyboardCoordinateGetter,
 } from '@dnd-kit/core'
 import { cn } from '@/shared/lib/utils'
 import { DOT, type Tone } from '@/shared/components/ui/Badge'
@@ -35,6 +37,40 @@ interface KanbanBoardProps<T, C extends string> {
   /** Per-column extra summary computed from its items. */
   summarize?: (items: T[], column: C) => ReactNode
   emptyLabel?: string
+  /**
+   * When moving isn't allowed (`canMove` false), cards can still be picked up and dropped; this is
+   * called instead of `onMove` so the page can say why the move was refused. Without it, cards
+   * simply can't be dragged.
+   */
+  onBlockedMove?: (item: T, to: C) => void
+  /**
+   * Per-card rule on top of `canMove` (tasks: the server's `canEdit`). A card it refuses is handled
+   * like `canMove` false: `onBlockedMove` explains on drop, or the card can't be dragged.
+   */
+  canMoveItem?: (item: T) => boolean
+}
+
+/**
+ * Keyboard moves (Space to pick up, arrows, Space to drop). The default getter moves 25 px per key,
+ * which never leaves a 20 rem column; Left/Right jump to the previous/next column instead (in visual
+ * order, so RTL works too), Up/Down keep small steps inside a column.
+ */
+export const columnKeyboardCoordinates: KeyboardCoordinateGetter = (event, { context, currentCoordinates }) => {
+  const { droppableRects, over, collisionRect } = context
+  if (event.code === KeyboardCode.Up) return { ...currentCoordinates, y: currentCoordinates.y - 25 }
+  if (event.code === KeyboardCode.Down) return { ...currentCoordinates, y: currentCoordinates.y + 25 }
+  if (event.code !== KeyboardCode.Right && event.code !== KeyboardCode.Left) return undefined
+  event.preventDefault()
+  const columns = [...droppableRects.entries()].sort(([, a], [, b]) => a.left - b.left)
+  if (columns.length === 0) return undefined
+  const centerX = collisionRect ? collisionRect.left + collisionRect.width / 2 : currentCoordinates.x
+  let index = over ? columns.findIndex(([id]) => id === over.id) : -1
+  if (index < 0) index = columns.findIndex(([, r]) => centerX >= r.left && centerX <= r.left + r.width)
+  const nextIndex = Math.min(columns.length - 1, Math.max(0, index + (event.code === KeyboardCode.Right ? 1 : -1)))
+  const [, rect] = columns[nextIndex]
+  // Coordinates are the dragged card's top-left: center it on the target column.
+  const width = collisionRect?.width ?? 0
+  return { x: rect.left + rect.width / 2 - width / 2, y: currentCoordinates.y }
 }
 
 /** Generic drag-and-drop board. Leads use it for the pipeline; tasks for their status board. */
@@ -48,13 +84,18 @@ export function KanbanBoard<T, C extends string>({
   canMove = true,
   summarize,
   emptyLabel = 'Nothing here',
+  onBlockedMove,
+  canMoveItem,
 }: KanbanBoardProps<T, C>) {
   const [activeId, setActiveId] = useState<string | null>(null)
   const sensors = useSensors(
     // A small distance lets a click open the card instead of starting a drag.
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(KeyboardSensor),
+    useSensor(KeyboardSensor, { coordinateGetter: columnKeyboardCoordinates }),
   )
+  // Not allowed to move, but the page wants to explain why on drop: keep cards draggable.
+  const allowed = (item: T) => canMove && (canMoveItem ? canMoveItem(item) : true)
+  const draggable = (item: T) => allowed(item) || !!onBlockedMove
 
   const byColumn = useMemo(() => {
     const map = new Map<C, T[]>(columns.map((c) => [c.id, []]))
@@ -68,7 +109,9 @@ export function KanbanBoard<T, C extends string>({
     setActiveId(null)
     const item = items.find((i) => getId(i) === e.active.id)
     const to = e.over?.id as C | undefined
-    if (item && to && to !== getColumn(item)) onMove(item, to)
+    if (!item || !to || to === getColumn(item)) return
+    if (allowed(item)) onMove(item, to)
+    else onBlockedMove?.(item, to)
   }
 
   return (
@@ -90,7 +133,7 @@ export function KanbanBoard<T, C extends string>({
               emptyLabel={emptyLabel}
             >
               {colItems.map((item) => (
-                <DraggableCard key={getId(item)} id={getId(item)} disabled={!canMove} hidden={getId(item) === activeId}>
+                <DraggableCard key={getId(item)} id={getId(item)} disabled={!draggable(item)} hidden={getId(item) === activeId}>
                   {renderCard(item, { dragging: false, overlay: false })}
                 </DraggableCard>
               ))}

@@ -43,10 +43,10 @@ export function StatusReport({ data }: { data: SalesReport }) {
         total === 0 ? (
           <EmptyState title="No leads in this period" body="Pick a wider date range to see how leads are spread across stages." />
         ) : (
-          <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_21.25rem]">
             <div>
               <SubHeading hint={`${fmtInt(total)} leads created`}>Leads per status</SubHeading>
-              <div className="h-72">
+              <div dir="ltr" className="h-72">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={data.byStatus} margin={{ top: 8, right: 4, left: 0, bottom: 0 }}>
                     <CartesianGrid vertical={false} stroke="currentColor" strokeOpacity={0.08} strokeDasharray="4 4" />
@@ -69,7 +69,7 @@ export function StatusReport({ data }: { data: SalesReport }) {
                   <li key={f.stage}>
                     {i > 0 && (
                       <p className="mb-1.5 flex items-center gap-1 ps-1 text-[0.6875rem] text-muted">
-                        <ArrowRight className="size-3" aria-hidden />
+                        <ArrowRight className="size-3 rtl:-scale-x-100" aria-hidden />
                         <span className="num font-medium text-ink-2">{fmtPct(f.fromPrevious)}</span> moved on
                       </p>
                     )}

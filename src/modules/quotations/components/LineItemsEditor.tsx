@@ -2,7 +2,8 @@ import type { ReactNode } from 'react'
 import { AlertTriangle, ArrowDown, ArrowUp, Library, ListPlus, Package, Trash2 } from 'lucide-react'
 import type { QuotationItem, QuotationUnit } from '@/modules/quotations/types'
 import type { PackageRow, Service } from '@/modules/services/types'
-import { DEFAULT_QUOTE_CURRENCY, fmtAed, fmtIn, lineTotal, UNIT_FOR_PRICING, unitLabel } from '@/modules/quotations/lib/totals'
+import { fmtIn, lineTotal, UNIT_FOR_PRICING, unitLabel } from '@/modules/quotations/lib/totals'
+import { getRegion } from '@/shared/lib/region'
 import { useLookups } from '@/shared/hooks/useLookups'
 import { cn } from '@/shared/lib/utils'
 import { Button } from '@/shared/components/ui/Button'
@@ -26,7 +27,7 @@ export function itemFromService(s: Service): QuotationItem {
     unit: UNIT_FOR_PRICING[s.pricingType],
     unitPrice: s.price,
     discountPct: 0,
-    currency: s.currency || DEFAULT_QUOTE_CURRENCY,
+    currency: s.currency || getRegion().currency,
   }
 }
 
@@ -47,7 +48,7 @@ export function itemsFromPackage(p: PackageRow): QuotationItem[] {
     unit: UNIT_FOR_PRICING[l.pricingType],
     unitPrice: l.price,
     discountPct: pct,
-    currency: p.currency || DEFAULT_QUOTE_CURRENCY,
+    currency: p.currency || getRegion().currency,
     groupId,
     groupLabel: p.name,
   }))
@@ -146,7 +147,7 @@ export function LineItemsEditor({
   servicesLoading,
   errors,
   listError,
-  currency = DEFAULT_QUOTE_CURRENCY,
+  currency = getRegion().currency,
 }: LineItemsEditorProps) {
   const lookups = useLookups()
   const serviceById = new Map(services.map((s) => [s.id, s]))
@@ -371,7 +372,8 @@ export function LineItemsEditor({
 }
 
 /** Read-only lines for sent quotations; packages are shown as a labelled group. */
-export function LineItemsView({ items, services = [] }: { items: QuotationItem[]; services?: Service[] }) {
+export function LineItemsView({ items, services = [], currency }: { items: QuotationItem[]; services?: Service[]; currency?: string }) {
+  const fmtAed = (v: number) => fmtIn(v, currency)
   const serviceById = new Map(services.map((s) => [s.id, s]))
   return (
     <div className="-mx-5 overflow-x-auto">

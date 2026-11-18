@@ -46,7 +46,7 @@ export function EditTargetsDrawer({ open, onClose, month, rows, userId, onUserCh
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" form={FORM_ID} loading={update.isPending}>
+          <Button write type="submit" form={FORM_ID} loading={update.isPending}>
             Save targets
           </Button>
         </>

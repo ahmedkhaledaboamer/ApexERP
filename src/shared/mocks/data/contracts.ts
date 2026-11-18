@@ -1,6 +1,8 @@
 import { addDays, subDays } from 'date-fns'
 import type { Contract, ContractBilling } from '@/modules/crm/types'
 import { customers } from '@/shared/mocks/db'
+import type { Tenant } from '@/shared/mocks/tenant'
+import { registerArray } from '@/shared/mocks/persist/registry'
 
 /**
  * Seed contracts (mock), 1–2 per won customer. Dates are relative to load time so some
@@ -33,23 +35,40 @@ const SEED: Seed[] = [
   ['Pearl Accounting Firm', 'Invoice OCR & extraction', ['S-301'], 42000, 'One-off', 14, 16],
 ]
 
+/** Crest Logistics (second tenant), SAR. Ids in their own block (CON-5001+) so they never collide. */
+const CREST_SEED: Seed[] = [
+  ['Jeddah Port Traders', 'Import freight forwarding & customs clearance', ['S-901', 'S-903'], 18500, 'Monthly', 40, 325],
+  ['Riyadh Gate Supermarkets', 'Contract warehousing, Riyadh DC', ['S-902'], 240000, 'Annual', 25, 20],
+]
+
+/** First id of the Crest seed block; new contracts continue the global CON-1001… sequence. */
+export const CREST_SEED_CONTRACT_BASE = 5001
+
 const NOW = new Date()
 
-export const contracts: Contract[] = SEED.flatMap(([name, title, serviceIds, value, billing, startDaysAgo, renewInDays, cancelled], i) => {
-  const customer = customers.find((c) => c.name === name)
-  if (!customer) return []
-  return [
-    {
-      id: `CON-${1001 + i}`,
-      customerId: customer.id,
-      title,
-      serviceIds,
-      value,
-      billing,
-      startDate: subDays(NOW, startDaysAgo).toISOString(),
-      renewalDate: addDays(NOW, renewInDays).toISOString(),
-      status: cancelled ? 'Cancelled' : 'Active',
-      ownerId: customer.ownerId,
-    },
-  ]
-})
+function build(seed: Seed[], companyId: string, base: number): Tenant<Contract>[] {
+  return seed.flatMap(([name, title, serviceIds, value, billing, startDaysAgo, renewInDays, cancelled], i) => {
+    const customer = customers.find((c) => c.companyId === companyId && c.name === name)
+    if (!customer) return []
+    return [
+      {
+        companyId,
+        id: `CON-${base + i}`,
+        customerId: customer.id,
+        title,
+        serviceIds,
+        value,
+        billing,
+        startDate: subDays(NOW, startDaysAgo).toISOString(),
+        renewalDate: addDays(NOW, renewInDays).toISOString(),
+        status: cancelled ? 'Cancelled' : 'Active',
+        ownerId: customer.ownerId,
+      },
+    ]
+  })
+}
+
+export const contracts: Tenant<Contract>[] = registerArray('contracts', [
+  ...build(SEED, 'co_apex', 1001),
+  ...build(CREST_SEED, 'co_crest', CREST_SEED_CONTRACT_BASE),
+])

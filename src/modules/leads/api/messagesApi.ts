@@ -7,7 +7,7 @@ export type MessageChannel = 'email' | 'whatsapp'
 /** POST /leads/:id/messages. */
 export interface SendMessageInput {
   channel: MessageChannel
-  /** Email address (email) or UAE mobile (whatsapp). */
+  /** Email address (email) or mobile in the workspace country (whatsapp). */
   to: string
   /** Email only. */
   subject?: string
@@ -22,6 +22,11 @@ export interface SendMessageResult {
   activity: ActivityView
   /** Set when logging the attempt moved the lead automatically (No response → Cold). */
   autoStatus?: NonNullable<ActivityView['autoStatus']>
+  /**
+   * Email only: what went out. `html` is the branded layout (company logo header, Settings › Branding)
+   * around the final text; see `renderEmailHtml`.
+   */
+  email?: { from: string; subject: string; html: string }
 }
 
 /** Sends (mocked for now) an email or WhatsApp to a lead contact and logs it as an activity. */

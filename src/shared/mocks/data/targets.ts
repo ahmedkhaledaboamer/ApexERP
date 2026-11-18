@@ -1,5 +1,7 @@
 import { format } from 'date-fns'
 import { users } from '@/shared/mocks/db'
+import { perTenant } from '@/shared/mocks/tenant'
+import { registerArray } from '@/shared/mocks/persist/registry'
 import {
   RECOMMENDED_TARGETS,
   TARGET_KEYS,
@@ -14,11 +16,21 @@ export { TARGET_KEYS, TARGET_LABELS, type TargetKey }
 /** Factory defaults; "Reset" in Settings > Targets goes back to these. Events attended has none (0). */
 export const DEFAULT_TARGETS: TargetValues = { ...RECOMMENDED_TARGETS }
 
+/** Seeded company defaults: Apex uses the factory values; Crest runs a smaller, visit-heavy B2B logistics team. */
+const DEFAULTS_SEED: Record<string, TargetValues> = {
+  co_apex: { ...DEFAULT_TARGETS },
+  co_crest: { leads: 300, calls: 600, emails: 400, visits: 12, meetings: 8, proposals: 6, partnerships: 2, events: 1 },
+}
+
+const defaultsStore = perTenant<TargetValues>((companyId) => ({ ...(DEFAULTS_SEED[companyId] ?? DEFAULT_TARGETS) }), 'targetDefaults')
+
 /**
- * Mutable company defaults (Settings > Targets, PUT /targets/defaults). Every month without a
- * per-agent row uses the *current* defaults. A value of 0 means "no target" for that kind.
+ * Mutable company defaults (Settings > Targets, PUT /targets/defaults), per company. Every month
+ * without a per-agent row uses the *current* defaults. A value of 0 means "no target" for that kind.
  */
-export const targetDefaults: TargetValues = { ...DEFAULT_TARGETS }
+export function targetDefaultsFor(companyId: string): TargetValues {
+  return defaultsStore.get(companyId)
+}
 
 /** One agent's targets for one month (`month` is `yyyy-MM`). */
 export interface AgentTarget {
@@ -27,21 +39,29 @@ export interface AgentTarget {
   values: TargetValues
 }
 
+/** Overrides seeded for every other sales agent of a company this month, so both cases show up. */
+function seedOverrides(companyId: string): AgentTarget[] {
+  const base = DEFAULTS_SEED[companyId] ?? DEFAULT_TARGETS
+  return users
+    .filter((u) => u.companyId === companyId && u.role === 'Sales Agent')
+    .filter((_, i) => i % 2 === 0)
+    .map((u, i) => ({
+      userId: u.id,
+      month: format(new Date(), 'yyyy-MM'),
+      values: { ...base, calls: base.calls + i * 100, visits: base.visits + i, events: i === 0 ? 2 : 0 },
+    }))
+}
+
 /**
- * Mutable store of per-agent overrides; agents without a row for a month use the defaults.
- * The seed overrides every other agent this month so both cases show up.
+ * Mutable store of per-agent overrides; agents without a row for a month use their company's
+ * defaults. Rows are keyed by the globally unique user id.
  */
-export const agentTargets: AgentTarget[] = users
-  .filter((u) => u.role === 'Sales Agent')
-  .filter((_, i) => i % 2 === 0)
-  .map((u, i) => ({
-    userId: u.id,
-    month: format(new Date(), 'yyyy-MM'),
-    values: { ...DEFAULT_TARGETS, calls: DEFAULT_TARGETS.calls + i * 100, visits: DEFAULT_TARGETS.visits + i, events: i === 0 ? 2 : 0 },
-  }))
+export const agentTargets: AgentTarget[] = registerArray('agentTargets', [...seedOverrides('co_apex'), ...seedOverrides('co_crest')])
+
+const companyOf = (userId: string) => users.find((u) => u.id === userId)?.companyId ?? 'co_apex'
 
 export function targetsFor(userId: string, month: string): TargetValues {
-  return { ...(agentTargets.find((t) => t.userId === userId && t.month === month)?.values ?? targetDefaults) }
+  return { ...(agentTargets.find((t) => t.userId === userId && t.month === month)?.values ?? targetDefaultsFor(companyOf(userId))) }
 }
 
 export function hasOverride(userId: string, month: string): boolean {

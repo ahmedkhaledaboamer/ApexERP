@@ -1,5 +1,7 @@
 import { addDays, format, subDays } from 'date-fns'
 import type { Department } from '@/modules/departments/types'
+import type { Tenant } from '@/shared/mocks/tenant'
+import { registerArray } from '@/shared/mocks/persist/registry'
 
 export type { Department }
 
@@ -12,9 +14,13 @@ export type { Department }
 const at = (daysAgo: number) => subDays(new Date(), daysAgo).toISOString()
 const due = (inDays: number) => format(addDays(new Date(), inDays), 'yyyy-MM-dd')
 
-export const departments: Department[] = [
+const APEX = 'co_apex'
+const CREST = 'co_crest'
+
+export const departments: Tenant<Department>[] = [
   {
     id: 'd-management',
+    companyId: APEX,
     name: 'Management',
     headId: 'u2',
     parentId: null,
@@ -29,6 +35,7 @@ export const departments: Department[] = [
   },
   {
     id: 'd-sales',
+    companyId: APEX,
     name: 'Sales',
     headId: 'u3',
     parentId: 'd-management',
@@ -44,6 +51,7 @@ export const departments: Department[] = [
   },
   {
     id: 'd-marketing',
+    companyId: APEX,
     name: 'Marketing',
     headId: 'u7',
     parentId: 'd-management',
@@ -55,6 +63,7 @@ export const departments: Department[] = [
   },
   {
     id: 'd-delivery',
+    companyId: APEX,
     name: 'Delivery',
     headId: 'u10',
     parentId: 'd-management',
@@ -69,6 +78,7 @@ export const departments: Department[] = [
   },
   {
     id: 'd-finance',
+    companyId: APEX,
     name: 'Finance',
     headId: 'u8',
     parentId: 'd-management',
@@ -80,6 +90,7 @@ export const departments: Department[] = [
   },
   {
     id: 'd-hr',
+    companyId: APEX,
     name: 'HR',
     headId: 'u9',
     parentId: 'd-management',
@@ -91,6 +102,7 @@ export const departments: Department[] = [
   },
   {
     id: 'd-it',
+    companyId: APEX,
     name: 'IT',
     headId: 'u1',
     parentId: 'd-management',
@@ -100,4 +112,75 @@ export const departments: Department[] = [
     updatedAt: at(5),
     goals: [{ id: 'g-i1', title: 'Turn on two-factor sign-in for every admin', ownerId: 'u1', dueDate: due(7), status: 'Open', createdAt: at(4) }],
   },
+  /* ---------------- Crest Logistics (co_crest) ---------------- */
+  {
+    id: 'c2-management',
+    companyId: CREST,
+    name: 'Management',
+    headId: 'u102',
+    parentId: null,
+    costCenter: 'CL-100',
+    active: true,
+    createdAt: at(400),
+    updatedAt: at(20),
+    goals: [
+      { id: 'g-c2-m1', title: 'Open the Dammam cross-dock by end of quarter', ownerId: 'u102', dueDate: due(50), status: 'Open', createdAt: at(30) },
+    ],
+  },
+  {
+    id: 'c2-sales',
+    companyId: CREST,
+    name: 'Sales',
+    headId: 'u103',
+    parentId: 'c2-management',
+    costCenter: 'CL-210',
+    active: true,
+    createdAt: at(390),
+    updatedAt: at(9),
+    goals: [
+      { id: 'g-c2-s1', title: 'Win 4 new contract-warehousing accounts in Riyadh', ownerId: 'u103', dueDate: due(40), status: 'Open', createdAt: at(14) },
+      { id: 'g-c2-s2', title: 'Respond to every tender-portal lead within 48 hours', ownerId: 'u104', dueDate: due(10), status: 'Open', createdAt: at(7) },
+    ],
+  },
+  {
+    id: 'c2-ops',
+    companyId: CREST,
+    name: 'Operations',
+    headId: 'u106',
+    parentId: 'c2-management',
+    costCenter: 'CL-300',
+    active: true,
+    createdAt: at(385),
+    updatedAt: at(16),
+    goals: [
+      { id: 'g-c2-o1', title: 'Onboard new freight customers within 10 working days', ownerId: 'u106', dueDate: due(30), status: 'Open', createdAt: at(21) },
+    ],
+  },
+  {
+    id: 'c2-it',
+    companyId: CREST,
+    name: 'IT',
+    headId: 'u101',
+    parentId: 'c2-management',
+    costCenter: 'CL-600',
+    active: true,
+    createdAt: at(380),
+    updatedAt: at(4),
+    goals: [{ id: 'g-c2-i1', title: 'Roll out fleet-tracking dashboards to all dispatchers', ownerId: 'u101', dueDate: due(25), status: 'Open', createdAt: at(6) }],
+  },
 ]
+
+/** One company's departments (the tree, heads and members never cross companies). */
+export function departmentsOf(companyId: string): Tenant<Department>[] {
+  return departments.filter((d) => d.companyId === companyId)
+}
+
+/** Delivery departments per company: projects created from won deals staff their tasks from here. */
+const DELIVERY_DEPARTMENT: Record<string, string> = { [APEX]: 'd-delivery', [CREST]: 'c2-ops' }
+
+registerArray('departments', departments)
+
+/** The company's delivery department id (Won → project role resolution), or undefined. */
+export function deliveryDepartmentId(companyId: string): string | undefined {
+  return DELIVERY_DEPARTMENT[companyId]
+}

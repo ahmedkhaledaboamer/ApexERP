@@ -13,21 +13,23 @@ import { can } from '@/shared/lib/permissions'
 import { diff, recordAudit } from '@/shared/mocks/data/audit'
 import {
   BACKUP_RETENTION_DAYS,
-  BACKUP_SCHEDULE,
   DEMO_OTP,
-  backupRuns,
+  backupRunsFor,
+  backupScheduleFor,
   newRecoveryCodes,
   nextBackupId,
   nextScheduledBackup,
   pendingTwoFactor,
   recoveryCodes,
   secretFor,
-  securityPolicy,
+  securityPolicyFor,
   sessionsFor,
   setSessionsFor,
   twoFactorEnabledAt,
 } from '@/shared/mocks/data/security'
+import { companyById } from '@/shared/mocks/data/tenancy'
 import { delay, fail } from '@/shared/mocks/server'
+import { tenantOf } from '@/shared/mocks/tenant'
 
 /* Every endpoint here is called with the signed-in user from the token (see handlers/utils). */
 
@@ -60,10 +62,12 @@ export async function setupTwoFactor(user: User): Promise<TwoFactorSetup> {
   if (user.twoFactorEnabled) return fail('Two-factor authentication is already on. Turn it off first to set it up again.', 409)
   pendingTwoFactor.add(user.id)
   const secret = secretFor(user.id)
-  const label = encodeURIComponent(`Apex Aora:${user.email}`)
+  // The authenticator entry carries the workspace's display name (branding), not a fixed brand.
+  const issuer = companyById(tenantOf(user))?.branding.displayName ?? 'Apex CRM'
+  const label = encodeURIComponent(`${issuer}:${user.email}`)
   return delay({
     secret,
-    otpauthUrl: `otpauth://totp/${label}?secret=${secret}&issuer=${encodeURIComponent('Apex Aora')}&algorithm=SHA1&digits=6&period=30`,
+    otpauthUrl: `otpauth://totp/${label}?secret=${secret}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`,
   })
 }
 
@@ -90,8 +94,8 @@ export async function verifyTwoFactor(user: User, code: string): Promise<TwoFact
 
 export async function disableTwoFactor(user: User, code: string): Promise<TwoFactorStatus> {
   if (!user.twoFactorEnabled) return fail('Two-factor authentication is already off.', 409)
-  if (securityPolicy.requireTwoFactorForAdmins && user.role === 'System Admin') {
-    return fail('The security policy requires 2FA for System Admins, so it can’t be turned off.', 422)
+  if (securityPolicyFor(tenantOf(user)).requireTwoFactorForAdmins && user.role === 'Company Admin') {
+    return fail('The security policy requires 2FA for Company Admins, so it can’t be turned off.', 422)
   }
   if (!checkSecondFactor(user.id, code)) return fail('That code didn’t match. Enter a current code or a recovery code.', 422)
   user.twoFactorEnabled = false
@@ -158,9 +162,11 @@ export async function revokeOtherSessions(user: User): Promise<{ revoked: number
 
 export async function getBackups(user: User): Promise<BackupStatusInfo> {
   if (!can(user.role, 'settings', 'view')) return fail('Backups are for admins.', 403)
+  const co = tenantOf(user)
+  const backupRuns = backupRunsFor(co)
   const lastSuccess = backupRuns.find((r) => r.status === 'success')
   return delay({
-    schedule: BACKUP_SCHEDULE,
+    schedule: backupScheduleFor(co),
     lastSuccessAt: lastSuccess?.finishedAt ?? null,
     nextAt: nextScheduledBackup(),
     retentionDays: BACKUP_RETENTION_DAYS,
@@ -170,7 +176,8 @@ export async function getBackups(user: User): Promise<BackupStatusInfo> {
 
 /** Starts a manual backup: it shows as running, then succeeds a few seconds later. */
 export async function runBackup(user: User): Promise<BackupRun> {
-  if (!can(user.role, 'settings', 'edit')) return fail('Only a System Admin can run a backup.', 403)
+  if (!can(user.role, 'settings', 'edit')) return fail('Only a Company Admin can run a backup.', 403)
+  const backupRuns = backupRunsFor(tenantOf(user))
   if (backupRuns.some((r) => r.status === 'running')) return fail('A backup is already running.', 409)
   const run: BackupRun = {
     id: nextBackupId(),
@@ -201,12 +208,13 @@ export async function runBackup(user: User): Promise<BackupRun> {
 /* ---------------- Policy ---------------- */
 
 /** Readable by every signed-in user: the app needs the session timeout and password length. */
-export async function getPolicy(_user: User): Promise<SecurityPolicy> {
-  return delay(securityPolicy)
+export async function getPolicy(user: User): Promise<SecurityPolicy> {
+  return delay(securityPolicyFor(tenantOf(user)))
 }
 
 export async function savePolicy(user: User, input: Partial<SecurityPolicy>): Promise<SecurityPolicy> {
-  if (!can(user.role, 'settings', 'edit')) return fail('Only a System Admin can change the security policy.', 403)
+  if (!can(user.role, 'settings', 'edit')) return fail('Only a Company Admin can change the security policy.', 403)
+  const securityPolicy = securityPolicyFor(tenantOf(user))
   const next: SecurityPolicy = { ...securityPolicy }
   if (input.requireTwoFactorForAdmins !== undefined) next.requireTwoFactorForAdmins = input.requireTwoFactorForAdmins === true
   for (const key of ['sessionTimeoutMinutes', 'passwordMinLength'] as const) {

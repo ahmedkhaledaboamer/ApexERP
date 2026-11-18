@@ -15,7 +15,7 @@ import { PURPOSES_BY_CHANNEL, TEMPLATE_CHANNELS, type MessageTemplate, type Temp
 
 /**
  * Settings > Templates: follow-up emails, quotation text and WhatsApp messages with variables
- * and a live preview. System Admin edits; Management views. Every edit is audited server-side.
+ * and a live preview. Company Admin edits; Management views. Every edit is audited server-side.
  * URL state: `?channel=email&t=TPL-1` (or `t=new`), so a template can be linked to.
  */
 export default function TemplatesPage() {

@@ -23,7 +23,9 @@ export function Tabs<T extends string>({ items, value, onChange, label, variant 
   const refs = useRef<(HTMLButtonElement | null)[]>([])
 
   function onKey(e: KeyboardEvent, index: number) {
-    const delta = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0
+    // Left/right follow the reading direction (RTL: ArrowLeft moves forward).
+    const inline = (document.documentElement.dir === 'rtl' ? -1 : 1)
+    const delta = e.key === 'ArrowRight' ? inline : e.key === 'ArrowLeft' ? -inline : 0
     if (!delta) return
     e.preventDefault()
     const next = (index + delta + items.length) % items.length

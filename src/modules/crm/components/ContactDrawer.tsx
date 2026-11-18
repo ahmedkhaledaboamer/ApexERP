@@ -10,6 +10,8 @@ import { Button } from '@/shared/components/ui/Button'
 import { Drawer } from '@/shared/components/ui/Drawer'
 import { useToast } from '@/shared/components/ui/Toast'
 import { Checkbox, Field, SelectInput, TextInput } from '@/shared/components/form/Field'
+import { useRegion } from '@/modules/tenancy/hooks'
+import { mobileExample, mobileSample } from '@/shared/lib/phone'
 
 interface ContactDrawerProps {
   open: boolean
@@ -22,8 +24,9 @@ interface ContactDrawerProps {
 
 const EMPTY: ContactValues = { record: '', name: '', title: '', mobile: '', email: '', isDecisionMaker: false }
 
-/** Add or edit a contact on a lead or a customer. Mobile must be UAE format; email must be valid. */
+/** Add or edit a contact on a lead or a customer. Mobile must match the workspace country; email must be valid. */
 export function ContactDrawer({ open, onClose, contact, record }: ContactDrawerProps) {
+  const region = useRegion()
   const editing = !!contact
   const create = useCreateContact()
   const update = useUpdateContact()
@@ -90,7 +93,7 @@ export function ContactDrawer({ open, onClose, contact, record }: ContactDrawerP
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" form="contact-form" loading={pending}>
+          <Button write type="submit" form="contact-form" loading={pending}>
             {editing ? 'Save contact' : 'Add contact'}
           </Button>
         </>
@@ -109,13 +112,13 @@ export function ContactDrawer({ open, onClose, contact, record }: ContactDrawerP
           <TextInput id="ct-title" placeholder="e.g. Operations Director" invalid={!!errors.title} {...register('title')} />
         </Field>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field id="ct-mobile" label="Mobile" error={errors.mobile?.message} hint="+971 5X XXX XXXX">
+          <Field id="ct-mobile" label="Mobile" error={errors.mobile?.message} hint={mobileExample(region.country)}>
             <TextInput
               id="ct-mobile"
               type="tel"
               inputMode="tel"
               autoComplete="tel"
-              placeholder="+971 50 123 4567"
+              placeholder={mobileSample(region.country)}
               invalid={!!errors.mobile}
               aria-describedby={errors.mobile ? 'ct-mobile-error' : 'ct-mobile-hint'}
               {...register('mobile')}
@@ -126,7 +129,7 @@ export function ContactDrawer({ open, onClose, contact, record }: ContactDrawerP
               id="ct-email"
               type="email"
               autoComplete="email"
-              placeholder="name@company.ae"
+              placeholder="name@company.com"
               invalid={!!errors.email}
               aria-describedby={errors.email ? 'ct-email-error' : undefined}
               {...register('email')}

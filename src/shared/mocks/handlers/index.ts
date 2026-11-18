@@ -1,9 +1,16 @@
 import { accountHandlers } from './account'
 import { alertsHandlers } from './alerts'
 import { authHandlers } from './auth'
+import { billingHandlers } from './billing'
+import { brandingHandlers } from './branding'
+import { platformHandlers } from './platform'
+import { companyProfileHandlers } from './companyProfile'
 import { crmHandlers } from './crm'
 import { dashboardHandlers } from './dashboard'
 import { departmentHandlers } from './departments'
+import { wonHandlers } from './won'
+import { tasksHandlers } from './tasks'
+import { projectsHandlers } from './projects'
 import { leadImportHandlers } from './leadImport'
 import { leadHandlers } from './leads'
 import { messagesHandlers } from './messages'
@@ -19,23 +26,32 @@ import { templatesHandlers } from './templates'
 /**
  * Every mocked endpoint. Each module adds its handlers here.
  * leadImport comes before leads so `/leads/import...` isn't read as `/leads/:id`.
+ * The dev billing simulation (/dev/billing/*) is registered in development only.
  */
 export const handlers = [
   ...authHandlers,
+  ...companyProfileHandlers,
+  ...brandingHandlers,
   ...settingsHandlers,
   ...settingsUsersHandlers,
   ...securityHandlers,
   ...accountHandlers,
   ...templatesHandlers,
+  ...wonHandlers,
   ...leadImportHandlers,
   ...leadHandlers,
   ...messagesHandlers,
   ...dashboardHandlers,
   ...departmentHandlers,
+  ...tasksHandlers,
+  ...projectsHandlers,
   ...alertsHandlers,
   ...serviceHandlers,
   ...targetsHandlers,
   ...crmHandlers,
   ...quotationsHandlers,
   ...reportsHandlers,
+  ...billingHandlers,
+  // Last: it ends with a catch-all for unknown /platform/* paths.
+  ...platformHandlers,
 ]

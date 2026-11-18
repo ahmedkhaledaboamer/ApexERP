@@ -21,7 +21,7 @@ export function MonthSwitcher({ month, thisMonth, lastAllowed, onChange }: Month
       )}
       <div className="inline-flex h-9 items-center rounded-lg border border-line-strong bg-surface shadow-xs">
         <Button variant="ghost" size="sm" iconOnly aria-label="Previous month" className="h-full rounded-e-none" onClick={() => onChange(shiftMonth(month, -1))}>
-          <ChevronLeft />
+          <ChevronLeft className="rtl:-scale-x-100" />
         </Button>
         <span className="num flex min-w-[8.5rem] items-center justify-center gap-1.5 border-x border-line px-3 text-[0.8125rem] font-medium" aria-live="polite">
           <CalendarDays className="size-3.5 text-muted" aria-hidden />
@@ -36,7 +36,7 @@ export function MonthSwitcher({ month, thisMonth, lastAllowed, onChange }: Month
           disabled={month >= lastAllowed}
           onClick={() => onChange(shiftMonth(month, 1))}
         >
-          <ChevronRight />
+          <ChevronRight className="rtl:-scale-x-100" />
         </Button>
       </div>
     </div>

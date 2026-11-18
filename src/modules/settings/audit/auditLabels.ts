@@ -33,6 +33,9 @@ const ENTITY_LABEL: Record<string, string> = {
   customer: 'Customer',
   contract: 'Contract',
   quotation: 'Quotation',
+  'company-profile': 'Company profile',
+  branding: 'Branding',
+  company: 'Company',
 }
 
 const LIST_LABEL: Record<string, string> = {
@@ -69,6 +72,10 @@ const FIELD_LABEL: Record<string, string> = {
   requireTwoFactorForAdmins: 'Require 2FA for admins',
   sessionTimeoutMinutes: 'Session timeout (min)',
   passwordMinLength: 'Min. password length',
+  logoLight: 'Light logo',
+  logoDark: 'Dark logo',
+  primaryColor: 'Primary colour',
+  displayName: 'Workspace name',
 }
 
 /** camelCase field → "Sentence case" label. */

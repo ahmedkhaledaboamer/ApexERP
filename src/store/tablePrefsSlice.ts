@@ -1,10 +1,15 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit'
-import type { SortingState, VisibilityState } from '@tanstack/react-table'
+import type { ColumnFiltersState, ColumnOrderState, SortingState, VisibilityState } from '@tanstack/react-table'
 
-/** How the user left a table: columns, sort and page size, keyed by table id. */
+/**
+ * How the user left a table (a saved view): visible columns, column order, sort, column filters
+ * and page size, keyed by table id. Stored per company + user (see app/store.ts).
+ */
 export interface TablePrefs {
   columnVisibility?: VisibilityState
+  columnOrder?: ColumnOrderState
   sorting?: SortingState
+  columnFilters?: ColumnFiltersState
   pageSize?: number
 }
 

@@ -3,7 +3,7 @@ import type { MessageTemplate, TemplateFilter, TemplateInput, TemplateUpdateInpu
 
 /**
  * Message templates. Any signed-in user reads active templates; Settings viewers also get
- * inactive ones. Writes are System Admin only and audited. Validation errors are 422 with a
+ * inactive ones. Writes are Company Admin only and audited. Validation errors are 422 with a
  * readable message (including the list of unknown variables).
  */
 

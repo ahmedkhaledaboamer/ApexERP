@@ -1,10 +1,16 @@
 import { subDays } from 'date-fns'
 import type { PricingType, ProjectTemplate, Service, ServicePackage, TemplateTask } from '@/modules/services/types'
+import type { Tenant } from '@/shared/mocks/tenant'
+import { registerArray } from '@/shared/mocks/persist/registry'
 
 /**
- * Synthetic service catalog, packages and project templates (mock only).
- * IDs S-101…S-701 are referenced by seeded quotations and contracts; keep them.
+ * Synthetic service catalog, packages and project templates (mock only), per company.
+ * Apex Aora: IDs S-101…S-801 are referenced by seeded quotations and contracts; keep them.
+ * Crest Logistics: S-901…S-905 (SAR). Ids are globally unique; codes and names are unique per company.
  */
+
+const APEX = 'co_apex'
+const CREST = 'co_crest'
 
 const at = (daysAgo: number) => subDays(new Date(), daysAgo).toISOString()
 
@@ -26,24 +32,37 @@ const SEED: Seed[] = [
   ['S-801', 'Legacy SMS gateway setup', 'System Integration', 'Fixed', 6000, 5, ['Retail'], 'Retired offering kept for old quotations.', false],
 ]
 
-export const services: Service[] = SEED.map(([id, name, category, pricingType, price, deliveryDays, industries, description, active = true], i) => ({
-  id,
-  name,
-  category,
-  description,
-  industries,
-  pricingType,
-  price,
-  currency: 'AED',
-  deliveryDays,
-  active,
-  createdAt: at(400 - i * 20),
-  updatedAt: at(60 - i * 3),
-}))
+const CREST_SEED: Seed[] = [
+  ['S-901', 'Freight Forwarding', 'Freight', 'Fixed', 8500, 7, ['Logistics', 'Retail & FMCG', 'Manufacturing', 'Oil & Gas Services'], 'Door-to-door sea, air and land freight across the GCC, with booking, documentation and tracking.'],
+  ['S-902', 'Contract Warehousing', 'Warehousing', 'Monthly', 18000, 0, ['Retail & FMCG', 'Healthcare', 'Manufacturing'], 'Dedicated pallet positions in Riyadh and Dammam with WMS access, pick-and-pack and monthly stock counts.'],
+  ['S-903', 'Customs Clearance', 'Customs Clearance', 'Fixed', 2200, 3, ['Logistics', 'Manufacturing', 'Retail & FMCG', 'Construction'], 'Import and export clearance through FASAH, including HS classification and SABER certificates.'],
+  ['S-904', 'Fleet Tracking', 'Fleet & Tracking', 'Monthly', 4500, 10, ['Logistics', 'Construction', 'Oil & Gas Services'], 'GPS tracking, driver behaviour and temperature alerts for client fleets, with a live dispatch dashboard.'],
+  ['S-905', 'Supply Chain Assessment', 'Supply Chain Consulting', 'Fixed', 35000, 20, ['Manufacturing', 'Retail & FMCG', 'Healthcare'], 'Review of network, inventory and transport costs with a prioritised savings plan.'],
+]
 
-export const packages: ServicePackage[] = [
+const toService = (companyId: string, currency: string, daysBack: number) =>
+  ([id, name, category, pricingType, price, deliveryDays, industries, description, active = true]: Seed, i: number): Tenant<Service> => ({
+    id,
+    companyId,
+    name,
+    category,
+    description,
+    industries,
+    pricingType,
+    price,
+    currency,
+    deliveryDays,
+    active,
+    createdAt: at(daysBack - i * 20),
+    updatedAt: at(60 - i * 3),
+  })
+
+export const services: Tenant<Service>[] = [...SEED.map(toService(APEX, 'AED', 400)), ...CREST_SEED.map(toService(CREST, 'SAR', 380))]
+
+export const packages: Tenant<ServicePackage>[] = [
   {
     id: 'PK-1',
+    companyId: APEX,
     name: 'Clinic growth bundle',
     description: 'Chatbot for bookings, CRM automation for follow-ups, and the first year of hosting.',
     items: [
@@ -59,6 +78,7 @@ export const packages: ServicePackage[] = [
   },
   {
     id: 'PK-2',
+    companyId: APEX,
     name: 'Back-office automation',
     description: 'OCR for incoming documents plus executive dashboards on the extracted data.',
     items: [
@@ -73,6 +93,7 @@ export const packages: ServicePackage[] = [
   },
   {
     id: 'PK-3',
+    companyId: APEX,
     name: 'Starter web presence',
     description: 'Website with booking and six months of support.',
     items: [
@@ -84,6 +105,22 @@ export const packages: ServicePackage[] = [
     active: false,
     createdAt: at(200),
     updatedAt: at(45),
+  },
+  {
+    id: 'PK-4',
+    companyId: CREST,
+    name: 'Import starter bundle',
+    description: 'Freight forwarding and customs clearance for a first shipment, plus three months of warehousing.',
+    items: [
+      { serviceId: 'S-901', quantity: 1 },
+      { serviceId: 'S-903', quantity: 1 },
+      { serviceId: 'S-902', quantity: 3 },
+    ],
+    packagePrice: 59000,
+    currency: 'SAR',
+    active: true,
+    createdAt: at(80),
+    updatedAt: at(12),
   },
 ]
 
@@ -146,12 +183,65 @@ const TEMPLATE_SEED: Record<string, T[]> = {
   ],
 }
 
-export const projectTemplates: ProjectTemplate[] = Object.entries(TEMPLATE_SEED).map(([serviceId, tasks]) => ({
-  serviceId,
-  tasks: tasks.map(([title, role, dayOffset, hours], i) => ({ id: `${serviceId}-T${i + 1}`, title, role, dayOffset, hours })),
-  updatedAt: at(40),
-  updatedBy: 'Omar Haddad',
-}))
+/**
+ * Crest delivery runs through Operations (c2-ops): "Project manager" tasks belong to the Head of
+ * Operations (u106), "Solutions consultant" tasks to the Operations Coordinator (u107).
+ */
+const CREST_TEMPLATE_SEED: Record<string, T[]> = {
+  'S-901': [
+    ['Shipment booking & carrier selection', 'Project manager', 0, 4],
+    ['Collect commercial invoice & packing list', 'Solutions consultant', 1, 3],
+    ['Arrange pickup and export documents', 'Solutions consultant', 2, 4],
+    ['Track transit and update the customer', 'Solutions consultant', 4, 3],
+    ['Delivery confirmation & POD', 'Project manager', 7, 2],
+  ],
+  'S-902': [
+    ['Onboarding call & SKU list', 'Project manager', 0, 3],
+    ['Set up client in WMS', 'Solutions consultant', 1, 6],
+    ['Allocate pallet positions', 'Solutions consultant', 2, 4],
+    ['First inbound receipt', 'Solutions consultant', 4, 6],
+  ],
+  'S-903': [
+    ['Review documents & HS codes', 'Solutions consultant', 0, 3],
+    ['Submit declaration on FASAH', 'Solutions consultant', 1, 2],
+    ['Inspection & release follow-up', 'Project manager', 2, 3],
+  ],
+  'S-904': [
+    ['Fleet survey & device plan', 'Project manager', 0, 4],
+    ['Install trackers', 'Solutions consultant', 3, 16],
+    ['Configure alerts & dashboard', 'Solutions consultant', 7, 6],
+    ['Dispatcher training', 'Trainer', 9, 4],
+  ],
+  'S-905': [
+    ['Kick-off & data request', 'Project manager', 0, 6],
+    ['Network & cost analysis', 'Solutions consultant', 3, 30],
+    ['Site visits', 'Solutions consultant', 8, 16],
+    ['Savings plan & presentation', 'Project manager', 16, 10],
+  ],
+}
+
+const toTemplates = (companyId: string, updatedBy: string, seed: Record<string, T[]>): Tenant<ProjectTemplate>[] =>
+  Object.entries(seed).map(([serviceId, tasks]) => ({
+    serviceId,
+    companyId,
+    tasks: tasks.map(([title, role, dayOffset, hours], i) => ({ id: `${serviceId}-T${i + 1}`, title, role, dayOffset, hours })),
+    updatedAt: at(40),
+    updatedBy,
+  }))
+
+export const projectTemplates: Tenant<ProjectTemplate>[] = [
+  ...toTemplates(APEX, 'Omar Haddad', TEMPLATE_SEED),
+  ...toTemplates(CREST, 'Sultan Al Ghamdi', CREST_TEMPLATE_SEED),
+]
+
+registerArray('services', services)
+registerArray('packages', packages)
+registerArray('projectTemplates', projectTemplates)
+
+/** One company's catalog (services are looked up by globally unique id elsewhere). */
+export function servicesOf(companyId: string): Tenant<Service>[] {
+  return services.filter((s) => s.companyId === companyId)
+}
 
 /**
  * Selector for the Won → project flow (next step): the stored delivery template for a service.

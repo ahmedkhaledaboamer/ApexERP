@@ -70,7 +70,7 @@ export function LogActivityModal({ open, onClose, leadId, doNotContact, onLogged
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" form="log-activity-form" loading={log.isPending}>
+          <Button write type="submit" form="log-activity-form" loading={log.isPending}>
             Log {ACTIVITY_LABELS[type].toLowerCase()}
           </Button>
         </>

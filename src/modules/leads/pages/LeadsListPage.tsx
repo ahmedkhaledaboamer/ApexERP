@@ -37,7 +37,7 @@ export default function LeadsListPage() {
       <PageBody>
         <EmptyState
           title="Leads aren’t part of your role"
-          body={`${user.role} has no access to Sales & CRM. Ask a System Admin if you need it.`}
+          body={`${user.role} has no access to Sales & CRM. Ask a Company Admin if you need it.`}
         />
       </PageBody>
     )

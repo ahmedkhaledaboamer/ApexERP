@@ -15,12 +15,22 @@ import type {
   MoveMembersInput,
   OrgNode,
 } from '@/modules/departments/types'
-import { departments } from '@/shared/mocks/data/departments'
-import { leads, tasks, users } from '@/shared/mocks/db'
+import { departments, departmentsOf } from '@/shared/mocks/data/departments'
+import { leads, users } from '@/shared/mocks/db'
+import { isOverdue, linkView, openTasksOwnedBy } from '@/shared/mocks/selectors/tasks'
 import { isClosedStatus, isWonStatus } from '@/shared/mocks/data/lookups'
 import { diff, recordAudit } from '@/shared/mocks/data/audit'
 import { rowFor } from '@/shared/mocks/services/targets'
 import { delay, fail } from '@/shared/mocks/server'
+import { findInTenant, stamp, tenantOf, type Tenant } from '@/shared/mocks/tenant'
+
+/* ---------------- Tenant ---------------- */
+
+/** The user's company's departments: the tree, heads and members never cross companies. */
+const deptsOf = (user: User): Tenant<Department>[] => departmentsOf(tenantOf(user))
+/** People of the user's company (heads, managers, goal owners and moved members must be among them). */
+const peopleOf = (user: User): User[] => users.filter((u) => u.companyId === tenantOf(user))
+const NO_DEPT = 'That department doesn’t exist.'
 
 /* ---------------- Access ---------------- */
 
@@ -32,29 +42,30 @@ type Access = { scope: ReturnType<typeof scopeOf>; visible: Set<string>; managed
  */
 function accessOf(user: User): Access {
   const scope = scopeOf(user.role, 'departments')
+  const depts = deptsOf(user)
   if (scope === 'full') {
-    const all = new Set(departments.map((d) => d.id))
+    const all = new Set(depts.map((d) => d.id))
     return { scope, visible: all, managed: all }
   }
   const managed = new Set<string>(
-    scope === 'team' ? departments.filter((d) => d.headId === user.id).flatMap((d) => departmentSubtree(d.id, departments)) : [],
+    scope === 'team' ? depts.filter((d) => d.headId === user.id).flatMap((d) => departmentSubtree(d.id, depts)) : [],
   )
   const visible = new Set<string>(managed)
   if (scope !== 'hidden' && user.departmentId) visible.add(user.departmentId)
   return { scope, visible, managed }
 }
 
-async function guardVisible(user: User, id: string): Promise<{ dept: Department; access: Access }> {
+async function guardVisible(user: User, id: string): Promise<{ dept: Tenant<Department>; access: Access }> {
   const access = accessOf(user)
   if (access.scope === 'hidden') return fail('Your role has no access to departments.', 403)
-  const dept = departments.find((d) => d.id === id)
-  if (!dept) return fail('That department doesn’t exist.', 404)
+  const dept = findInTenant(departments, user, (d) => d.id === id)
+  if (!dept) return fail(NO_DEPT, 404)
   if (!access.visible.has(id)) return fail('This department is outside your team.', 403)
   return { dept, access }
 }
 
 async function guardFull(user: User): Promise<void> {
-  if (scopeOf(user.role, 'departments') !== 'full') await fail('Only System Admin, Management or HR can change the company structure.', 403)
+  if (scopeOf(user.role, 'departments') !== 'full') await fail('Only Company Admin, Management or HR can change the company structure.', 403)
 }
 
 /* ---------------- Helpers ---------------- */
@@ -88,18 +99,18 @@ function pathOf(d: Department): { id: string; name: string }[] {
 }
 
 /** Would making `parentId` the parent of `id` create a loop? */
-function createsCycle(id: string, parentId: string | null): boolean {
+function createsCycle(user: User, id: string, parentId: string | null): boolean {
   if (!parentId) return false
   if (parentId === id) return true
-  return departmentSubtree(id, departments.map((d) => ({ ...d, active: true }))).includes(parentId)
+  return departmentSubtree(id, deptsOf(user).map((d) => ({ ...d, active: true }))).includes(parentId)
 }
 
+/** Open tasks of the members, from the unified task store (lead, project and personal tasks). */
 function memberTasks(memberIds: Set<string>): DepartmentTask[] {
-  const today = startOfDay(new Date())
-  return tasks
-    .filter((t) => memberIds.has(t.ownerId) && t.status !== 'Done')
+  return openTasksOwnedBy(memberIds)
     .map((t) => {
-      const lead = leads.find((l) => l.id === t.leadId)
+      const lead = t.link?.type === 'lead' ? leads.find((l) => l.id === t.link!.id) : undefined
+      const link = linkView(t)
       return {
         id: t.id,
         title: t.title,
@@ -108,12 +119,14 @@ function memberTasks(memberIds: Set<string>): DepartmentTask[] {
         dueDate: t.dueDate,
         status: t.status,
         priority: t.priority,
-        overdue: isBefore(new Date(t.dueDate), today),
+        overdue: isOverdue(t),
         leadId: lead?.id ?? null,
         leadCompany: lead?.company ?? null,
+        projectId: t.projectId,
+        linkLabel: link?.label ?? null,
       }
     })
-    .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+    .sort((a, b) => (a.dueDate ?? '9999').localeCompare(b.dueDate ?? '9999'))
 }
 
 function toRow(d: Department): DepartmentRow {
@@ -140,11 +153,12 @@ function toRow(d: Department): DepartmentRow {
   }
 }
 
-function figuresOf(d: Department): DepartmentFigures {
+function figuresOf(d: Tenant<Department>): DepartmentFigures {
+  const co = d.companyId
   const members = membersOf(d.id)
   const ids = new Set(members.map((m) => m.id))
   const owned = leads.filter((l) => ids.has(l.ownerId))
-  const open = owned.filter((l) => !isClosedStatus(l.status))
+  const open = owned.filter((l) => !isClosedStatus(co, l.status))
   const now = new Date()
   const today = startOfDay(now)
   // Targets: members with at least one activity target (sales agents today).
@@ -157,14 +171,14 @@ function figuresOf(d: Department): DepartmentFigures {
     pctSum += kinds.reduce((s, k) => s + Math.min(1, row.actuals[k] / row.values[k]), 0) / kinds.length
     counted++
   }
-  const subtree = departmentSubtree(d.id, departments)
+  const subtree = departmentSubtree(d.id, departmentsOf(co))
   return {
     headcount: members.length,
-    headcountWithSubs: users.filter((u) => u.active !== false && subtree.includes(u.departmentId)).length,
+    headcountWithSubs: users.filter((u) => u.companyId === co && u.active !== false && subtree.includes(u.departmentId)).length,
     leadsOwned: owned.length,
     openLeads: open.length,
     openPipelineValue: open.reduce((s, l) => s + l.value, 0),
-    wonThisMonth: owned.filter((l) => isWonStatus(l.status) && isSameMonth(new Date(l.stageChangedAt), now)).length,
+    wonThisMonth: owned.filter((l) => isWonStatus(co, l.status) && isSameMonth(new Date(l.stageChangedAt), now)).length,
     overdueFollowUps: open.filter((l) => l.nextFollowUpDate && isBefore(new Date(l.nextFollowUpDate), today)).length,
     targetsCompletion: counted ? Math.round((pctSum / counted) * 100) : null,
     membersWithTargets: counted,
@@ -191,7 +205,7 @@ export async function listDepartments(user: User, includeInactive: boolean): Pro
   const access = accessOf(user)
   if (access.scope === 'hidden') return fail('Your role has no access to departments.', 403)
   return delay(
-    departments
+    deptsOf(user)
       .filter((d) => access.visible.has(d.id) && (includeInactive || d.active))
       .map(toRow)
       .sort((a, b) => a.depth - b.depth || a.name.localeCompare(b.name)),
@@ -202,13 +216,14 @@ export async function listDepartments(user: User, includeInactive: boolean): Pro
 export async function getOrgChart(user: User): Promise<OrgNode[]> {
   const access = accessOf(user)
   if (access.scope === 'hidden') return fail('Your role has no access to departments.', 403)
+  const depts = deptsOf(user)
   const ids = new Set(access.visible)
   for (const id of access.visible) {
-    const d = departments.find((x) => x.id === id)
+    const d = depts.find((x) => x.id === id)
     if (d) pathOf(d).forEach((p) => ids.add(p.id))
   }
   return delay(
-    departments
+    depts
       .filter((d) => ids.has(d.id))
       .map((d) => {
         const head = d.headId ? users.find((u) => u.id === d.headId) : undefined
@@ -251,30 +266,31 @@ export async function getDepartment(user: User, id: string): Promise<DepartmentD
 
 /* ---------------- Writes: structure (full scope) ---------------- */
 
-function validateName(name: string | undefined, selfId?: string): string | null {
+function validateName(user: User, name: string | undefined, selfId?: string): string | null {
   const n = String(name ?? '').trim()
   if (!n) return 'Department name is required.'
   if (n.length > 80) return 'Keep the name under 80 characters.'
-  if (departments.some((d) => d.id !== selfId && d.name.toLowerCase() === n.toLowerCase())) return 'A department with that name already exists.'
+  // Unique within the company; another company may use the same name.
+  if (deptsOf(user).some((d) => d.id !== selfId && d.name.toLowerCase() === n.toLowerCase())) return 'A department with that name already exists.'
   return null
 }
 
-function validateParent(id: string | null, parentId: string | null | undefined): string | null {
+function validateParent(user: User, id: string | null, parentId: string | null | undefined): string | null {
   if (parentId === undefined || parentId === null) return null
-  const parent = departments.find((d) => d.id === parentId)
+  const parent = findInTenant(departments, user, (d) => d.id === parentId)
   if (!parent) return 'Pick a parent department from the list.'
   if (!parent.active) return 'The parent department is inactive.'
-  if (id && createsCycle(id, parentId)) return 'A department can’t sit under itself or one of its sub-departments.'
+  if (id && createsCycle(user, id, parentId)) return 'A department can’t sit under itself or one of its sub-departments.'
   return null
 }
 
 export async function createDepartment(user: User, input: DepartmentInput): Promise<DepartmentRow> {
   await guardFull(user)
-  const err = validateName(input.name) ?? validateParent(null, input.parentId)
+  const err = validateName(user, input.name) ?? validateParent(user, null, input.parentId)
   if (err) return fail(err, 422)
   if (input.costCenter && input.costCenter.length > 40) return fail('Keep the cost center under 40 characters.', 422)
   const now = new Date().toISOString()
-  const d: Department = {
+  const d: Tenant<Department> = stamp<Department>({
     id: `d-${input.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}-${Date.now().toString(36).slice(-4)}`,
     name: input.name.trim(),
     headId: null,
@@ -284,7 +300,7 @@ export async function createDepartment(user: User, input: DepartmentInput): Prom
     active: input.active !== false,
     createdAt: now,
     updatedAt: now,
-  }
+  }, user)
   departments.push(d)
   recordAudit(user, { action: 'create', entity: 'department', entityId: d.id, summary: `Created department “${d.name}”${d.parentId ? ` under ${userless(d.parentId)}` : ''}` })
   if (input.headId) {
@@ -309,7 +325,7 @@ async function assignHead(user: User, d: Department, headId: string | null, move
     recordAudit(user, { action: 'update', entity: 'department', entityId: d.id, summary: `Removed ${before ?? 'the head'} as head of “${d.name}”`, changes: [{ field: 'head', from: before ?? '—', to: '—' }] })
     return
   }
-  const head = users.find((u) => u.id === headId)
+  const head = peopleOf(user).find((u) => u.id === headId)
   if (!head) return fail('Pick the head from the people list.', 422)
   if (head.active === false) return fail(`${head.name} is deactivated and can’t head a department.`, 422)
   if (head.departmentId !== d.id) {
@@ -341,14 +357,14 @@ async function assignHead(user: User, d: Department, headId: string | null, move
 
 export async function updateDepartment(user: User, id: string, input: DepartmentUpdateInput): Promise<DepartmentRow> {
   await guardFull(user)
-  const d = departments.find((x) => x.id === id)
-  if (!d) return fail('That department doesn’t exist.', 404)
+  const d = findInTenant(departments, user, (x) => x.id === id)
+  if (!d) return fail(NO_DEPT, 404)
   if (input.name !== undefined) {
-    const e = validateName(input.name, id)
+    const e = validateName(user, input.name, id)
     if (e) return fail(e, 422)
   }
   if (input.parentId !== undefined) {
-    const e = validateParent(id, input.parentId)
+    const e = validateParent(user, id, input.parentId)
     if (e) return fail(e, 422)
   }
   if (input.costCenter !== undefined && input.costCenter.length > 40) return fail('Keep the cost center under 40 characters.', 422)
@@ -370,8 +386,8 @@ export async function updateDepartment(user: User, id: string, input: Department
 /** Never deleted. Members and active sub-departments must be moved out first (409). */
 export async function setDepartmentActive(user: User, id: string, active: boolean): Promise<DepartmentRow> {
   await guardFull(user)
-  const d = departments.find((x) => x.id === id)
-  if (!d) return fail('That department doesn’t exist.', 404)
+  const d = findInTenant(departments, user, (x) => x.id === id)
+  if (!d) return fail(NO_DEPT, 404)
   if (!active) {
     const members = membersOf(id).length
     const subs = departments.filter((x) => x.parentId === id && x.active).length
@@ -396,11 +412,12 @@ export async function setDepartmentActive(user: User, id: string, active: boolea
 /** Moves people between departments (bulk). Same field Settings › Users & roles edits. Full scope. */
 export async function moveMembers(user: User, input: MoveMembersInput): Promise<{ moved: number }> {
   await guardFull(user)
-  const to = departments.find((d) => d.id === input.toDepartmentId)
+  const to = findInTenant(departments, user, (d) => d.id === input.toDepartmentId)
   if (!to) return fail('Pick the department to move people to.', 422)
   if (!to.active) return fail(`${to.name} is inactive.`, 422)
   if (!Array.isArray(input.userIds) || input.userIds.length === 0) return fail('Pick at least one person to move.', 422)
-  const people = input.userIds.map((uid) => users.find((u) => u.id === uid))
+  const company = peopleOf(user)
+  const people = input.userIds.map((uid) => company.find((u) => u.id === uid))
   if (people.some((p) => !p)) return fail('Some of those people don’t exist.', 422)
   for (const p of people as User[]) {
     const from = departments.find((d) => d.id === p.departmentId)
@@ -409,7 +426,7 @@ export async function moveMembers(user: User, input: MoveMembersInput): Promise<
     }
   }
   if (input.managerId) {
-    const m = users.find((u) => u.id === input.managerId)
+    const m = company.find((u) => u.id === input.managerId)
     if (!m || m.active === false) return fail('Pick an active manager.', 422)
     if (input.userIds.includes(input.managerId)) return fail('Someone can’t be their own manager.', 422)
   }
@@ -442,7 +459,7 @@ export async function setMemberManager(user: User, deptId: string, userId: strin
   const member = users.find((u) => u.id === userId && u.departmentId === deptId)
   if (!member) return fail('That person isn’t a member of this department.', 404)
   if (managerId) {
-    const m = users.find((u) => u.id === managerId)
+    const m = peopleOf(user).find((u) => u.id === managerId)
     if (!m || m.active === false) return fail('Pick an active manager.', 422)
     if (managerId === userId) return fail('Someone can’t be their own manager.', 422)
     // No reporting loops.
@@ -469,19 +486,19 @@ export async function setMemberManager(user: User, deptId: string, userId: strin
 
 /* ---------------- Writes: goals ---------------- */
 
-async function guardGoals(user: User, deptId: string): Promise<Department> {
+async function guardGoals(user: User, deptId: string): Promise<Tenant<Department>> {
   const { dept, access } = await guardVisible(user, deptId)
   if (!(access.scope === 'full' || access.managed.has(deptId))) return fail('Only the department head or an admin can edit goals.', 403)
   return dept
 }
 
-function validateGoal(input: Partial<GoalInput>, partial: boolean): string | null {
+function validateGoal(user: User, input: Partial<GoalInput>, partial: boolean): string | null {
   if (!partial || input.title !== undefined) {
     const t = String(input.title ?? '').trim()
     if (!t) return 'Goal title is required.'
     if (t.length > 160) return 'Keep the goal under 160 characters.'
   }
-  if (input.ownerId && !users.some((u) => u.id === input.ownerId && u.active !== false)) return 'Pick an active owner.'
+  if (input.ownerId && !peopleOf(user).some((u) => u.id === input.ownerId && u.active !== false)) return 'Pick an active owner.'
   if (input.dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(input.dueDate)) return 'Due date must be yyyy-MM-dd.'
   if (input.status !== undefined && input.status !== 'Open' && input.status !== 'Done') return 'Status must be Open or Done.'
   return null
@@ -489,7 +506,7 @@ function validateGoal(input: Partial<GoalInput>, partial: boolean): string | nul
 
 export async function addGoal(user: User, deptId: string, input: GoalInput): Promise<DepartmentGoal> {
   const d = await guardGoals(user, deptId)
-  const e = validateGoal(input, false)
+  const e = validateGoal(user, input, false)
   if (e) return fail(e, 422)
   const g: DepartmentGoal = {
     id: `g-${Date.now().toString(36)}`,
@@ -508,7 +525,7 @@ export async function updateGoal(user: User, deptId: string, goalId: string, inp
   const d = await guardGoals(user, deptId)
   const g = d.goals.find((x) => x.id === goalId)
   if (!g) return fail('That goal doesn’t exist.', 404)
-  const e = validateGoal(input, true)
+  const e = validateGoal(user, input, true)
   if (e) return fail(e, 422)
   const before = { ...g, owner: userName(g.ownerId) ?? '—' }
   if (input.title !== undefined) g.title = input.title.trim()

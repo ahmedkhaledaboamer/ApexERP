@@ -1,9 +1,10 @@
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { QuotationItem, QuotationStatus } from '@/modules/quotations/types'
-import { COMPANY } from '@/modules/quotations/lib/company'
-import { computeTotals, fmtAed, lineTotal, unitLabel } from '@/modules/quotations/lib/totals'
-import { LOGO_URL } from '@/shared/lib/constants'
+import { issuerAddress, issuerFor, type Issuer } from '@/modules/quotations/lib/company'
+import { computeTotals, fmtAmount, lineTotal, unitLabel } from '@/modules/quotations/lib/totals'
+import { useTenant } from '@/modules/tenancy/hooks'
+import { TenantLogo } from '@/modules/tenancy/components/TenantLogo'
 import { cn, fmtDate } from '@/shared/lib/utils'
 
 /** Everything the printed quotation needs; built from the saved quotation or the live form. */
@@ -21,6 +22,8 @@ export interface QuotationDocumentData {
   notes: string
   terms: string
   preparedBy: string
+  /** ISO currency of the quotation; the tenant currency when missing. */
+  currency?: string | null
 }
 
 const fmtQty = (n: number) => new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(n)
@@ -29,9 +32,12 @@ const fmtQty = (n: number) => new Intl.NumberFormat('en-US', { maximumFractionDi
  * The quotation as a clean A4 page (Stripe-invoice style). Colours are fixed, not themed:
  * paper stays white in dark mode and prints the same.
  */
-export function QuotationDocument({ data, className }: { data: QuotationDocumentData; className?: string }) {
+export function QuotationDocument({ data, className, issuer: issuerOverride }: { data: QuotationDocumentData; className?: string; issuer?: Issuer }) {
   const totals = computeTotals(data.items, data.vatPct)
   const draft = data.status === 'Draft'
+  const tenant = useTenant()
+  const issuer = issuerOverride ?? issuerFor(tenant)
+  const fmtAed = (v: number) => fmtAmount(v, data.currency)
 
   return (
     <article
@@ -41,25 +47,13 @@ export function QuotationDocument({ data, className }: { data: QuotationDocument
       )}
     >
       {draft && (
-        <span className="absolute top-6 right-6 rounded border border-zinc-300 px-2 py-0.5 text-[0.625rem] font-semibold tracking-[0.14em] text-zinc-500 uppercase print:top-0 print:right-0">
+        <span className="absolute top-6 end-6 rounded border border-zinc-300 px-2 py-0.5 text-[0.625rem] font-semibold tracking-[0.14em] text-zinc-500 uppercase print:top-0 print:end-0">
           Draft
         </span>
       )}
 
       {/* Letterhead */}
-      <header className="flex flex-wrap items-start justify-between gap-6">
-        <div className="flex items-center gap-3">
-          <img src={LOGO_URL} alt="" className="size-11 rounded-lg object-contain" />
-          <div>
-            <p className="text-[0.9375rem] font-semibold text-zinc-900">{COMPANY.name}</p>
-            <p className="text-xs text-zinc-500">{COMPANY.website}</p>
-          </div>
-        </div>
-        <div className="text-right">
-          <p className="text-[1.375rem] font-semibold tracking-[-0.01em] text-zinc-900">Quotation</p>
-          <p className="num font-mono text-xs text-zinc-500">{data.number ?? 'Not saved yet'}</p>
-        </div>
-      </header>
+      <QuotationLetterhead issuer={issuer} number={data.number ?? 'Not saved yet'} />
 
       {/* Parties and dates */}
       <section className="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-3">
@@ -69,22 +63,14 @@ export function QuotationDocument({ data, className }: { data: QuotationDocument
           {data.contactName && <p>{data.contactName}</p>}
           {data.contactEmail && <p className="text-zinc-500">{data.contactEmail}</p>}
         </div>
-        <div>
-          <p className="text-[0.6875rem] font-medium tracking-wide text-zinc-400 uppercase">From</p>
-          <p className="mt-1.5 font-semibold text-zinc-900">{COMPANY.name}</p>
-          {COMPANY.addressLines.map((l) => (
-            <p key={l}>{l}</p>
-          ))}
-          <p className="text-zinc-500">{COMPANY.email}</p>
-          {COMPANY.trn && <p className="text-zinc-500">TRN {COMPANY.trn}</p>}
-        </div>
+        <IssuerFromBlock issuer={issuer} />
         <dl className="num grid grid-cols-[auto_1fr] content-start gap-x-4 gap-y-1.5 sm:justify-self-end">
           <dt className="text-zinc-400">Issued</dt>
-          <dd className="text-right text-zinc-900">{fmtDate(data.issuedAt)}</dd>
+          <dd className="text-end text-zinc-900">{fmtDate(data.issuedAt)}</dd>
           <dt className="text-zinc-400">Valid until</dt>
-          <dd className="text-right font-medium text-zinc-900">{data.validUntil ? fmtDate(data.validUntil) : '—'}</dd>
+          <dd className="text-end font-medium text-zinc-900">{data.validUntil ? fmtDate(data.validUntil) : '—'}</dd>
           <dt className="text-zinc-400">Prepared by</dt>
-          <dd className="text-right text-zinc-900">{data.preparedBy}</dd>
+          <dd className="text-end text-zinc-900">{data.preparedBy}</dd>
         </dl>
       </section>
 
@@ -101,11 +87,11 @@ export function QuotationDocument({ data, className }: { data: QuotationDocument
       <table className="mt-8 w-full border-collapse">
         <thead>
           <tr className="border-b border-zinc-200 text-[0.6875rem] tracking-wide text-zinc-400 uppercase">
-            <th className="py-2 pr-3 text-left font-medium">Description</th>
-            <th className="px-3 py-2 text-right font-medium">Qty</th>
-            <th className="hidden px-3 py-2 text-right font-medium sm:table-cell print:table-cell">Unit price</th>
-            <th className="hidden px-3 py-2 text-right font-medium sm:table-cell print:table-cell">Disc.</th>
-            <th className="py-2 pl-3 text-right font-medium">Amount</th>
+            <th className="py-2 pe-3 text-start font-medium">Description</th>
+            <th className="px-3 py-2 text-end font-medium">Qty</th>
+            <th className="hidden px-3 py-2 text-end font-medium sm:table-cell print:table-cell">Unit price</th>
+            <th className="hidden px-3 py-2 text-end font-medium sm:table-cell print:table-cell">Disc.</th>
+            <th className="py-2 ps-3 text-end font-medium">Amount</th>
           </tr>
         </thead>
         <tbody>
@@ -126,21 +112,21 @@ export function QuotationDocument({ data, className }: { data: QuotationDocument
                 </tr>
               )}
               <tr className="border-b border-zinc-100 align-top break-inside-avoid">
-                <td className="py-3 pr-3">
+                <td className="py-3 pe-3">
                   <p className="font-medium text-zinc-900">{it.description || 'Untitled line'}</p>
                   <p className="text-xs text-zinc-500 sm:hidden print:hidden">
                     {fmtAed(it.unitPrice)} / {unitLabel(it.unit, 1)}
                     {it.discountPct > 0 && ` · ${fmtQty(it.discountPct)}% off`}
                   </p>
                 </td>
-                <td className="num px-3 py-3 text-right whitespace-nowrap">
+                <td className="num px-3 py-3 text-end whitespace-nowrap">
                   {fmtQty(it.quantity)} <span className="text-zinc-500">{unitLabel(it.unit, it.quantity)}</span>
                 </td>
-                <td className="num hidden px-3 py-3 text-right whitespace-nowrap sm:table-cell print:table-cell">{fmtAed(it.unitPrice)}</td>
-                <td className="num hidden px-3 py-3 text-right whitespace-nowrap text-zinc-500 sm:table-cell print:table-cell">
+                <td className="num hidden px-3 py-3 text-end whitespace-nowrap sm:table-cell print:table-cell">{fmtAed(it.unitPrice)}</td>
+                <td className="num hidden px-3 py-3 text-end whitespace-nowrap text-zinc-500 sm:table-cell print:table-cell">
                   {it.discountPct > 0 ? `${fmtQty(it.discountPct)}%` : '—'}
                 </td>
-                <td className="num py-3 pl-3 text-right font-medium whitespace-nowrap text-zinc-900">{fmtAed(lineTotal(it))}</td>
+                <td className="num py-3 ps-3 text-end font-medium whitespace-nowrap text-zinc-900">{fmtAed(lineTotal(it))}</td>
               </tr>
               </Fragment>
             ))
@@ -153,17 +139,17 @@ export function QuotationDocument({ data, className }: { data: QuotationDocument
       <section className="mt-6 flex justify-end break-inside-avoid">
         <dl className="num grid w-full max-w-72 grid-cols-[1fr_auto] gap-x-6 gap-y-2">
           <dt className="text-zinc-500">Subtotal</dt>
-          <dd className="text-right">{fmtAed(totals.subtotal)}</dd>
+          <dd className="text-end">{fmtAed(totals.subtotal)}</dd>
           {totals.discount > 0 && (
             <>
               <dt className="text-zinc-500">Discount</dt>
-              <dd className="text-right">−{fmtAed(totals.discount)}</dd>
+              <dd className="text-end">−{fmtAed(totals.discount)}</dd>
             </>
           )}
           <dt className="text-zinc-500">VAT ({fmtQty(data.vatPct)}%)</dt>
-          <dd className="text-right">{fmtAed(totals.vat)}</dd>
+          <dd className="text-end">{fmtAed(totals.vat)}</dd>
           <dt className="border-t border-zinc-200 pt-2.5 font-semibold text-zinc-900">Total</dt>
-          <dd className="border-t border-zinc-200 pt-2.5 text-right text-[0.9375rem] font-semibold text-zinc-900">{fmtAed(totals.total)}</dd>
+          <dd className="border-t border-zinc-200 pt-2.5 text-end text-[0.9375rem] font-semibold text-zinc-900">{fmtAed(totals.total)}</dd>
         </dl>
       </section>
 
@@ -184,11 +170,80 @@ export function QuotationDocument({ data, className }: { data: QuotationDocument
         </section>
       )}
 
-      <footer className="mt-12 border-t border-zinc-100 pt-4 text-center text-[0.6875rem] text-zinc-400">
-        {COMPANY.name} · {COMPANY.addressLines.join(', ')} · {COMPANY.email}
-        {data.validUntil && <> · This quotation is valid until {fmtDate(data.validUntil)}.</>}
-      </footer>
+      <QuotationFooter issuer={issuer} className="mt-12">
+        {data.validUntil && <>This quotation is valid until {fmtDate(data.validUntil)}.</>}
+      </QuotationFooter>
     </article>
+  )
+}
+
+/* ---------------- Issuer blocks (shared with the Company profile preview and future invoices) ---------------- */
+
+/** Logo, trade name and website on the left; the document kind and number on the right. */
+export function QuotationLetterhead({ issuer, number, title = 'Quotation' }: { issuer: Issuer; number: string; title?: string }) {
+  return (
+    <header className="flex flex-wrap items-start justify-between gap-6">
+      <div className="flex items-center gap-3">
+        <TenantLogo size="lg" variant="light" className="object-contain" />
+        <div>
+          <p className="text-[0.9375rem] font-semibold text-zinc-900">{issuer.name}</p>
+          {issuer.website && <p className="text-xs text-zinc-500">{issuer.website}</p>}
+        </div>
+      </div>
+      <div className="text-end">
+        <p className="text-[1.375rem] font-semibold tracking-[-0.01em] text-zinc-900">{title}</p>
+        <p className="num font-mono text-xs text-zinc-500">{number}</p>
+      </div>
+    </header>
+  )
+}
+
+/** The "From" party: legal name, address, contact, tax and licence numbers. */
+export function IssuerFromBlock({ issuer }: { issuer: Issuer }) {
+  return (
+    <div>
+      <p className="text-[0.6875rem] font-medium tracking-wide text-zinc-400 uppercase">From</p>
+      <p className="mt-1.5 font-semibold text-zinc-900">{issuer.legalName || issuer.name}</p>
+      {issuer.addressLines.map((l, i) => (
+        <p key={`${i}-${l}`}>{l}</p>
+      ))}
+      {issuer.phone && <p className="text-zinc-500">{issuer.phone}</p>}
+      {issuer.email && <p className="text-zinc-500">{issuer.email}</p>}
+      {issuer.taxNumber && (
+        <p className="text-zinc-500">
+          {issuer.taxLabel} <span className="num">{issuer.taxNumber}</span>
+        </p>
+      )}
+      {issuer.commercialLicenseNo && (
+        <p className="text-zinc-500">
+          CR / Licence <span className="num">{issuer.commercialLicenseNo}</span>
+        </p>
+      )}
+    </div>
+  )
+}
+
+/** Legal footer: identity and contact line, bank details when set, then any extra note. */
+export function QuotationFooter({ issuer, className, children }: { issuer: Issuer; className?: string; children?: ReactNode }) {
+  const identity = [
+    issuer.legalName || issuer.name,
+    issuerAddress(issuer),
+    issuer.phone,
+    issuer.email,
+    issuer.website,
+    issuer.taxNumber && `${issuer.taxLabel} ${issuer.taxNumber}`,
+  ].filter(Boolean)
+  const bank = issuer.bank
+  return (
+    <footer className={cn('border-t border-zinc-100 pt-4 text-center text-[0.6875rem] text-zinc-400', className)}>
+      <p>{identity.join(' · ')}</p>
+      {bank && (
+        <p className="mt-1">
+          Bank: {[bank.bankName, bank.accountName, bank.iban && `IBAN ${bank.iban}`, bank.swift && `SWIFT ${bank.swift}`].filter(Boolean).join(' · ')}
+        </p>
+      )}
+      {children && <p className="mt-1">{children}</p>}
+    </footer>
   )
 }
 

@@ -98,7 +98,7 @@ export function AddMembersDialog({ open, onClose, to }: AddMembersDialogProps) {
           <Button variant="secondary" onClick={onClose} disabled={move.isPending}>
             Cancel
           </Button>
-          <Button onClick={submit} loading={move.isPending}>
+          <Button write onClick={submit} loading={move.isPending}>
             {selected.length ? `Add ${plural(selected.length, 'person', 'people')}` : 'Add'}
           </Button>
         </>

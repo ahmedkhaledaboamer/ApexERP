@@ -8,7 +8,7 @@ import { PolicyCard } from '@/modules/settings/security/PolicyCard'
 
 /**
  * Security: your own 2FA and sessions (anyone who can open Settings manages their own account),
- * plus company-wide backups and policy (System Admin edits; Management views).
+ * plus company-wide backups and policy (Company Admin edits; Management views).
  */
 export default function SecurityPage() {
   const user = useCurrentUser()

@@ -21,6 +21,7 @@ import { ActiveBadge, CategoryIcon, deliveryText, Price, PricingBadge, PRICING_T
 import { ServiceDrawer } from '@/modules/services/components/ServiceDrawer'
 import { useServiceActivation } from '@/modules/services/components/useServiceActivation'
 import { DOT } from '@/shared/components/ui/Badge'
+import { useReadOnly } from '@/shared/lib/readOnly'
 
 type DrawerState = { service: ServiceRow | null } | null
 
@@ -28,6 +29,7 @@ type DrawerState = { service: ServiceRow | null } | null
 export default function ServiceCatalogPage() {
   const navigate = useNavigate()
   const lookups = useLookups()
+  const readOnly = useReadOnly()
   const { canEdit } = useServicesAccess()
   const [params, setParams] = useSearchParams()
   const search = params.get('q') ?? ''
@@ -42,11 +44,12 @@ export default function ServiceCatalogPage() {
         lookups,
         canEdit,
         pendingId: activation.pendingId,
+        readOnly,
         onEdit: (service) => setDrawer({ service }),
         onSetActive: activation.setActive,
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [lookups, canEdit, activation.pendingId],
+    [lookups, canEdit, activation.pendingId, readOnly],
   )
   const globalFilterFn = useMemo(() => serviceSearch(lookups), [lookups])
 
@@ -103,7 +106,7 @@ export default function ServiceCatalogPage() {
         }
         actions={
           <Can module="services" action="edit">
-            <Button size="sm" onClick={() => setDrawer({ service: null })}>
+            <Button write size="sm" onClick={() => setDrawer({ service: null })}>
               <Plus />
               New service
             </Button>
@@ -159,7 +162,7 @@ export default function ServiceCatalogPage() {
               action={
                 data.length === 0 ? (
                   <Can module="services" action="edit">
-                    <Button size="sm" onClick={() => setDrawer({ service: null })}>
+                    <Button write size="sm" onClick={() => setDrawer({ service: null })}>
                       <Plus />
                       New service
                     </Button>
@@ -309,11 +312,12 @@ interface ColumnDeps {
   lookups: LookupsApi
   canEdit: boolean
   pendingId: string | null
+  readOnly: boolean
   onEdit: (s: ServiceRow) => void
   onSetActive: (s: ServiceRow, active: boolean) => void
 }
 
-function buildColumns({ lookups, canEdit, pendingId, onEdit, onSetActive }: ColumnDeps) {
+function buildColumns({ lookups, canEdit, pendingId, readOnly, onEdit, onSetActive }: ColumnDeps) {
   const columns = [
     col.accessor('name', {
       header: 'Service',
@@ -392,7 +396,7 @@ function buildColumns({ lookups, canEdit, pendingId, onEdit, onSetActive }: Colu
           <span onClick={(e) => e.stopPropagation()} className="inline-flex">
             <Switch
               checked={row.original.active}
-              disabled={pendingId === row.original.id}
+              disabled={readOnly || pendingId === row.original.id}
               onChange={(v) => onSetActive(row.original, v)}
               label={`${row.original.name} active`}
             />
@@ -414,7 +418,7 @@ function buildColumns({ lookups, canEdit, pendingId, onEdit, onSetActive }: Colu
           <Menu
             className="w-48"
             trigger={(props) => (
-              <Button variant="ghost" size="xs" iconOnly aria-label={`Actions for ${row.original.name}`} {...props}>
+              <Button write variant="ghost" size="xs" iconOnly aria-label={`Actions for ${row.original.name}`} {...props}>
                 <MoreHorizontal />
               </Button>
             )}

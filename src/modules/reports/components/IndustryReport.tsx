@@ -39,7 +39,7 @@ export function IndustryReport({ data }: { data: SalesReport }) {
         cell: ({ row }) => (
           <span className="inline-flex items-center gap-0.5 text-xs text-muted">
             {row.original.subIndustries.filter((s) => s.leads > 0).length} sub-industries
-            <ChevronRight className="size-3.5" aria-hidden />
+            <ChevronRight className="size-3.5 rtl:-scale-x-100" aria-hidden />
           </span>
         ),
       },
@@ -62,7 +62,7 @@ export function IndustryReport({ data }: { data: SalesReport }) {
               <Legend color={C.brand} label="Leads" />
               <Legend color={C.green} label="Won" />
             </LegendRow>
-            <div style={{ height }}>
+            <div dir="ltr" style={{ height }}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={rows} layout="vertical" margin={{ top: 4, right: 12, left: 0, bottom: 0 }} barGap={2}>
                   <CartesianGrid horizontal={false} stroke="currentColor" strokeOpacity={0.08} strokeDasharray="4 4" />

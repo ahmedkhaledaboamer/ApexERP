@@ -1,4 +1,4 @@
-import { Mail, MapPin, MessageCircle, Phone, Users, type LucideIcon } from 'lucide-react'
+import { Mail, MapPin, MessageCircle, Phone, Sparkles, Users, type LucideIcon } from 'lucide-react'
 import type { ActivityType } from '@/shared/types'
 import { useLeadActivitiesQuery } from '@/modules/leads/hooks/useLeads'
 import { ACTIVITY_LABELS } from '@/shared/lib/constants'
@@ -12,6 +12,7 @@ export const ACTIVITY_ICONS: Record<ActivityType, LucideIcon> = {
   whatsapp: MessageCircle,
   visit: MapPin,
   meeting: Users,
+  system: Sparkles,
 }
 
 const ICON_TONE: Record<ActivityType, string> = {
@@ -20,6 +21,7 @@ const ICON_TONE: Record<ActivityType, string> = {
   whatsapp: 'bg-success-50 text-success-600 dark:bg-success-500/15 dark:text-success-500',
   visit: 'bg-warning-50 text-warning-600 dark:bg-warning-500/15 dark:text-warning-500',
   meeting: 'bg-pink-50 text-pink-600 dark:bg-pink-500/15 dark:text-pink-300',
+  system: 'bg-success-50 text-success-700 dark:bg-success-500/15 dark:text-success-500',
 }
 
 /** HubSpot-style activity timeline. `limit` shows only the latest entries (overview). */
@@ -59,7 +61,7 @@ export function ActivityLog({
         body="Calls, emails, WhatsApp messages, visits and meetings logged on this lead appear here."
         action={
           canLog ? (
-            <Button size="sm" onClick={onLog}>
+            <Button write size="sm" onClick={onLog}>
               Log the first activity
             </Button>
           ) : undefined
@@ -83,7 +85,9 @@ export function ActivityLog({
             <div className="min-w-0 flex-1 pt-0.5">
               <p className="flex flex-wrap items-baseline gap-x-1.5 text-[0.8125rem]">
                 <span className="font-medium text-ink">{a.userName}</span>
-                <span className="text-muted">logged a {ACTIVITY_LABELS[a.type].toLowerCase()}</span>
+                <span className="text-muted">
+                  {a.type === 'system' ? 'recorded an update' : `logged a ${ACTIVITY_LABELS[a.type].toLowerCase()}`}
+                </span>
                 <span className="num ms-auto text-xs text-subtle">{fmtDate(a.at, 'd MMM, HH:mm')}</span>
               </p>
               <p className="mt-1 rounded-md border border-line bg-sunken/50 px-3 py-2 text-[0.8125rem] text-ink-2">{a.summary}</p>

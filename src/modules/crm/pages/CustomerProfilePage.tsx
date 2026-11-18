@@ -43,7 +43,8 @@ import { ActivityLog } from '@/modules/leads/components/ActivityLog'
 import { NotesLog } from '@/modules/leads/components/NotesLog'
 import { LogActivityModal } from '@/modules/leads/components/LogActivityModal'
 import { can, scopeOf } from '@/shared/lib/permissions'
-import { formatUaeMobile } from '@/shared/lib/phone'
+import { formatMobile } from '@/shared/lib/phone'
+import { getRegion } from '@/shared/lib/region'
 import { ApiError } from '@/shared/lib/apiError'
 import { cn, fmtDate, fmtMoney } from '@/shared/lib/utils'
 import { useCurrentUser } from '@/store/hooks'
@@ -56,8 +57,9 @@ import { Menu, MenuItem } from '@/shared/components/ui/Menu'
 import { Tabs } from '@/shared/components/ui/Tabs'
 import { useToast } from '@/shared/components/ui/Toast'
 import { PageBody } from '@/shared/components/layout/PageHeader'
+import { CustomerTasksPanel } from '@/modules/tasks/components/CustomerTasksPanel'
 
-type Tab = 'overview' | 'activity' | 'contacts' | 'contracts' | 'quotations' | 'notes'
+type Tab = 'overview' | 'activity' | 'contacts' | 'contracts' | 'quotations' | 'tasks' | 'notes'
 
 export default function CustomerProfilePage() {
   const user = useCurrentUser()
@@ -163,14 +165,14 @@ function CustomerRecord({ id, canEdit }: { id: string; canEdit: boolean }) {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {canEdit && (
-                <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
+                <Button write variant="secondary" size="sm" onClick={() => setEditing(true)}>
                   <Pencil />
                   Edit
                 </Button>
               )}
               {canEdit && <StatusMenu current={c.status} onPick={changeStatus} busy={updateStatus.isPending} />}
               {canEdit && (
-                <Button size="sm" onClick={() => navigate(newQuotationPath({ customerId: c.id, leadId: c.leadId }))}>
+                <Button write size="sm" onClick={() => navigate(newQuotationPath({ customerId: c.id, leadId: c.leadId }))}>
                   <FilePlus2 />
                   New quotation
                 </Button>
@@ -189,6 +191,7 @@ function CustomerRecord({ id, canEdit }: { id: string; canEdit: boolean }) {
               { id: 'contacts', label: 'Contacts', count: c.contacts.length },
               { id: 'contracts', label: 'Contracts', count: c.contracts.length },
               { id: 'quotations', label: 'Quotations' },
+              { id: 'tasks', label: 'Tasks' },
               { id: 'notes', label: 'Notes', count: c.notes.length },
             ]}
           />
@@ -216,7 +219,7 @@ function CustomerRecord({ id, canEdit }: { id: string; canEdit: boolean }) {
                   description="Every call, email, WhatsApp, visit and meeting, from first contact to today."
                   action={
                     canEdit && (
-                      <Button variant="secondary" size="xs" onClick={() => setLogging(true)}>
+                      <Button write variant="secondary" size="xs" onClick={() => setLogging(true)}>
                         <Plus />
                         Log activity
                       </Button>
@@ -245,6 +248,14 @@ function CustomerRecord({ id, canEdit }: { id: string; canEdit: boolean }) {
               />
             )}
             {tab === 'quotations' && <LeadQuotations leadId={c.leadId} canEdit={canEdit} />}
+            {tab === 'tasks' && (
+              <Card>
+                <CardHeader title="Tasks" description="Tasks linked to this customer, to the lead it was won from and to its delivery projects." />
+                <CardBody>
+                  <CustomerTasksPanel customerId={c.id} customerName={c.name} leadId={c.leadId} />
+                </CardBody>
+              </Card>
+            )}
             {tab === 'notes' && (
               <Card>
                 <CardHeader title="Notes" description="Notes from the sale and the account since; each keeps its author and date." />
@@ -316,7 +327,7 @@ function StatusMenu({ current, onPick, busy }: { current: CustomerStatus; onPick
     <Menu
       className="w-44"
       trigger={(props) => (
-        <Button variant="secondary" size="sm" loading={busy} {...props}>
+        <Button write variant="secondary" size="sm" loading={busy} {...props}>
           Status
           <ChevronDown />
         </Button>
@@ -495,7 +506,7 @@ function ContactsCard({
         description="People at this company. Decision makers are marked with a star."
         action={
           canEdit && (
-            <Button variant="secondary" size="xs" onClick={onAdd}>
+            <Button write variant="secondary" size="xs" onClick={onAdd}>
               <Plus />
               Add contact
             </Button>
@@ -525,7 +536,7 @@ function ContactsCard({
                 <div className="flex min-w-0 flex-col items-start gap-0.5 text-xs sm:items-end">
                   {p.mobile && (
                     <a href={`tel:${p.mobile.replace(/\s/g, '')}`} className="num text-ink-2 hover:text-ink">
-                      {formatUaeMobile(p.mobile)}
+                      {formatMobile(p.mobile, getRegion().country)}
                     </a>
                   )}
                   {p.email && (
@@ -535,7 +546,7 @@ function ContactsCard({
                   )}
                 </div>
                 {canEdit && (
-                  <Button variant="ghost" size="xs" iconOnly aria-label={`Edit ${p.name}`} onClick={() => onEdit(p)}>
+                  <Button write variant="ghost" size="xs" iconOnly aria-label={`Edit ${p.name}`} onClick={() => onEdit(p)}>
                     <Pencil />
                   </Button>
                 )}
@@ -567,7 +578,7 @@ function ContractsCard({
         description="What the customer signed, how it bills and when it renews."
         action={
           canEdit && (
-            <Button variant="secondary" size="xs" onClick={onAdd}>
+            <Button write variant="secondary" size="xs" onClick={onAdd}>
               <Plus />
               New contract
             </Button>
@@ -608,7 +619,7 @@ function ContractsCard({
                 <p className="num text-xs text-muted">{fmtDate(k.renewalDate)}</p>
               </div>
               {canEdit && (
-                <Button variant="ghost" size="xs" iconOnly aria-label={`Edit ${k.title}`} onClick={() => onEdit(k)}>
+                <Button write variant="ghost" size="xs" iconOnly aria-label={`Edit ${k.title}`} onClick={() => onEdit(k)}>
                   <Pencil />
                 </Button>
               )}
@@ -647,9 +658,11 @@ function DetailsCard({ customer: c }: { customer: CustomerDetail }) {
           <Property label="Website" icon={<Globe />}>
             {c.website ? <WebsiteLink url={c.website} /> : <span className="text-muted">—</span>}
           </Property>
-          <Property label="Emirate" icon={<MapPin />}>
-            {c.emirate || <span className="text-muted">—</span>}
-          </Property>
+          {(getRegion().country === 'AE' || !!c.emirate) && (
+            <Property label="Emirate" icon={<MapPin />}>
+              {c.emirate || <span className="text-muted">—</span>}
+            </Property>
+          )}
           <Property label="Address" icon={<MapPin />}>
             {c.address ? <span className="break-words">{c.address}</span> : <span className="text-muted">Not set</span>}
           </Property>

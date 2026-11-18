@@ -128,7 +128,7 @@ export function MoveMembersDialog({ open, onClose, from, preselectedIds, intro, 
           <Button variant="secondary" onClick={onClose} disabled={pending}>
             Cancel
           </Button>
-          <Button onClick={submit} loading={pending} disabled={!members.length}>
+          <Button write onClick={submit} loading={pending} disabled={!members.length}>
             {selected.length ? `Move ${plural(selected.length, 'person', 'people')}` : 'Move'}
           </Button>
         </>

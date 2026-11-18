@@ -159,7 +159,7 @@ export function Switch({ checked, onChange, label, disabled, id }: SwitchProps) 
         aria-hidden
         className={cn(
           'size-4 rounded-full bg-white shadow-xs transition-transform duration-150',
-          checked ? 'translate-x-[1.125rem]' : 'translate-x-0.5',
+          checked ? 'translate-x-[1.125rem] rtl:-translate-x-[1.125rem]' : 'translate-x-0.5 rtl:-translate-x-0.5',
         )}
       />
     </button>

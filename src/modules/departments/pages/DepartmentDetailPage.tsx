@@ -170,11 +170,11 @@ export default function DepartmentDetailPage() {
             {canStructure && (
               <Can module="departments" action="edit">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button variant="secondary" size="sm" onClick={() => setDrawer('edit')}>
+                  <Button write variant="secondary" size="sm" onClick={() => setDrawer('edit')}>
                     <Pencil />
                     Edit
                   </Button>
-                  <Button variant="secondary" size="sm" loading={activation.pendingId === d.id} onClick={() => activation.setActive(d, !d.active)}>
+                  <Button write variant="secondary" size="sm" loading={activation.pendingId === d.id} onClick={() => activation.setActive(d, !d.active)}>
                     {d.active ? <PowerOff /> : <Power />}
                     {d.active ? 'Deactivate' : 'Reactivate'}
                   </Button>
@@ -232,7 +232,7 @@ export default function DepartmentDetailPage() {
 function SubDepartments({ d, canCreate, onNew }: { d: DepartmentDetail; canCreate: boolean; onNew: () => void }) {
   const newButton = canCreate && (
     <Can module="departments" action="edit">
-      <Button size="sm" variant="secondary" onClick={onNew}>
+      <Button write size="sm" variant="secondary" onClick={onNew}>
         <Plus />
         New sub-department
       </Button>

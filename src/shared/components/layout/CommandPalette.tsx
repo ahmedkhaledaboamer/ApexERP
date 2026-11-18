@@ -11,6 +11,8 @@ import { useLeadsQuery } from '@/modules/leads/hooks/useLeads'
 import { Avatar } from '@/shared/components/ui/Avatar'
 import { Kbd } from '@/shared/components/ui/Kbd'
 import { StatusBadge } from '@/shared/components/ui/StatusBadge'
+import { paletteItems } from '@/modules/billing/gating'
+import { useGateContext } from '@/modules/billing/hooks'
 import { ALL_NAV_ITEMS } from './navigation'
 
 interface Command {
@@ -46,6 +48,7 @@ function Palette({ onClose }: { onClose: () => void }) {
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
   const user = useCurrentUser()
+  const gate = useGateContext()
   const theme = useAppSelector((s) => s.ui.theme)
   const canLeads = !!user && can(user.role, 'sales', 'view')
   const leads = useLeadsQuery()
@@ -61,8 +64,9 @@ function Palette({ onClose }: { onClose: () => void }) {
     const q = query.trim().toLowerCase()
     const match = (s: string) => !q || s.toLowerCase().includes(q)
 
-    const pages: Command[] = ALL_NAV_ITEMS
-      .filter((i) => (!i.module || (user && can(user.role, i.module, 'view'))) && match(i.label))
+    // Only what the role can view AND the plan includes (locked modules are left out).
+    const pages: Command[] = paletteItems(ALL_NAV_ITEMS, gate)
+      .filter((i) => match(i.label))
       .map((i) => ({
         id: `page-${i.label}`,
         group: 'Go to',
@@ -114,7 +118,7 @@ function Palette({ onClose }: { onClose: () => void }) {
         : []),
     ]
     return [...leadHits, ...pages, ...actions]
-  }, [query, leads.data, canLeads, user, theme, navigate, onClose, dispatch])
+  }, [query, leads.data, canLeads, gate, theme, navigate, onClose, dispatch])
 
   useEffect(() => setActive(0), [query])
   useEffect(() => {

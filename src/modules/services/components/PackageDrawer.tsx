@@ -14,6 +14,7 @@ import { Skeleton } from '@/shared/components/ui/Feedback'
 import { useToast } from '@/shared/components/ui/Toast'
 import { Field, SearchInput, TextArea, TextInput } from '@/shared/components/form/Field'
 import { CategoryIcon, PRICING_SUFFIX, priceText } from '@/modules/services/components/ServiceBits'
+import { getRegion } from '@/shared/lib/region'
 
 interface PackageDrawerProps {
   open: boolean
@@ -22,7 +23,8 @@ interface PackageDrawerProps {
   pkg?: PackageRow | null
 }
 
-const EMPTY: PackageValues = { name: '', description: '', items: [], packagePrice: '' as unknown as number, currency: 'AED' }
+/** New records start in the workspace currency. */
+const empty = (): PackageValues => ({ name: '', description: '', items: [], packagePrice: '' as unknown as number, currency: getRegion().currency })
 
 /** New / edit package: pick services with quantities, set the package price, see the saving live. */
 export function PackageDrawer({ open, onClose, pkg }: PackageDrawerProps) {
@@ -42,7 +44,7 @@ export function PackageDrawer({ open, onClose, pkg }: PackageDrawerProps) {
     watch,
     setValue,
     formState: { errors, isDirty, isSubmitted },
-  } = useForm<PackageValues>({ resolver: zodResolver(packageSchema), mode: 'onTouched', defaultValues: EMPTY })
+  } = useForm<PackageValues>({ resolver: zodResolver(packageSchema), mode: 'onTouched', defaultValues: empty() })
   const { fields, append, remove } = useFieldArray({ control, name: 'items', keyName: '_key' })
 
   useEffect(() => {
@@ -56,7 +58,7 @@ export function PackageDrawer({ open, onClose, pkg }: PackageDrawerProps) {
             packagePrice: pkg.packagePrice,
             currency: pkg.currency,
           }
-        : EMPTY,
+        : empty(),
     )
     setQ('')
     create.reset()
@@ -65,7 +67,7 @@ export function PackageDrawer({ open, onClose, pkg }: PackageDrawerProps) {
   }, [open, pkg])
 
   const items = watch('items') ?? []
-  const currency = watch('currency') || 'AED'
+  const currency = watch('currency') || getRegion().currency
   const packagePrice = Number(watch('packagePrice'))
   const listPrice = items.reduce((sum, it) => sum + (catalog.byId(it.serviceId)?.price ?? 0) * (Number(it.quantity) || 0), 0)
   const priced = Number.isFinite(packagePrice) && String(watch('packagePrice') ?? '') !== ''
@@ -127,7 +129,7 @@ export function PackageDrawer({ open, onClose, pkg }: PackageDrawerProps) {
           <Button variant="secondary" onClick={close}>
             Cancel
           </Button>
-          <Button type="submit" form="package-form" loading={pending}>
+          <Button write type="submit" form="package-form" loading={pending}>
             {editing ? 'Save package' : 'Create package'}
           </Button>
         </>

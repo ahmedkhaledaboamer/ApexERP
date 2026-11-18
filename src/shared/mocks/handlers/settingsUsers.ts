@@ -13,12 +13,7 @@ async function body<T>(request: Request): Promise<T> {
 
 export const settingsUsersHandlers: HttpHandler[] = [
   http.get(`${API}/settings/users`, ({ request }) => respond(() => svc.getSettingsUsers(userFrom(request)))),
-  http.get(`${API}/settings/departments`, ({ request }) =>
-    respond(() => {
-      userFrom(request)
-      return svc.getDepartments()
-    }),
-  ),
+  http.get(`${API}/settings/departments`, ({ request }) => respond(() => svc.getDepartments(userFrom(request)))),
   http.post(`${API}/settings/users`, async ({ request }) => {
     const input = await body<UserInput>(request)
     return respond(() => svc.createUser(userFrom(request), input))

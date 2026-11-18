@@ -92,7 +92,7 @@ export const TONE_TEXT: Record<PaceTone, string> = {
 
 export const TONE_HEX: Record<PaceTone, string> = {
   green: '#10b981',
-  brand: '#7c3aed',
+  brand: 'var(--color-brand-600)',
   amber: '#f59e0b',
   red: '#ef4444',
   neutral: '#a1a1ab',

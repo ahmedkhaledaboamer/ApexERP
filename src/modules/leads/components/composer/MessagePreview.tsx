@@ -2,8 +2,10 @@ import { CheckCheck } from 'lucide-react'
 import type { User } from '@/shared/types'
 import type { TemplateContext } from '@/modules/settings/templates/render'
 import { RichText } from '@/modules/settings/templates/components/RichText'
+import { EmailBrandHeader } from '@/modules/settings/templates/components/EmailBrandHeader'
 import { Avatar } from '@/shared/components/ui/Avatar'
 import type { Recipient } from './compose'
+import { useBranding } from '@/modules/tenancy/hooks'
 
 /** What the contact will see. Variables still in the text show as "not set" / unknown chips. */
 
@@ -24,6 +26,7 @@ export function EmailPreview({
   user: User
   recipient: Recipient | null
 }) {
+  const branding = useBranding()
   return (
     <article aria-label="Email preview" className="overflow-hidden rounded-xl border border-line bg-surface shadow-xs">
       <header className="space-y-3 border-b border-line bg-sunken/50 px-4 py-3.5">
@@ -34,7 +37,11 @@ export function EmailPreview({
           <Avatar name={user.name} size="md" />
           <div className="min-w-0 flex-1 text-xs leading-relaxed">
             <p className="truncate text-ink">
-              <span className="font-semibold">{user.name}</span> <span className="text-muted">&lt;{user.email}&gt;</span>
+              <span className="font-semibold">{branding.emailSenderName}</span>{' '}
+              <span className="text-muted">&lt;{branding.emailSenderAddress}&gt;</span>
+            </p>
+            <p className="truncate text-muted">
+              for {user.name} · replies to {user.email}
             </p>
             <p className="truncate text-muted">
               to {recipient ? `${recipient.name} <${recipient.address}>` : 'no recipient'}
@@ -43,6 +50,7 @@ export function EmailPreview({
           <span className="shrink-0 text-xs text-subtle">Now</span>
         </div>
       </header>
+      <EmailBrandHeader />
       <div className="px-4 py-4 text-[0.8125rem] leading-relaxed break-words whitespace-pre-wrap text-ink">
         {body.trim() ? <RichText text={body} ctx={ctx} /> : <Empty>Nothing written yet.</Empty>}
       </div>

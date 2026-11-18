@@ -1,5 +1,6 @@
 import { forwardRef, type ButtonHTMLAttributes } from 'react'
 import { cn } from '@/shared/lib/utils'
+import { useReadOnly, useReadOnlyHint } from '@/shared/lib/readOnly'
 
 /** `gradient` is kept as an alias of `primary` for older call sites. */
 type Variant = 'primary' | 'gradient' | 'secondary' | 'ghost' | 'danger' | 'ai'
@@ -11,6 +12,12 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   loading?: boolean
   /** Square button holding a single icon; pass `aria-label`. */
   iconOnly?: boolean
+  /**
+   * A create / edit / delete / send / import action. While the workspace is read-only (subscription
+   * Suspended or Cancelled) it is disabled with the tooltip "Workspace is read-only". It stays
+   * hoverable (aria-disabled, clicks swallowed) so the tooltip can explain why.
+   */
+  write?: boolean
 }
 
 const VARIANTS: Record<Variant, string> = {
@@ -39,20 +46,35 @@ const ICON_ONLY: Record<Size, string> = {
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant = 'primary', size = 'md', loading = false, iconOnly = false, disabled, className, children, type = 'button', ...rest },
+  { variant = 'primary', size = 'md', loading = false, iconOnly = false, write = false, disabled, className, children, type = 'button', onClick, title, ...rest },
   ref,
 ) {
+  const readOnly = useReadOnly()
+  const readOnlyHint = useReadOnlyHint()
+  const blocked = write && readOnly
   return (
     <button
       ref={ref}
       type={type}
-      disabled={disabled || loading}
+      disabled={(disabled || loading) && !blocked}
       aria-busy={loading || undefined}
+      aria-disabled={blocked || undefined}
+      data-read-only={blocked || undefined}
+      title={blocked ? readOnlyHint : title}
+      onClick={
+        blocked
+          ? (e) => {
+              e.preventDefault()
+              e.stopPropagation()
+            }
+          : onClick
+      }
       className={cn(
         'inline-flex shrink-0 items-center justify-center font-medium whitespace-nowrap transition-[background-color,color,filter,box-shadow] duration-150 ease-out select-none disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0',
         VARIANTS[variant],
         SIZES[size],
         iconOnly && ICON_ONLY[size],
+        blocked && 'cursor-not-allowed opacity-50 hover:brightness-100',
         className,
       )}
       {...rest}

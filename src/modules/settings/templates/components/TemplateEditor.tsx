@@ -312,7 +312,7 @@ export function TemplateEditor({
         {/* Header */}
         <div className="flex flex-wrap items-start gap-3 border-b border-line px-4 py-3.5 sm:px-5">
           <Button variant="ghost" size="sm" iconOnly aria-label="Back to templates" className="-ms-1.5 xl:hidden" onClick={onClose}>
-            <ArrowLeft aria-hidden />
+            <ArrowLeft className="rtl:-scale-x-100" aria-hidden />
           </Button>
           <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-line bg-sunken text-muted">
             <Icon className="size-4" aria-hidden />
@@ -337,7 +337,7 @@ export function TemplateEditor({
           </div>
           {!isNew && (
             <div className="flex items-center gap-1.5">
-              <Button variant="secondary" size="sm" onClick={sendTest} loading={sendingTest}>
+              <Button write variant="secondary" size="sm" onClick={sendTest} loading={sendingTest}>
                 <Send aria-hidden />
                 <span className="hidden sm:inline">Send test to me</span>
                 <span className="sm:hidden">Test</span>
@@ -345,7 +345,7 @@ export function TemplateEditor({
               {editable && (
                 <Menu
                   trigger={(props) => (
-                    <Button {...props} variant="secondary" size="sm" iconOnly aria-label="More actions" disabled={busy}>
+                    <Button write {...props} variant="secondary" size="sm" iconOnly aria-label="More actions" disabled={busy}>
                       <MoreHorizontal aria-hidden />
                     </Button>
                   )}
@@ -383,7 +383,7 @@ export function TemplateEditor({
           {readOnly && (
             <p className="flex items-start gap-2 rounded-lg bg-sunken px-3 py-2.5 text-xs text-muted">
               <Lock className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-              <span>You have view-only access. Only a System Admin can edit templates.</span>
+              <span>You have view-only access. Only a Company Admin can edit templates.</span>
             </p>
           )}
           {template && !template.active && (
@@ -526,7 +526,7 @@ export function TemplateEditor({
                 </Button>
               )
             )}
-            <Button type="submit" form="template-form" size="sm" loading={saving} disabled={!dirty}>
+            <Button write type="submit" form="template-form" size="sm" loading={saving} disabled={!dirty}>
               {isNew ? 'Create template' : 'Save changes'}
               <Kbd className="ms-1 hidden border-white/30 bg-white/15 text-white/90 sm:inline-flex">Ctrl S</Kbd>
             </Button>
@@ -558,7 +558,7 @@ export function TemplateEditor({
               <Button variant="secondary" onClick={() => setConfirm(null)} disabled={setActive.isPending}>
                 Cancel
               </Button>
-              <Button variant={confirm === 'deactivate' ? 'danger' : 'primary'} loading={setActive.isPending} onClick={onConfirmActive}>
+              <Button write variant={confirm === 'deactivate' ? 'danger' : 'primary'} loading={setActive.isPending} onClick={onConfirmActive}>
                 {confirm === 'deactivate' ? 'Deactivate' : 'Reactivate'}
               </Button>
             </>
@@ -603,7 +603,11 @@ function VariablesSummary({ text, editable, onReplace }: { text: string; editabl
           return (
             <span
               key={k}
-              title={v ? `${v.label}: ${v.description}` : 'Unknown variable'}
+              title={
+                v
+                  ? `${v.label}: ${v.description}${v.key !== k ? ` Older spelling of ${token(v.key)}; it still works.` : ''}`
+                  : 'Unknown variable'
+              }
               className={cn(
                 'inline-flex h-[1.375rem] items-center rounded-md px-1.5 font-mono text-[0.6875rem]',
                 v ? 'bg-brand-500/10 text-brand-700 dark:text-brand-300' : 'bg-danger-500/15 text-danger-700 dark:text-danger-500',

@@ -57,7 +57,7 @@ export interface BackupStatusInfo {
 }
 
 export interface SecurityPolicy {
-  /** System Admins must have 2FA turned on. */
+  /** Company Admins must have 2FA turned on. */
   requireTwoFactorForAdmins: boolean
   /** Idle minutes before a session signs out. */
   sessionTimeoutMinutes: number

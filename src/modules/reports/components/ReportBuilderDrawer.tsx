@@ -133,7 +133,7 @@ export function ReportBuilderDrawer({ open, onClose, range, ownerId, departmentI
         ) : report.isError ? (
           <ErrorState message={report.error.message} onRetry={() => report.refetch()} />
         ) : (
-          <div className={report.isFetching ? 'h-64 opacity-60 transition-opacity' : 'h-64 transition-opacity'}>
+          <div dir="ltr" className={report.isFetching ? 'h-64 opacity-60 transition-opacity' : 'h-64 transition-opacity'}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={rows} margin={{ top: 8, right: 4, left: 0, bottom: 0 }}>
                 <CartesianGrid vertical={false} stroke="currentColor" strokeOpacity={0.08} strokeDasharray="4 4" />

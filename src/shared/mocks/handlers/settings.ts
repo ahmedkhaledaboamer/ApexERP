@@ -4,12 +4,7 @@ import * as svc from '@/shared/mocks/services/settings'
 import { API, respond, userFrom } from './utils'
 
 export const settingsHandlers = [
-  http.get(`${API}/lookups`, ({ request }) =>
-    respond(() => {
-      userFrom(request)
-      return svc.getLookups()
-    }),
-  ),
+  http.get(`${API}/lookups`, ({ request }) => respond(() => svc.getLookups(userFrom(request)))),
   http.put<{ list: string }>(`${API}/lookups/:list`, async ({ request, params }) => {
     const { items } = (await request.json()) as { items: unknown }
     return respond(() => svc.saveLookupList(userFrom(request), params.list as LookupList, items))

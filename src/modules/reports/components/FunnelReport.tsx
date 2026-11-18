@@ -32,7 +32,7 @@ export function FunnelReport({ data }: { data: SalesReport }) {
               <Legend color={C.brand} label="Created" />
               <Legend color={C.green} label="Won" />
             </LegendRow>
-            <div className="h-64">
+            <div dir="ltr" className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={months} margin={{ top: 8, right: 4, left: 0, bottom: 0 }} barGap={3}>
                   <CartesianGrid vertical={false} stroke="currentColor" strokeOpacity={0.08} strokeDasharray="4 4" />
@@ -47,7 +47,7 @@ export function FunnelReport({ data }: { data: SalesReport }) {
           </div>
           <div>
             <SubHeading hint="Won ÷ created in the month">Conversion rate</SubHeading>
-            <div className="h-36">
+            <div dir="ltr" className="h-36">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={months} margin={{ top: 8, right: 4, left: 0, bottom: 0 }}>
                   <defs>

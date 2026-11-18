@@ -3,8 +3,9 @@ import type { LeadDetail } from '@/modules/leads/types'
 import type { MessageChannel } from '@/modules/leads/api/messagesApi'
 import type { LookupsApi } from '@/shared/hooks/useLookups'
 import { SYSTEM_STATUS } from '@/shared/lib/systemStatus'
-import { formatUaeMobile, normalizeUaeMobile } from '@/shared/lib/phone'
-import { findVariables, renderSegments, renderTemplate, type TemplateContext } from '@/modules/settings/templates/render'
+import { formatMobile, normalizeMobile } from '@/shared/lib/phone'
+import { getRegion } from '@/shared/lib/region'
+import { fillKnown, findVariables, renderTemplate, type TemplateContext } from '@/modules/settings/templates/render'
 import { getVariable, isKnownVariable } from '@/modules/settings/templates/variables'
 import type { MessageTemplate, TemplatePurpose } from '@/modules/settings/templates/types'
 import { PURPOSES_BY_CHANNEL } from '@/modules/settings/templates/types'
@@ -18,14 +19,15 @@ export interface Recipient {
   id: string
   name: string
   title: string
-  /** Email address or display-formatted UAE mobile. */
+  /** Email address or display-formatted mobile (workspace country). */
   address: string
   isDecisionMaker: boolean
 }
 
 function addressOf(c: Pick<Contact, 'email' | 'mobile'>, channel: MessageChannel): string | null {
   if (channel === 'email') return EMAIL_RE.test(c.email.trim()) ? c.email.trim() : null
-  return normalizeUaeMobile(c.mobile) ? formatUaeMobile(c.mobile) : null
+  const country = getRegion().country
+  return normalizeMobile(c.mobile, country) ? formatMobile(c.mobile, country) : null
 }
 
 /**
@@ -42,9 +44,9 @@ export function recipientsFor(lead: LeadDetail, channel: MessageChannel): Recipi
     const address = addressOf({ email: lead.contactEmail ?? '', mobile: lead.mobile ?? '' }, channel)
     if (address) rows.push({ id: 'lead', name: lead.contactName || lead.company, title: '', address, isDecisionMaker: false })
   }
-  const primaryAddress = channel === 'email' ? (lead.contactEmail ?? '').toLowerCase() : normalizeUaeMobile(lead.mobile ?? '')
+  const primaryAddress = channel === 'email' ? (lead.contactEmail ?? '').toLowerCase() : normalizeMobile(lead.mobile ?? '', getRegion().country)
   const isPrimary = (r: Recipient) =>
-    channel === 'email' ? r.address.toLowerCase() === primaryAddress : normalizeUaeMobile(r.address) === primaryAddress
+    channel === 'email' ? r.address.toLowerCase() === primaryAddress : normalizeMobile(r.address, getRegion().country) === primaryAddress
   const rank = (r: Recipient) => (r.isDecisionMaker ? 0 : isPrimary(r) ? 1 : 2)
   return rows.map((r, i) => ({ r, i })).sort((a, b) => rank(a.r) - rank(b.r) || a.i - b.i).map(({ r }) => r)
 }
@@ -82,9 +84,7 @@ export function groupByPurpose(options: MessageTemplate[], channel: MessageChann
  * value and unknown variables stay as `{{key}}` so the composer can flag them before sending.
  */
 export function fillForEditing(text: string, ctx: TemplateContext): string {
-  return renderSegments(text, ctx)
-    .map((s) => (s.kind === 'empty' || s.kind === 'unknown' ? `{{${s.key}}}` : s.text))
-    .join('')
+  return fillKnown(text, ctx)
 }
 
 export interface VariableIssue {

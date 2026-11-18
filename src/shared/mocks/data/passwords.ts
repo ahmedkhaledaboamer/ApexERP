@@ -1,14 +1,15 @@
 import { subDays } from 'date-fns'
 import { DEMO_PASSWORD } from '@/shared/lib/constants'
+import { registerMap } from '@/shared/mocks/persist/registry'
 
 /**
  * Mock password store. Every seeded user starts with the demo password; a change lives in
  * memory until the page reloads. A real backend stores only a salted hash.
  */
-const passwords = new Map<string, string>()
+const passwords = registerMap('passwords', new Map<string, string>())
 
 /** When each user last set their password. */
-const changedAt = new Map<string, string>()
+const changedAt = registerMap('passwords.changedAt', new Map<string, string>())
 
 export function passwordMatches(userId: string, candidate: string): boolean {
   return String(candidate ?? '') === (passwords.get(userId) ?? DEMO_PASSWORD)

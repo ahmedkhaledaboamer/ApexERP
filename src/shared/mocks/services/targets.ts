@@ -2,7 +2,7 @@ import { endOfMonth, format, getDaysInMonth, isSameMonth, isValid, parse, startO
 import type { ActivityType, User } from '@/shared/types'
 import { MAX_TARGET, type AgentTargetRow, type TargetDefaults, type TargetsMonth, type TargetValues } from '@/modules/targets/types'
 import { can, scopeOf, teamIdsFor } from '@/shared/lib/permissions'
-import { departments } from '@/shared/mocks/data/departments'
+import { departmentsOf } from '@/shared/mocks/data/departments'
 import { activities, leads, users } from '@/shared/mocks/db'
 import {
   agentTargets,
@@ -10,13 +10,14 @@ import {
   hasOverride,
   TARGET_KEYS,
   TARGET_LABELS,
-  targetDefaults,
+  targetDefaultsFor,
   targetsFor,
   type TargetKey,
 } from '@/shared/mocks/data/targets'
 import { isWonStatus, SYSTEM_STATUS } from '@/shared/mocks/data/lookups'
 import { diff, recordAudit } from '@/shared/mocks/data/audit'
 import { delay, fail } from '@/shared/mocks/server'
+import { scoped, tenantOf } from '@/shared/mocks/tenant'
 import { isTracked } from '@/modules/targets/lib'
 
 /**
@@ -58,9 +59,10 @@ function agentsFor(user: User): User[] {
   const scope = scopeOf(user.role, 'sales')
   if (scope === 'hidden') return []
   if (scope === 'own') return [user]
-  const agents = users.filter((u) => u.role === 'Sales Agent')
+  const people = scoped(users, user)
+  const agents = people.filter((u) => u.role === 'Sales Agent')
   if (scope === 'team') {
-    const team = teamIdsFor(user, users, departments)
+    const team = teamIdsFor(user, people, departmentsOf(tenantOf(user)))
     return agents.filter((u) => team.includes(u.id))
   }
   return agents
@@ -84,7 +86,7 @@ function hash(text: string): number {
  * stable synthetic baseline paced to the elapsed share of the month (55-115% of pace). The
  * real backend returns the real counts only.
  */
-function actualsFor(userId: string, month: Date, values: TargetValues): TargetValues {
+function actualsFor(companyId: string, userId: string, month: Date, values: TargetValues): TargetValues {
   const monthKey = format(month, 'yyyy-MM')
   const elapsed = elapsedOf(month)
   const isCurrent = isSameMonth(month, new Date())
@@ -100,7 +102,7 @@ function actualsFor(userId: string, month: Date, values: TargetValues): TargetVa
       const atProposal = (status: string) => status === SYSTEM_STATUS.proposal
       return isCurrent
         ? owned.filter((l) => atProposal(l.status)).length
-        : owned.filter((l) => (atProposal(l.status) || isWonStatus(l.status)) && isSameMonth(new Date(l.stageChangedAt), month)).length
+        : owned.filter((l) => (atProposal(l.status) || isWonStatus(companyId, l.status)) && isSameMonth(new Date(l.stageChangedAt), month)).length
     }
     return 0 // Partnerships and events aren't modelled yet.
   }
@@ -124,7 +126,7 @@ export function rowFor(agent: User, month: Date): AgentTargetRow {
     name: agent.name,
     title: agent.title,
     values,
-    actuals: actualsFor(agent.id, month, values),
+    actuals: actualsFor(agent.companyId, agent.id, month, values),
     isDefault: !hasOverride(agent.id, monthKey),
   }
 }
@@ -159,6 +161,16 @@ export async function getTargets(user: User, monthParam: string | null): Promise
   return delay({ month: format(month, 'yyyy-MM'), elapsed: elapsedOf(month), canEdit: canEdit(user), rows })
 }
 
+/**
+ * Not one of the caller's agents: 403 when it is a user of the caller's own company (outside the team),
+ * 404 otherwise. Another company's user is "doesn't exist", exactly like a missing id.
+ */
+function agentMissing(user: User, userId: string): Promise<never> {
+  return scoped(users, user).some((u) => u.id === userId)
+    ? fail('That agent is outside your team.', 403)
+    : fail('That agent doesn’t exist.', 404)
+}
+
 export async function updateTargets(
   user: User,
   userId: string,
@@ -169,11 +181,7 @@ export async function updateTargets(
   const month = parseMonth(monthParam)
   if (!month) return fail('Use the month format yyyy-MM.', 422)
   const agent = agentsFor(user).find((u) => u.id === userId)
-  if (!agent) {
-    return users.some((u) => u.id === userId)
-      ? fail('That agent is outside your team.', 403)
-      : fail('That agent doesn’t exist.', 404)
-  }
+  if (!agent) return agentMissing(user, userId)
   const values = readValues(input.values)
   if (typeof values === 'string') return fail(values, 422)
   const monthKey = format(month, 'yyyy-MM')
@@ -197,11 +205,7 @@ export async function resetTargets(user: User, userId: string, monthParam: strin
   const month = parseMonth(monthParam)
   if (!month) return fail('Use the month format yyyy-MM.', 422)
   const agent = agentsFor(user).find((u) => u.id === userId)
-  if (!agent) {
-    return users.some((u) => u.id === userId)
-      ? fail('That agent is outside your team.', 403)
-      : fail('That agent doesn’t exist.', 404)
-  }
+  if (!agent) return agentMissing(user, userId)
   const monthKey = format(month, 'yyyy-MM')
   const index = agentTargets.findIndex((t) => t.userId === userId && t.month === monthKey)
   if (index >= 0) {
@@ -211,7 +215,7 @@ export async function resetTargets(user: User, userId: string, monthParam: strin
       entity: 'targets',
       entityId: `${userId}:${monthKey}`,
       summary: `Reset ${agent.name}’s targets for ${format(month, 'MMMM yyyy')} to the defaults`,
-      changes: labelled(diff(removed.values, targetDefaults)),
+      changes: labelled(diff(removed.values, targetDefaultsFor(tenantOf(user)))),
     })
   }
   return delay(rowFor(agent, month))
@@ -242,14 +246,15 @@ export async function getTargetDefaults(user: User): Promise<TargetDefaults> {
   if (!can(user.role, 'settings', 'view') && scopeOf(user.role, 'sales') === 'hidden') {
     return fail('Your role has no access to targets.', 403)
   }
-  return delay({ values: targetDefaults, canEdit: can(user.role, 'settings', 'edit') })
+  return delay({ values: targetDefaultsFor(tenantOf(user)), canEdit: can(user.role, 'settings', 'edit') })
 }
 
-/** System Admin only. Months without a per-agent row pick the new defaults up straight away. */
+/** Company Admin only. Months without a per-agent row pick the new defaults up straight away. */
 export async function saveTargetDefaults(user: User, input: { values?: Partial<TargetValues> }): Promise<TargetDefaults> {
-  if (!can(user.role, 'settings', 'edit')) return fail('Only a System Admin can change the default targets.', 403)
+  if (!can(user.role, 'settings', 'edit')) return fail('Only a Company Admin can change the default targets.', 403)
   const values = readValues(input?.values)
   if (typeof values === 'string') return fail(values, 422)
+  const targetDefaults = targetDefaultsFor(tenantOf(user))
   const changes = labelled(diff(targetDefaults, values))
   if (changes.length) {
     recordAudit(user, { action: 'update', entity: 'targets', entityId: 'defaults', summary: 'Changed the default monthly targets', changes })

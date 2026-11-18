@@ -1,11 +1,13 @@
 import { Link, useNavigate } from 'react-router-dom'
-import { ChevronRight, FileText, Plus } from 'lucide-react'
+import { ChevronRight, FileText, Plus, Trophy } from 'lucide-react'
 import { newQuotationPath, quotationPath } from '@/app/paths'
 import { useQuotationsQuery } from '@/modules/quotations/hooks/useQuotations'
-import { fmtAed } from '@/modules/quotations/lib/totals'
+import { fmtAmount } from '@/modules/quotations/lib/totals'
 import { QuotationStatusBadge } from '@/modules/quotations/components/QuotationStatusBadge'
 import { ValidUntil } from '@/modules/quotations/components/ValidUntil'
 import { Button } from '@/shared/components/ui/Button'
+import { Can } from '@/shared/components/permissions'
+import { useOpenWonDialog } from '@/modules/won/hooks'
 import { Card, CardHeader } from '@/shared/components/ui/Card'
 import { EmptyState, ErrorState, Skeleton } from '@/shared/components/ui/Feedback'
 
@@ -13,11 +15,12 @@ import { EmptyState, ErrorState, Skeleton } from '@/shared/components/ui/Feedbac
 export function LeadQuotations({ leadId, canEdit }: { leadId: string; canEdit: boolean }) {
   const navigate = useNavigate()
   const query = useQuotationsQuery(leadId)
+  const openWon = useOpenWonDialog()
   const list = query.data ?? []
   const open = list.filter((q) => q.status === 'Draft' || q.status === 'Sent' || q.status === 'Viewed').length
 
   const newButton = canEdit ? (
-    <Button size="sm" onClick={() => navigate(newQuotationPath({ leadId }))}>
+    <Button write size="sm" onClick={() => navigate(newQuotationPath({ leadId }))}>
       <Plus />
       New quotation
     </Button>
@@ -64,10 +67,10 @@ export function LeadQuotations({ leadId, canEdit }: { leadId: string; canEdit: b
       ) : (
         <ul className="divide-y divide-line border-t border-line">
           {list.map((q) => (
-            <li key={q.id}>
+            <li key={q.id} className="flex items-center">
               <Link
                 to={quotationPath(q.id)}
-                className="group flex flex-wrap items-center gap-x-4 gap-y-1.5 px-5 py-3 transition-colors hover:bg-hover"
+                className="group flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-1.5 px-5 py-3 transition-colors hover:bg-hover"
               >
                 <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-line bg-sunken/60 text-muted">
                   <FileText className="size-4" aria-hidden />
@@ -85,9 +88,19 @@ export function LeadQuotations({ leadId, canEdit }: { leadId: string; canEdit: b
                     </span>
                   </p>
                 </div>
-                <span className="num ms-12 text-[0.8125rem] font-semibold text-ink sm:ms-0">{fmtAed(q.totals.total)}</span>
-                <ChevronRight className="hidden size-4 text-subtle transition-transform group-hover:translate-x-0.5 sm:block" aria-hidden />
+                <span className="num ms-12 text-[0.8125rem] font-semibold text-ink sm:ms-0">{fmtAmount(q.totals.total, q.currency)}</span>
+                <ChevronRight className="hidden size-4 text-subtle transition-transform group-hover:translate-x-0.5 sm:block rtl:-scale-x-100 rtl:group-hover:-translate-x-0.5" aria-hidden />
               </Link>
+              {canEdit && q.status === 'Accepted' && !q.customerId && (
+                <Can module="sales" action="edit">
+                  <div className="pe-4">
+                    <Button write size="xs" variant="secondary" onClick={() => openWon(leadId, q.id)} aria-label={`Win deal from ${q.number}`}>
+                      <Trophy className="text-success-600" />
+                      <span className="hidden sm:inline">Win deal</span>
+                    </Button>
+                  </div>
+                </Can>
+              )}
             </li>
           ))}
         </ul>

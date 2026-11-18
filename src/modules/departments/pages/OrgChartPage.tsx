@@ -10,6 +10,7 @@ import { PATHS } from '@/app/paths'
 import { scopeOf } from '@/shared/lib/permissions'
 import { cn } from '@/shared/lib/utils'
 import { useCurrentUser } from '@/store/hooks'
+import { useBranding } from '@/modules/tenancy/hooks'
 import { PageBody, PageHeader } from '@/shared/components/layout/PageHeader'
 import { PrintStyles } from '@/shared/components/layout/PrintStyles'
 import { Badge } from '@/shared/components/ui/Badge'
@@ -26,6 +27,7 @@ const byName = (a: OrgNode, b: OrgNode) => a.name.localeCompare(b.name)
 
 export default function OrgChartPage() {
   const user = useCurrentUser()
+  const branding = useBranding()
   const toast = useToast()
   const chart = useOrgChartQuery()
   const canvas = useRef<OrgChartHandle>(null)
@@ -234,7 +236,7 @@ export default function OrgChartPage() {
       <PageBody className="space-y-4 print:p-0">
         {/* Print-only title block */}
         <div className="hidden border-b border-line pb-3 print:block">
-          <p className="text-xs text-muted">Apex Aora · Company structure</p>
+          <p className="text-xs text-muted">{branding.displayName} · Company structure</p>
           <p className="mt-1 text-[0.8125rem] text-ink-2">
             {nodes.length} departments · {people} people · Generated {format(new Date(), 'd MMM yyyy, HH:mm')} by {user.name}
           </p>

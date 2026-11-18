@@ -38,7 +38,7 @@ export function useDepartmentsQuery() {
 function useInvalidate() {
   const qc = useQueryClient()
   return () => {
-    for (const queryKey of [settingsUserKeys.all, ['audit'], ['users'], ['departments'], ['leads'], ['reports']]) {
+    for (const queryKey of [settingsUserKeys.all, ['audit'], ['users'], ['departments'], ['leads'], ['reports'], ['onboarding']]) {
       void qc.invalidateQueries({ queryKey })
     }
   }

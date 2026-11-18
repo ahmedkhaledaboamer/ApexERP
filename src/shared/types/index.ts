@@ -1,7 +1,7 @@
 /** Domain types shared by the store, the mock API and the pages. */
 
 export type Role =
-  | 'System Admin'
+  | 'Company Admin'
   | 'Management'
   | 'Sales Manager'
   | 'Sales Agent'
@@ -11,7 +11,7 @@ export type Role =
   | 'Department Head'
   | 'Employee'
 
-export type ModuleKey = 'sales' | 'services' | 'marketing' | 'accounting' | 'hr' | 'reports' | 'settings' | 'departments'
+export type ModuleKey = 'sales' | 'services' | 'marketing' | 'accounting' | 'hr' | 'reports' | 'settings' | 'departments' | 'tasks'
 
 export type Scope = 'full' | 'team' | 'own' | 'view' | 'hidden' | 'marketing' | 'finance' | 'hr'
 
@@ -19,12 +19,14 @@ export type Action = 'view' | 'create' | 'edit' | 'delete' | 'export'
 
 export interface User {
   id: string
+  /** Company (tenant) of the user's active membership. Set by the server; the client never sends it. */
+  companyId: string
   name: string
   email: string
   role: Role
   title: string
   managerId: string | null
-  /** UAE mobile, +971 5X XXX XXXX. */
+  /** Mobile in the company country's format (see shared/lib/phone.ts). */
   mobile: string
   departmentId: string
   /** Deactivated users can't sign in; they're never deleted so their history keeps its owner. */
@@ -97,7 +99,8 @@ export interface Contact {
   isDecisionMaker: boolean
 }
 
-export type ActivityType = 'call' | 'email' | 'whatsapp' | 'visit' | 'meeting'
+/** `system` = logged by the app itself (e.g. the Won flow); never picked by users. */
+export type ActivityType = 'call' | 'email' | 'whatsapp' | 'visit' | 'meeting' | 'system'
 
 export interface Activity {
   id: string
@@ -159,6 +162,10 @@ export interface Customer {
 export interface Session {
   token: string
   user: User
+  /** The tenant the session belongs to (resolved by the server from the user's membership). */
+  tenant: import('@/modules/tenancy/types').Company
+  /** Set while a platform operator is impersonating this user. */
+  impersonation?: import('@/modules/tenancy/types').ImpersonationInfo | null
 }
 
 /** Dashboard period: last 30 days, last quarter (13 weeks), year to date, last 12 months. */
@@ -216,4 +223,30 @@ export interface DashboardSummary {
   series: SeriesPoint[]
   /** This month's activity targets vs actuals (spec: Settings > Targets). */
   targets: TargetLine[]
+  /** Task figures from the shared task selectors (as of today, regardless of the period). */
+  tasks: {
+    /** Open tasks I own or follow (myTasks). */
+    myOpenTasks: number
+    /** My open tasks past their due date. */
+    myOverdueTasks: number
+    /** My open tasks due from today to the end of this week (dueThisWeek). */
+    dueThisWeek: number
+    /** Overdue tasks in my tasks scope (overdueTasks): mine for own scope, the team's or everyone's otherwise. */
+    teamOverdueTasks: number
+    /** Tasks scope of the viewer, so the client can label the team figure. */
+    scope: 'full' | 'team' | 'own' | 'hidden'
+    /** My next open tasks (overdue first, then by due date; undated last), at most 5. */
+    next: {
+      id: string
+      title: string
+      /** yyyy-MM-dd or null. */
+      dueDate: string | null
+      priority: 'Low' | 'Medium' | 'High' | 'Urgent'
+      status: 'To do' | 'In progress' | 'Blocked' | 'Done'
+      overdue: boolean
+      /** Linked record (project / lead / customer / event) label, if any. */
+      linkLabel: string | null
+      ownerName: string
+    }[]
+  }
 }

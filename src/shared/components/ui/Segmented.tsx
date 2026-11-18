@@ -20,7 +20,9 @@ export function Segmented<T extends string>({ options, value, onChange, label, s
   const refs = useRef<(HTMLButtonElement | null)[]>([])
 
   function onKey(e: KeyboardEvent, index: number) {
-    const delta = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0
+    // Left/right follow the reading direction (RTL: ArrowLeft moves forward).
+    const inline = (document.documentElement.dir === 'rtl' ? -1 : 1)
+    const delta = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : e.key === 'ArrowRight' ? inline : e.key === 'ArrowLeft' ? -inline : 0
     if (!delta) return
     e.preventDefault()
     const next = (index + delta + options.length) % options.length

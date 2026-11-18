@@ -46,7 +46,7 @@ export function NotesLog({ leadId, canAdd }: { leadId: string; canAdd: boolean }
             <p id="note-body-error" className="text-xs text-danger-600 dark:text-danger-500">
               {errors.body?.message ?? (add.isError ? add.error.message : '')}
             </p>
-            <Button type="submit" size="sm" loading={add.isPending}>
+            <Button write type="submit" size="sm" loading={add.isPending}>
               Add note
             </Button>
           </div>

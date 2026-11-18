@@ -317,17 +317,17 @@ function ImportWizard({ scope }: { scope: 'full' | 'team' | 'own' }) {
               </Button>
             ) : (
               <Button variant="secondary" onClick={() => go(step - 1)} disabled={importMutation.isPending}>
-                <ArrowLeft />
+                <ArrowLeft className="rtl:-scale-x-100" />
                 Back
               </Button>
             )}
             {step < 4 ? (
               <Button onClick={() => go(step + 1)} disabled={nextDisabled}>
                 Next: {STEPS[step + 1]}
-                <ArrowRight />
+                <ArrowRight className="rtl:-scale-x-100" />
               </Button>
             ) : (
-              <Button onClick={startImport} disabled={nextDisabled} loading={importMutation.isPending}>
+              <Button write onClick={startImport} disabled={nextDisabled} loading={importMutation.isPending}>
                 Import {plan ? plan.importing.toLocaleString() : ''} {plan?.importing === 1 ? 'lead' : 'leads'}
               </Button>
             )}

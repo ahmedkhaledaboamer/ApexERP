@@ -31,7 +31,7 @@ export function RescheduleMenu({ onPick, loading, disabled }: RescheduleMenuProp
       align="end"
       className="w-60"
       trigger={(props) => (
-        <Button {...props} variant="secondary" size="sm" loading={loading} disabled={disabled} aria-label="Reschedule follow-up">
+        <Button write {...props} variant="secondary" size="sm" loading={loading} disabled={disabled} aria-label="Reschedule follow-up">
           {!loading && <CalendarPlus />}
           <span className="hidden sm:inline">Reschedule</span>
           <ChevronDown className="hidden text-subtle sm:block" />
@@ -78,7 +78,7 @@ export function RescheduleMenu({ onPick, loading, disabled }: RescheduleMenuProp
                 onChange={(e) => setCustom(e.target.value)}
                 className="h-8 min-w-0 flex-1 rounded-md border border-line-strong bg-surface px-2 text-[0.8125rem] text-ink focus-visible:border-brand-500 focus-visible:shadow-[var(--shadow-focus)] focus-visible:outline-none"
               />
-              <Button type="submit" size="sm" disabled={!custom || custom < minDate}>
+              <Button write type="submit" size="sm" disabled={!custom || custom < minDate}>
                 Set
               </Button>
             </div>

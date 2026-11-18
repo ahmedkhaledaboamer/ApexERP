@@ -1,21 +1,29 @@
-import { forwardRef, useLayoutEffect, useRef, type ReactNode, type TextareaHTMLAttributes } from 'react'
+import { forwardRef, useLayoutEffect, useMemo, useRef, type ReactNode, type TextareaHTMLAttributes } from 'react'
 import { Bold, Braces, Italic, Strikethrough } from 'lucide-react'
 import { cn } from '@/shared/lib/utils'
 import { Button } from '@/shared/components/ui/Button'
 import { Tooltip } from '@/shared/components/ui/Kbd'
-import { Menu, MenuItem, MenuLabel, MenuSeparator } from '@/shared/components/ui/Menu'
+import { Menu, MenuLabel, MenuSeparator } from '@/shared/components/ui/Menu'
+import { useTenant } from '@/modules/tenancy/hooks'
+import { companyContextFor } from '../context'
 import { isKnownVariable, VARIABLE_GROUPS } from '../variables'
 
 /* ------------------------------------------------------------------------------------------
  * Variable picker
  * ---------------------------------------------------------------------------------------- */
 
-/** Menu of every variable, grouped; picking one inserts `{{key}}` where the cursor was. */
+/**
+ * Menu of every variable, grouped; picking one inserts `{{key}}` where the cursor was. Company
+ * variables show the tenant's real value (Settings > Company profile via issuerFor), the other
+ * groups an example. Deprecated aliases (`company.legalName`) are not offered.
+ */
 export function VariablePicker({ onPick, disabled, label = 'Variable' }: { onPick: (key: string) => void; disabled?: boolean; label?: string }) {
+  const tenant = useTenant()
+  const company = useMemo(() => companyContextFor(tenant), [tenant])
   return (
     <Menu
       align="start"
-      className="max-h-80 w-72 overflow-y-auto"
+      className="max-h-96 w-80 overflow-y-auto"
       trigger={(props) => (
         <Button {...props} variant="ghost" size="xs" disabled={disabled} className="text-ink-2">
           <Braces aria-hidden />
@@ -28,18 +36,39 @@ export function VariablePicker({ onPick, disabled, label = 'Variable' }: { onPic
           <div key={g.id}>
             {gi > 0 && <MenuSeparator />}
             <MenuLabel>{g.label}</MenuLabel>
-            {g.variables.map((v) => (
-              <MenuItem
-                key={v.key}
-                onSelect={() => {
-                  close()
-                  onPick(v.key)
-                }}
-                hint={<span className="font-mono text-[0.6875rem]">{v.key}</span>}
-              >
-                {v.label}
-              </MenuItem>
-            ))}
+            {g.variables.map((v) => {
+              const live = g.id === 'company'
+              const value = live ? company[v.field] : v.sample
+              return (
+                <button
+                  key={v.key}
+                  type="button"
+                  role="menuitem"
+                  title={v.description}
+                  onClick={() => {
+                    close()
+                    onPick(v.key)
+                  }}
+                  className="flex w-full flex-col items-stretch gap-0.5 rounded-md px-2 py-1.5 text-start transition-colors hover:bg-hover focus-visible:bg-hover focus-visible:outline-none"
+                >
+                  <span className="flex items-baseline gap-2">
+                    <span className="flex-1 truncate text-[0.8125rem] text-ink">{v.label}</span>
+                    <span className="shrink-0 font-mono text-[0.6875rem] text-subtle">{v.key}</span>
+                  </span>
+                  <span className="truncate text-xs text-muted">{v.description}</span>
+                  <span className="truncate text-xs">
+                    {value ? (
+                      <>
+                        <span className="text-subtle">{live ? 'Now: ' : 'e.g. '}</span>
+                        <span className="text-ink-2">{value}</span>
+                      </>
+                    ) : (
+                      <span className="text-warning-700">Not set yet. Add it in Settings &gt; Company profile.</span>
+                    )}
+                  </span>
+                </button>
+              )
+            })}
           </div>
         ))
       }

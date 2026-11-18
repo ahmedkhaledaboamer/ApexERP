@@ -22,7 +22,7 @@ export async function getTargetDefaults(): Promise<TargetDefaults> {
   return (await http.get<TargetDefaults>('/targets/defaults')).data
 }
 
-/** System Admin only. 0 means "no target" for that kind. */
+/** Company Admin only. 0 means "no target" for that kind. */
 export async function saveTargetDefaults(values: TargetValues): Promise<TargetDefaults> {
   return (await http.put<TargetDefaults>('/targets/defaults', { values })).data
 }

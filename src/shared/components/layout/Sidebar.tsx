@@ -1,8 +1,12 @@
 import { useEffect, useMemo } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, Lock, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react'
 import { can } from '@/shared/lib/permissions'
-import { LOGO_URL } from '@/shared/lib/constants'
+import { useBranding } from '@/modules/tenancy/hooks'
+import { navItemAccess, navItemVisible } from '@/modules/billing/gating'
+import { useGateContext } from '@/modules/billing/hooks'
+import { PRODUCT_NAME } from '@/modules/tenancy/branding'
+import { TenantLogo } from '@/modules/tenancy/components/TenantLogo'
 import { cn } from '@/shared/lib/utils'
 import { useAppDispatch, useAppSelector, useCurrentUser } from '@/store/hooks'
 import { mobileNavClosed, navSectionOpened, navSectionToggled, sidebarToggled } from '@/store/uiSlice'
@@ -16,9 +20,10 @@ export function Sidebar() {
   const collapsed = useAppSelector((s) => s.ui.sidebarCollapsed)
   const mobileOpen = useAppSelector((s) => s.ui.mobileNavOpen)
   const navOpen = useAppSelector((s) => s.ui.navOpen)
-  const user = useCurrentUser()
+  const gate = useGateContext()
   const location = useLocation()
   const badges = useBadges()
+  const branding = useBranding()
 
   // Close the mobile drawer after navigating, and open the section that owns the page.
   useEffect(() => {
@@ -27,7 +32,9 @@ export function Sidebar() {
     if (match?.section) dispatch(navSectionOpened(match.section.id))
   }, [location.pathname, dispatch])
 
-  const visible = (item: NavItem) => !item.module || (!!user && can(user.role, item.module, 'view'))
+  // Role + plan (billing/gating.ts): items the plan excludes stay listed with a lock and open the upgrade page.
+  const visible = (item: NavItem) => navItemVisible(item, gate)
+  const locked = (item: NavItem) => navItemAccess(item, gate) === 'locked'
   const mini = collapsed
 
   return (
@@ -44,16 +51,19 @@ export function Sidebar() {
         aria-label="Main navigation"
         className={cn(
           'fixed inset-y-0 start-0 z-40 flex w-72 flex-col border-e border-line bg-surface transition-[transform,width] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] lg:static lg:translate-x-0',
-          mobileOpen ? 'translate-x-0' : '-translate-x-full',
+          // Off-canvas only below lg; the RTL variant must not outrank lg:translate-x-0 on desktop.
+          mobileOpen ? 'translate-x-0' : 'max-lg:-translate-x-full max-lg:rtl:translate-x-full',
           mini && 'lg:w-[4.5rem]',
         )}
       >
         {/* Logo */}
         <div className={cn('flex h-16 shrink-0 items-center gap-2.5 border-b border-line px-5', mini && 'lg:justify-center lg:px-0')}>
-          <img src={LOGO_URL} alt="" aria-hidden className="h-9 w-14 shrink-0 object-cover object-top" />
+          <TenantLogo id="sidebar-tenant-logo" size="md" branding={branding} className={mini ? 'lg:max-w-[2.5rem]' : undefined} />
           <div className={cn('min-w-0 leading-tight', mini && 'lg:hidden')}>
-            <p className="truncate text-[0.9375rem] font-bold tracking-tight">APEX AORA</p>
-            <p className="truncate text-[0.625rem] font-medium tracking-[0.18em] text-muted uppercase">Innovations ERP</p>
+            <p className="truncate text-[0.9375rem] font-bold tracking-tight" title={branding.displayName}>
+              {branding.displayName}
+            </p>
+            <p className="truncate text-[0.625rem] font-medium tracking-[0.18em] text-muted uppercase">{PRODUCT_NAME}</p>
           </div>
           <button
             type="button"
@@ -69,7 +79,7 @@ export function Sidebar() {
           <ul className="space-y-1">
             {NAV_TOP.filter(visible).map((item) => (
               <li key={item.to}>
-                <NavRow item={item} mini={mini} badge={item.badge ? badges[item.badge] : undefined} />
+                <NavRow item={item} mini={mini} locked={locked(item)} badge={item.badge ? badges[item.badge] : undefined} />
               </li>
             ))}
           </ul>
@@ -90,7 +100,7 @@ export function Sidebar() {
                     >
                       <span aria-hidden className={cn('size-1.5 rounded-full', section.dot)} />
                       <span className="flex-1 text-start">{section.label}</span>
-                      {open ? <ChevronDown className="size-4 text-subtle" /> : <ChevronRight className="size-4 text-subtle" />}
+                      {open ? <ChevronDown className="size-4 text-subtle" /> : <ChevronRight className="size-4 text-subtle rtl:-scale-x-100" />}
                     </button>
                   )}
                   {mini && <div className="mx-auto my-2 h-px w-6 bg-line" aria-hidden />}
@@ -98,7 +108,7 @@ export function Sidebar() {
                     <ul className={cn('space-y-1', !mini && 'mt-1 mb-2')}>
                       {items.map((item) => (
                         <li key={item.to}>
-                          <NavRow item={item} mini={mini} />
+                          <NavRow item={item} mini={mini} locked={locked(item)} />
                         </li>
                       ))}
                     </ul>
@@ -118,7 +128,7 @@ export function Sidebar() {
               mini && 'justify-center px-0',
             )}
           >
-            {mini ? <PanelLeftOpen className="size-[1.125rem]" aria-hidden /> : <PanelLeftClose className="size-[1.125rem]" aria-hidden />}
+            {mini ? <PanelLeftOpen className="size-[1.125rem] rtl:-scale-x-100" aria-hidden /> : <PanelLeftClose className="size-[1.125rem] rtl:-scale-x-100" aria-hidden />}
             <span className={cn(mini && 'sr-only')}>{mini ? 'Expand' : 'Collapse'}</span>
           </button>
         </div>
@@ -127,7 +137,7 @@ export function Sidebar() {
   )
 }
 
-function NavRow({ item, mini, badge }: { item: NavItem; mini: boolean; badge?: number }) {
+function NavRow({ item, mini, badge, locked = false }: { item: NavItem; mini: boolean; badge?: number; locked?: boolean }) {
   const Icon = item.icon
   const { pathname } = useLocation()
   // Same rule as the breadcrumb: exact path first, then the longest matching prefix, so record
@@ -138,6 +148,8 @@ function NavRow({ item, mini, badge }: { item: NavItem; mini: boolean; badge?: n
       to={item.to}
       end={item.end}
       aria-current={isActive ? 'page' : undefined}
+      aria-label={locked ? `${item.label} (not in your plan)` : undefined}
+      data-locked={locked || undefined}
       className={() =>
         cn(
           'group flex h-10 items-center gap-3 rounded-lg px-3 text-[0.875rem] transition-colors duration-100',
@@ -154,7 +166,8 @@ function NavRow({ item, mini, badge }: { item: NavItem; mini: boolean; badge?: n
             aria-hidden
             className={cn('size-[1.125rem] shrink-0', isActive ? 'text-brand-600 dark:text-brand-300' : 'text-muted group-hover:text-ink-2')}
           />
-          <span className={cn('flex-1 truncate', mini && 'lg:sr-only')}>{item.label}</span>
+          <span className={cn('flex-1 truncate', mini && 'lg:sr-only', locked && 'text-muted')}>{item.label}</span>
+          {locked && <Lock aria-hidden className={cn('size-3.5 shrink-0 text-subtle', mini && 'lg:hidden')} />}
           {!!badge && (
             <span
               className={cn(
@@ -170,7 +183,7 @@ function NavRow({ item, mini, badge }: { item: NavItem; mini: boolean; badge?: n
     </NavLink>
   )
   return mini ? (
-    <Tooltip label={item.label} side="right">
+    <Tooltip label={locked ? `${item.label} · not in your plan` : item.label} side="right">
       {link}
     </Tooltip>
   ) : (

@@ -5,6 +5,7 @@ import type { TwoFactorEnabled } from '@/modules/settings/security/types'
 import { DemoOtpHint, OtpInput } from '@/modules/auth/components/OtpInput'
 import { useDisableTwoFactor, useSetupTwoFactor, useTwoFactorQuery, useVerifyTwoFactor } from '@/modules/settings/hooks/useSecurity'
 import { useCurrentUser } from '@/store/hooks'
+import { useBranding, useSupportSessionBlock } from '@/modules/tenancy/hooks'
 import { cn, fmtDate } from '@/shared/lib/utils'
 import { Badge } from '@/shared/components/ui/Badge'
 import { Button } from '@/shared/components/ui/Button'
@@ -17,11 +18,12 @@ import { Checkbox, Field, TextInput } from '@/shared/components/form/Field'
 /** Your own account's two-factor status, with the setup and turn-off flows. */
 export function TwoFactorCard({ requiredByPolicy }: { requiredByPolicy: boolean }) {
   const user = useCurrentUser()
+  const support = useSupportSessionBlock()
   const query = useTwoFactorQuery()
   const [setupOpen, setSetupOpen] = useState(false)
   const [disableOpen, setDisableOpen] = useState(false)
   const enabled = query.data?.enabled ?? false
-  const locked = enabled && requiredByPolicy && user?.role === 'System Admin'
+  const locked = enabled && requiredByPolicy && user?.role === 'Company Admin'
 
   return (
     <Card>
@@ -58,9 +60,9 @@ export function TwoFactorCard({ requiredByPolicy }: { requiredByPolicy: boolean 
                 Since {fmtDate(query.data.enabledAt)} · {query.data.recoveryCodesLeft} recovery code
                 {query.data.recoveryCodesLeft === 1 ? '' : 's'} left
               </p>
-              {locked && <p className="mt-1 text-xs text-muted">Required for System Admins by the security policy.</p>}
+              {locked && <p className="mt-1 text-xs text-muted">Required for Company Admins by the security policy.</p>}
             </div>
-            <Button variant="secondary" size="sm" disabled={locked} onClick={() => setDisableOpen(true)}>
+            <Button variant="secondary" size="sm" disabled={locked || support.blocked} title={support.hint} data-support-blocked={support.blocked || undefined} onClick={() => setDisableOpen(true)}>
               Turn off
             </Button>
           </div>
@@ -73,10 +75,10 @@ export function TwoFactorCard({ requiredByPolicy }: { requiredByPolicy: boolean 
               <p className="text-[0.8125rem] font-medium">Protect your account with a second step</p>
               <p className="mt-0.5 text-xs text-muted">
                 Works with Google Authenticator, Microsoft Authenticator, 1Password and similar apps.
-                {requiredByPolicy && user?.role === 'System Admin' && ' Required for System Admins.'}
+                {requiredByPolicy && user?.role === 'Company Admin' && ' Required for Company Admins.'}
               </p>
             </div>
-            <Button size="sm" onClick={() => setSetupOpen(true)}>
+            <Button size="sm" disabled={support.blocked} title={support.hint} data-support-blocked={support.blocked || undefined} onClick={() => setSetupOpen(true)}>
               <ShieldCheck />
               Set up 2FA
             </Button>
@@ -94,6 +96,7 @@ export function TwoFactorCard({ requiredByPolicy }: { requiredByPolicy: boolean 
 const STEPS = ['Scan', 'Verify', 'Save codes'] as const
 
 function SetupModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const branding = useBranding()
   const setup = useSetupTwoFactor()
   const verify = useVerifyTwoFactor()
   const toast = useToast()
@@ -141,7 +144,7 @@ function SetupModal({ open, onClose }: { open: boolean; onClose: () => void }) {
         step === 0
           ? 'Scan the QR code with your authenticator app.'
           : step === 1
-            ? 'Enter the 6-digit code the app shows for Apex Aora.'
+            ? `Enter the 6-digit code the app shows for ${branding.displayName}.`
             : 'Save these recovery codes somewhere safe.'
       }
       footer={
@@ -300,16 +303,23 @@ function SecretKey({ secret }: { secret: string }) {
   )
 }
 
+const slugify = (v: string) =>
+  v
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+
 function RecoveryCodes({ codes }: { codes: string[] }) {
+  const branding = useBranding()
   const { copied, copy } = useCopy()
   const text = codes.join('\n')
 
   function download() {
-    const blob = new Blob([`Apex Aora recovery codes\nEach code works once.\n\n${text}\n`], { type: 'text/plain' })
+    const blob = new Blob([`${branding.displayName} recovery codes\nEach code works once.\n\n${text}\n`], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = 'apex-aora-recovery-codes.txt'
+    a.download = `${slugify(branding.displayName) || 'apex-crm'}-recovery-codes.txt`
     a.click()
     URL.revokeObjectURL(url)
   }

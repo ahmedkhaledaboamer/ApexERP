@@ -1,10 +1,17 @@
 import type { QuotationItem, QuotationStatus, QuotationTotals, QuotationUnit } from '@/modules/quotations/types'
 import type { PricingType } from '@/modules/services/types'
+import { getRegion } from '@/shared/lib/region'
 
-/** UAE standard VAT rate. */
+/**
+ * VAT rate of the default (UAE) workspace. The client uses the tenant's `useRegion().vatPct`;
+ * kept for the mock seed data.
+ */
 export const DEFAULT_VAT_PCT = 5
 
-/** One currency per quotation; AED unless set otherwise. */
+/**
+ * Currency of the default (UAE) workspace. One currency per quotation; the client defaults new
+ * quotations to the tenant currency (`useRegion().currency`). Kept for the mock seed data.
+ */
 export const DEFAULT_QUOTE_CURRENCY = 'AED'
 
 /** Default validity for a new quotation, in days. */
@@ -51,15 +58,19 @@ export function computeTotals(items: Line[], vatPct: number): QuotationTotals {
   return { subtotal, discount, vat, total: round2(net + vat) }
 }
 
-/** Amount in a given currency (ISO code), e.g. "USD 1,200.00". */
-export function fmtIn(value: number, currency: string | null | undefined): string {
-  return `${currency || DEFAULT_QUOTE_CURRENCY} ${new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value)}`
+/** Amount in a given currency (ISO code), e.g. "USD 1,200.00"; the tenant currency when none is given. */
+export function fmtIn(value: number, currency?: string | null): string {
+  return `${currency || getRegion().currency} ${new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value)}`
 }
 
-/** AED with fils, for documents and summaries: "AED 12,500.00". */
+/** Two decimals, for documents and summaries: "SAR 12,500.00". Defaults to the tenant currency. */
+export function fmtAmount(value: number, currency?: string | null): string {
+  return fmtIn(value, currency)
+}
 
+/** @deprecated always AED; use fmtAmount(value, currency). Kept for the mock services. */
 export function fmtAed(value: number): string {
-  return `AED ${new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value)}`
+  return fmtIn(value, 'AED')
 }
 
 function isoDay(d: Date): string {

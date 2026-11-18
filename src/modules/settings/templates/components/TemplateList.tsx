@@ -80,7 +80,7 @@ export function TemplateList(props: TemplateListProps) {
             onChange={(e) => onSearchChange(e.target.value)}
           />
           {onNew && (
-            <Button size="sm" onClick={onNew}>
+            <Button write size="sm" onClick={onNew}>
               <Plus aria-hidden />
               New
             </Button>
@@ -109,7 +109,7 @@ export function TemplateList(props: TemplateListProps) {
               body="Templates keep messages consistent and fill in the lead’s details for you."
               action={
                 onNew && (
-                  <Button size="sm" variant="secondary" onClick={onNew}>
+                  <Button write size="sm" variant="secondary" onClick={onNew}>
                     <Plus aria-hidden />
                     New template
                   </Button>

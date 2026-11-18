@@ -24,7 +24,7 @@ export const serviceSchema = z.object({
     .string()
     .trim()
     .transform((v) => v.toUpperCase())
-    .pipe(z.string().regex(/^[A-Z]{3}$/, 'Use a 3-letter code, e.g. AED.')),
+    .pipe(z.string().regex(/^[A-Z]{3}$/, 'Use a 3-letter code, e.g. AED or SAR.')),
   deliveryDays: num(
     z
       .number({ required_error: 'Enter the delivery time.', invalid_type_error: 'Enter a number.' })

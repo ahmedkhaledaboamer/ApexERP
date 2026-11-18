@@ -4,7 +4,8 @@ import type { User } from '@/shared/types'
 import type { LeadRow } from '@/modules/leads/types'
 import { useLeadsQuery } from '@/modules/leads/hooks/useLeads'
 import { useQuotationsQuery } from '@/modules/quotations/hooks/useQuotations'
-import { COMPANY } from '@/modules/quotations/lib/company'
+import { issuerFor } from '@/modules/quotations/lib/company'
+import { useBranding, useTenant } from '@/modules/tenancy/hooks'
 import { quotationPath } from '@/app/paths'
 import { useLookups } from '@/shared/hooks/useLookups'
 import { cn } from '@/shared/lib/utils'
@@ -12,10 +13,12 @@ import { Avatar } from '@/shared/components/ui/Avatar'
 import { Card, CardBody, CardHeader } from '@/shared/components/ui/Card'
 import { Skeleton } from '@/shared/components/ui/Feedback'
 import { Field, SelectInput, Switch } from '@/shared/components/form/Field'
-import { buildTemplateContext } from '../context'
+import { buildTemplateContext, companyContextFor } from '../context'
 import { renderTemplate, sampleContext, type TemplateContext } from '../render'
 import { WHATSAPP_MAX, type TemplateChannel, type TemplatePurpose } from '../types'
 import { RichText } from './RichText'
+import { EmailBrandHeader } from './EmailBrandHeader'
+import { TenantLogo } from '@/modules/tenancy/components/TenantLogo'
 
 export interface PreviewDraft {
   channel: TemplateChannel
@@ -38,6 +41,8 @@ export function TemplatePreview({ draft, user, leadId, onLeadChange, className }
   const leadsQuery = useLeadsQuery()
   const quotationsQuery = useQuotationsQuery()
   const lookups = useLookups()
+  const tenant = useTenant()
+  const branding = useBranding()
   const [highlight, setHighlight] = useState(true)
 
   const leads = useMemo(
@@ -58,8 +63,11 @@ export function TemplatePreview({ draft, user, leadId, onLeadChange, className }
   const usesQuotation = /\{\{\s*quotation\./.test(draft.subject + draft.body)
 
   const ctx: TemplateContext = useMemo(() => {
-    const sample = sampleContext()
-    if (!lead) return { ...sample, agent: buildTemplateContext({ agent: user }).agent }
+    const sample = sampleContext({ companyName: branding.displayName })
+    // Always the tenant's real values (Settings > Company profile via issuerFor), never samples:
+    // a field the profile doesn't have yet shows as "not set".
+    const company = companyContextFor(tenant)
+    if (!lead) return { ...sample, company, agent: buildTemplateContext({ agent: user }).agent }
     const real = buildTemplateContext({
       lead,
       agent: user,
@@ -67,8 +75,8 @@ export function TemplatePreview({ draft, user, leadId, onLeadChange, className }
       quotationLink: quotation ? `${window.location.origin}${quotationPath(quotation.id)}` : undefined,
       labels: { status: lookups.statusLabel, industry: lookups.industryLabel, source: lookups.sourceLabel },
     })
-    return quotation ? real : { ...real, quotation: sample.quotation }
-  }, [lead, quotation, user, lookups])
+    return quotation ? { ...real, company } : { ...real, company, quotation: sample.quotation }
+  }, [lead, quotation, user, lookups, tenant, branding])
 
   const loading = leadsQuery.isPending
 
@@ -149,7 +157,8 @@ function EmailPreview({
   highlight: boolean
 }) {
   const to = lead ? `${lead.contactName || lead.company}` : String(ctx.lead?.contactName ?? '')
-  const toEmail = lead?.contactEmail || 'contact@example.ae'
+  const toEmail = lead?.contactEmail || 'contact@example.com'
+  const branding = useBranding()
   return (
     <article aria-label="Email preview" className="overflow-hidden rounded-xl border border-line bg-surface shadow-xs">
       <header className="space-y-3 border-b border-line bg-sunken/50 px-4 py-3.5">
@@ -160,7 +169,11 @@ function EmailPreview({
           <Avatar name={user.name} size="md" />
           <div className="min-w-0 flex-1 text-xs leading-relaxed">
             <p className="truncate text-ink">
-              <span className="font-semibold">{user.name}</span> <span className="text-muted">&lt;{user.email}&gt;</span>
+              <span className="font-semibold">{branding.emailSenderName}</span>{' '}
+              <span className="text-muted">&lt;{branding.emailSenderAddress}&gt;</span>
+            </p>
+            <p className="truncate text-muted">
+              for {user.name} · replies to {user.email}
             </p>
             <p className="truncate text-muted">
               to {to} &lt;{toEmail}&gt;
@@ -169,6 +182,7 @@ function EmailPreview({
           <span className="shrink-0 text-xs text-subtle">Now</span>
         </div>
       </header>
+      <EmailBrandHeader />
       <div className="px-4 py-4 text-[0.8125rem] leading-relaxed break-words whitespace-pre-wrap text-ink">
         {draft.body.trim() ? <RichText text={draft.body} ctx={ctx} highlight={highlight} /> : <Empty>Start typing the message…</Empty>}
       </div>
@@ -238,6 +252,7 @@ function WhatsAppPreview({
 /* ---------------- Quotation ---------------- */
 
 function QuotationPreview({ draft, ctx, highlight }: { draft: PreviewDraft; ctx: TemplateContext; highlight: boolean }) {
+  const issuer = issuerFor(useTenant())
   const terms = draft.purpose === 'Quotation terms'
   const lines = draft.body.split('\n').filter((l) => l.trim())
   const placeholderItems = (
@@ -263,9 +278,12 @@ function QuotationPreview({ draft, ctx, highlight }: { draft: PreviewDraft; ctx:
       className="overflow-hidden rounded-xl border border-line bg-white px-5 py-6 text-[0.8125rem] leading-relaxed text-zinc-800 shadow-xs sm:px-7"
     >
       <header className="flex flex-wrap items-start justify-between gap-4 border-b border-zinc-100 pb-4">
-        <div>
-          <p className="text-[0.9375rem] font-semibold text-zinc-900">{COMPANY.name}</p>
-          <p className="text-xs text-zinc-500">{COMPANY.website}</p>
+        <div className="flex items-center gap-3">
+          <TenantLogo size="md" variant="light" className="object-contain" />
+          <div>
+            <p className="text-[0.9375rem] font-semibold text-zinc-900">{issuer.name}</p>
+            {issuer.website && <p className="text-xs text-zinc-500">{issuer.website}</p>}
+          </div>
         </div>
         <div className="text-end">
           <p className="text-base font-semibold text-zinc-900">Quotation</p>

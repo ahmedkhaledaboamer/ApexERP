@@ -17,6 +17,7 @@ import { Can } from '@/shared/components/permissions/Can'
 import { IconTile, PageBody, PageHeader } from '@/shared/components/layout/PageHeader'
 import { ActiveBadge, CategoryIcon, useServicesAccess } from '@/modules/services/components/ServiceBits'
 import { PackageDrawer } from '@/modules/services/components/PackageDrawer'
+import { useReadOnly } from '@/shared/lib/readOnly'
 
 type Show = 'active' | 'inactive' | 'all'
 type DrawerState = { pkg: PackageRow | null } | null
@@ -69,7 +70,7 @@ export default function PackagesPage() {
         }
         actions={
           <Can module="services" action="edit">
-            <Button size="sm" onClick={() => setDrawer({ pkg: null })}>
+            <Button write size="sm" onClick={() => setDrawer({ pkg: null })}>
               <Plus />
               New package
             </Button>
@@ -132,7 +133,7 @@ export default function PackagesPage() {
               action={
                 all.length === 0 ? (
                   <Can module="services" action="edit">
-                    <Button size="sm" onClick={() => setDrawer({ pkg: null })}>
+                    <Button write size="sm" onClick={() => setDrawer({ pkg: null })}>
                       <Plus />
                       New package
                     </Button>
@@ -169,6 +170,7 @@ export default function PackagesPage() {
 
 function PackageCard({ pkg: p, highlighted, canEdit, onEdit }: { pkg: PackageRow; highlighted: boolean; canEdit: boolean; onEdit: () => void }) {
   const setActive = useSetPackageActive()
+  const readOnly = useReadOnly()
   const toast = useToast()
   const inactiveServices = p.lines.filter((l) => !l.active)
 
@@ -194,10 +196,10 @@ function PackageCard({ pkg: p, highlighted, canEdit, onEdit }: { pkg: PackageRow
         </div>
         {canEdit && (
           <div className="flex shrink-0 items-center gap-1">
-            <Button variant="ghost" size="xs" iconOnly aria-label={`Edit ${p.name}`} onClick={onEdit}>
+            <Button write variant="ghost" size="xs" iconOnly aria-label={`Edit ${p.name}`} onClick={onEdit}>
               <Pencil />
             </Button>
-            <Switch checked={p.active} disabled={setActive.isPending} onChange={toggle} label={`${p.name} active`} />
+            <Switch checked={p.active} disabled={readOnly || setActive.isPending} onChange={toggle} label={`${p.name} active`} />
           </div>
         )}
       </div>

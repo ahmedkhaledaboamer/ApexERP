@@ -427,7 +427,7 @@ function Summary({ rows, hours, days }: { rows: Row[]; hours: number; days: numb
                 <li key={r._id} className="relative h-2.5 rounded-full bg-sunken" title={`${r.title || `Task ${i + 1}`} · ${r.role} · day ${dayOffset}, ${h} h`}>
                   <span
                     className={cn('absolute inset-y-0 rounded-full', DOT[ROLE_TONE[r.role]])}
-                    style={{ left: `${left}%`, width: `${width}%` }}
+                    style={{ insetInlineStart: `${left}%`, width: `${width}%` }}
                   />
                   <span className="sr-only">
                     {r.title || `Task ${i + 1}`}: {r.role}, starts day {dayOffset}, {h} hours

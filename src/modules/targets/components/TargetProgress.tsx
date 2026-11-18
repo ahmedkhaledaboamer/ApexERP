@@ -90,7 +90,7 @@ export function TargetProgress({ kind, actual, target, elapsed, layout = 'cell',
         aria-valuemax={100}
       >
         <div className={cn('h-full rounded-full transition-[width] duration-500', TONE_BAR[tone])} style={{ width: `${Math.min(100, pct)}%` }} />
-        {showTick && <span aria-hidden className="absolute inset-y-0 w-px bg-ink/35" style={{ left: `${elapsed * 100}%` }} />}
+        {showTick && <span aria-hidden className="absolute inset-y-0 w-px bg-ink/35" style={{ insetInlineStart: `${elapsed * 100}%` }} />}
       </div>
     </div>
   )

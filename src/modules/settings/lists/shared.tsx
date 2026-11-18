@@ -6,7 +6,7 @@ import { cn } from '@/shared/lib/utils'
 import { useCurrentUser } from '@/store/hooks'
 import { Button } from '@/shared/components/ui/Button'
 
-/** Settings: System Admin edits, Management views (the route already hides it from everyone else). */
+/** Settings: Company Admin edits, Management views (the route already hides it from everyone else). */
 export function useSettingsAccess(): { canEdit: boolean } {
   const user = useCurrentUser()
   return { canEdit: !!user && can(user.role, 'settings', 'edit') }
@@ -43,7 +43,7 @@ export function SaveBar({ visible, saving, onSave, onDiscard, message, saveLabel
           <Button variant="ghost" size="sm" onClick={onDiscard} disabled={saving}>
             Discard
           </Button>
-          <Button size="sm" onClick={onSave} loading={saving}>
+          <Button write size="sm" onClick={onSave} loading={saving}>
             {saveLabel}
           </Button>
         </div>

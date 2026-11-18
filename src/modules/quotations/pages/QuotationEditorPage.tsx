@@ -14,6 +14,7 @@ import {
   Printer,
   Save,
   Send,
+  Trophy,
   XCircle,
 } from 'lucide-react'
 import type { User } from '@/shared/types'
@@ -34,13 +35,12 @@ import {
   addDaysIso,
   computeTotals,
   DEFAULT_VALIDITY_DAYS,
-  DEFAULT_QUOTE_CURRENCY,
-  DEFAULT_VAT_PCT,
   daysUntil,
-  fmtAed,
+  fmtAmount,
   todayIso,
 } from '@/modules/quotations/lib/totals'
-import { DEFAULT_NOTES, DEFAULT_TERMS } from '@/modules/quotations/lib/company'
+import { defaultNotes, defaultTerms, issuerFor } from '@/modules/quotations/lib/company'
+import { useBranding, useRegion, useTenant } from '@/modules/tenancy/hooks'
 import { useTemplatesQuery } from '@/modules/settings/hooks/useTemplates'
 import { buildTemplateContext } from '@/modules/settings/templates/context'
 import { findVariables, renderSegments, renderTemplate, type TemplateContext } from '@/modules/settings/templates/render'
@@ -73,6 +73,7 @@ import { Tabs } from '@/shared/components/ui/Tabs'
 import { useToast } from '@/shared/components/ui/Toast'
 import { Field, TextArea, TextInput } from '@/shared/components/form/Field'
 import { PageBody } from '@/shared/components/layout/PageHeader'
+import { useOpenWonDialog } from '@/modules/won/hooks'
 
 /** One page for /sales/quotations/new (create) and /sales/quotations/:id (view, edit while Draft). */
 export default function QuotationEditorPage() {
@@ -162,14 +163,14 @@ function fromQuotation(q: Quotation): FormState {
   return { leadId: q.leadId, title: q.title, validUntil: q.validUntil, items: q.items, notes: q.notes, terms: q.terms }
 }
 
-function emptyForm(leadId: string): FormState {
+function emptyForm(leadId: string, fallback: Record<TextField, string>): FormState {
   return {
     leadId,
     title: '',
     validUntil: addDaysIso(DEFAULT_VALIDITY_DAYS),
     items: [],
-    notes: DEFAULT_NOTES,
-    terms: DEFAULT_TERMS,
+    notes: fallback.notes,
+    terms: fallback.terms,
   }
 }
 
@@ -206,7 +207,6 @@ const NO_ERRORS: FormErrors = { lines: {} }
 type TextField = 'notes' | 'terms'
 
 const FIELD_PURPOSE: Record<TextField, TemplatePurpose> = { notes: 'Quotation cover', terms: 'Quotation terms' }
-const FIELD_FALLBACK: Record<TextField, string> = { notes: DEFAULT_NOTES, terms: DEFAULT_TERMS }
 
 /**
  * Fills a quotation template for the Notes / Terms box: lead, agent, company and date values are
@@ -243,24 +243,35 @@ function QuotationEditor({ quotation, initialLeadId, user }: EditorProps) {
   const send = useSendQuotation()
   const decide = useSetQuotationStatus()
   const duplicate = useDuplicateQuotation()
+  const region = useRegion()
+  const tenant = useTenant()
+  const branding = useBranding()
+  /** Standard Notes / Terms (tenant name, currency and VAT) when no default template applies. */
+  const FIELD_FALLBACK: Record<TextField, string> = { notes: defaultNotes(branding.displayName), terms: defaultTerms(region) }
+  const vatPct = quotation?.vatPct ?? region.vatPct
+  const currency = quotation?.currency ?? region.currency
+  const fmtAed = (v: number) => fmtAmount(v, currency)
 
   const canEdit = can(user.role, 'sales', 'edit')
   const canCreate = can(user.role, 'sales', 'create')
   const status: QuotationStatus = quotation?.status ?? 'Draft'
   const editable = quotation ? status === 'Draft' && canEdit : canCreate
 
-  const [form, setForm] = useState<FormState>(() => (quotation ? fromQuotation(quotation) : emptyForm(initialLeadId)))
+  const [form, setForm] = useState<FormState>(() => (quotation ? fromQuotation(quotation) : emptyForm(initialLeadId, FIELD_FALLBACK)))
   const [baseline, setBaseline] = useState(() => JSON.stringify(form))
   const [attempted, setAttempted] = useState(false)
   const [tab, setTab] = useState<Tab>(editable ? 'details' : 'preview')
   const [confirmSend, setConfirmSend] = useState(false)
+  /** After "Accepted": ask whether to win the deal now (opens the Won dialog). */
+  const [winPrompt, setWinPrompt] = useState<Quotation | null>(null)
+  const openWon = useOpenWonDialog()
 
   const leads = useMemo(() => leadsQuery.data ?? [], [leadsQuery.data])
   const lead: LeadRow | undefined = leads.find((l) => l.id === form.leadId)
   const dirty = !quotation || JSON.stringify(form) !== baseline
   const { errors: liveErrors, ok } = validate(form)
   const errors = attempted ? liveErrors : NO_ERRORS
-  const totals = computeTotals(form.items, quotation?.vatPct ?? DEFAULT_VAT_PCT)
+  const totals = computeTotals(form.items, vatPct)
   const busy = create.isPending || update.isPending || send.isPending
 
   /* Quotation templates (Settings > Templates): "Quotation cover" fills Notes, "Quotation terms" fills Terms. */
@@ -275,6 +286,7 @@ function QuotationEditor({ quotation, initialLeadId, user }: EditorProps) {
     quotation: { number: quotation?.number ?? '', title: form.title, validUntil: form.validUntil, totals },
     quotationLink: quotation ? `${window.location.origin}${quotationPath(quotation.id)}` : undefined,
     labels: { status: lookups.statusLabel, industry: lookups.industryLabel, source: lookups.sourceLabel },
+    company: issuerFor(tenant),
   })
   /** Final text for the document and the API: every variable filled in. */
   function resolveText(text: string, number?: string): string {
@@ -307,7 +319,7 @@ function QuotationEditor({ quotation, initialLeadId, user }: EditorProps) {
     setPrefilled(true)
     for (const field of ['notes', 'terms'] as const) {
       const t = quoteTemplates.find((x) => x.purpose === FIELD_PURPOSE[field] && x.isDefault)
-      // Falls back to DEFAULT_NOTES / DEFAULT_TERMS (already in the form) when there's no default.
+      // Falls back to the standard Notes / Terms (already in the form) when there's no default.
       if (t && form[field] === inserted[field].text) insert(field, t)
     }
     // Runs once, when templates and leads are in; `insert` reads the current render.
@@ -342,7 +354,8 @@ function QuotationEditor({ quotation, initialLeadId, user }: EditorProps) {
     issuedAt: quotation?.sentAt ?? quotation?.createdAt ?? new Date().toISOString(),
     validUntil: form.validUntil,
     items: form.items,
-    vatPct: quotation?.vatPct ?? DEFAULT_VAT_PCT,
+    vatPct,
+    currency,
     notes: resolveText(form.notes),
     terms: resolveText(form.terms),
     preparedBy: quotation?.createdByName ?? user.name,
@@ -431,11 +444,10 @@ function QuotationEditor({ quotation, initialLeadId, user }: EditorProps) {
     decide.mutate(
       { id: quotation.id, status: next },
       {
-        onSuccess: (q) =>
-          toast.success(
-            `${q.number} marked ${next.toLowerCase()}`,
-            next === 'Accepted' ? 'Move the lead to Won once the deal is signed.' : undefined,
-          ),
+        onSuccess: (q) => {
+          toast.success(`${q.number} marked ${next.toLowerCase()}`)
+          if (next === 'Accepted' && !(lead && lookups.isWon(lead.status) && q.customerId)) setWinPrompt(q)
+        },
         onError: (e) => toast.error('Status not changed', e.message),
       },
     )
@@ -602,7 +614,7 @@ function QuotationEditor({ quotation, initialLeadId, user }: EditorProps) {
                 <Card>
                   <CardHeader
                     title="Line items"
-                    description={editable ? 'Add services or packages from the catalog, or a custom line. Prices are in AED, before VAT.' : undefined}
+                    description={editable ? `Add services or packages from the catalog, or a custom line. Prices are in ${currency}, before VAT.` : undefined}
                   />
                   <CardBody>
                     {editable ? (
@@ -613,10 +625,10 @@ function QuotationEditor({ quotation, initialLeadId, user }: EditorProps) {
                         servicesLoading={servicesQuery.isPending}
                         errors={errors.lines}
                         listError={errors.items}
-                        currency={quotation?.currency ?? DEFAULT_QUOTE_CURRENCY}
+                        currency={currency}
                       />
                     ) : (
-                      <LineItemsView items={form.items} services={servicesQuery.data ?? []} />
+                      <LineItemsView items={form.items} services={servicesQuery.data ?? []} currency={currency} />
                     )}
                   </CardBody>
                 </Card>
@@ -665,24 +677,24 @@ function QuotationEditor({ quotation, initialLeadId, user }: EditorProps) {
                   <dl className="num space-y-2 text-[0.8125rem]">
                     <SummaryRow label="Subtotal" value={fmtAed(totals.subtotal)} />
                     <SummaryRow label="Discount" value={totals.discount > 0 ? `−${fmtAed(totals.discount)}` : fmtAed(0)} muted={!totals.discount} />
-                    <SummaryRow label={`VAT ${quotation?.vatPct ?? DEFAULT_VAT_PCT}%`} value={fmtAed(totals.vat)} />
+                    <SummaryRow label={`VAT ${vatPct}%`} value={fmtAed(totals.vat)} />
                   </dl>
                   <div className="mt-3 flex items-baseline justify-between border-t border-line pt-3">
                     <span className="text-[0.8125rem] font-medium text-ink-2">Total</span>
                     <span className="num text-[1.375rem] font-semibold tracking-[-0.02em] text-ink">{fmtAed(totals.total)}</span>
                   </div>
                   <p className="mt-1 text-end text-xs text-muted">
-                    {form.items.length} {form.items.length === 1 ? 'line' : 'lines'} · AED, VAT inclusive
+                    {form.items.length} {form.items.length === 1 ? 'line' : 'lines'} · {currency}, VAT inclusive
                   </p>
 
                   <div className="mt-5 space-y-2">
                     {editable && (
                       <>
-                        <Button className="w-full" onClick={askToSend} disabled={busy || lead?.doNotContact}>
+                        <Button write className="w-full" onClick={askToSend} disabled={busy || lead?.doNotContact}>
                           <Send />
                           Send quotation
                         </Button>
-                        <Button variant="secondary" className="w-full" onClick={saveDraft} loading={create.isPending || update.isPending} disabled={!dirty || busy}>
+                        <Button write variant="secondary" className="w-full" onClick={saveDraft} loading={create.isPending || update.isPending} disabled={!dirty || busy}>
                           <Save />
                           {quotation ? (dirty ? 'Save draft' : 'Draft saved') : 'Save draft'}
                         </Button>
@@ -696,15 +708,21 @@ function QuotationEditor({ quotation, initialLeadId, user }: EditorProps) {
                     )}
                     {quotation && canEdit && (status === 'Sent' || status === 'Viewed') && (
                       <div className="grid grid-cols-2 gap-2">
-                        <Button onClick={() => markAs('Accepted')} loading={decide.isPending && decide.variables?.status === 'Accepted'} disabled={decide.isPending}>
+                        <Button write onClick={() => markAs('Accepted')} loading={decide.isPending && decide.variables?.status === 'Accepted'} disabled={decide.isPending}>
                           <CheckCircle2 />
                           Accepted
                         </Button>
-                        <Button variant="secondary" onClick={() => markAs('Rejected')} loading={decide.isPending && decide.variables?.status === 'Rejected'} disabled={decide.isPending}>
+                        <Button write variant="secondary" onClick={() => markAs('Rejected')} loading={decide.isPending && decide.variables?.status === 'Rejected'} disabled={decide.isPending}>
                           <XCircle />
                           Rejected
                         </Button>
                       </div>
+                    )}
+                    {quotation && canEdit && status === 'Accepted' && !(lead && lookups.isWon(lead.status) && quotation.customerId) && (
+                      <Button write className="w-full" onClick={() => openWon(quotation.leadId, quotation.id)}>
+                        <Trophy />
+                        Win deal
+                      </Button>
                     )}
                     {quotation && status === 'Expired' && (
                       <p className="flex items-start gap-1.5 rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-700 dark:bg-warning-500/10 dark:text-warning-500">
@@ -714,7 +732,7 @@ function QuotationEditor({ quotation, initialLeadId, user }: EditorProps) {
                     )}
                     <div className="flex gap-2">
                       {quotation && canCreate && (
-                        <Button variant="secondary" className="flex-1" onClick={duplicateIt} loading={duplicate.isPending}>
+                        <Button write variant="secondary" className="flex-1" onClick={duplicateIt} loading={duplicate.isPending}>
                           <Copy />
                           Duplicate
                         </Button>
@@ -762,6 +780,32 @@ function QuotationEditor({ quotation, initialLeadId, user }: EditorProps) {
       </Modal>
 
       <Modal
+        open={!!winPrompt}
+        onClose={() => setWinPrompt(null)}
+        size="sm"
+        title={`Win ${winPrompt?.company ?? 'this deal'} now?`}
+        description="The quotation is accepted. Winning converts the lead into a customer and creates its projects; you’ll review everything before it’s saved."
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setWinPrompt(null)}>
+              Not now
+            </Button>
+            <Button write
+              onClick={() => {
+                if (winPrompt) openWon(winPrompt.leadId, winPrompt.id)
+                setWinPrompt(null)
+              }}
+            >
+              <Trophy />
+              Review and win
+            </Button>
+          </>
+        }
+      >
+        <p className="text-[0.8125rem] text-muted">You can also do this later with “Win deal” on this quotation or the lead.</p>
+      </Modal>
+
+      <Modal
         open={confirmSend}
         onClose={() => !busy && setConfirmSend(false)}
         title="Send this quotation?"
@@ -771,7 +815,7 @@ function QuotationEditor({ quotation, initialLeadId, user }: EditorProps) {
             <Button variant="secondary" onClick={() => setConfirmSend(false)} disabled={busy}>
               Cancel
             </Button>
-            <Button onClick={confirmAndSend} loading={busy}>
+            <Button write onClick={confirmAndSend} loading={busy}>
               <Send />
               Send to {recipient.contactName.split(' ')[0] || 'client'}
             </Button>
@@ -791,6 +835,14 @@ function QuotationEditor({ quotation, initialLeadId, user }: EditorProps) {
             </div>
           </div>
           <dl className="num space-y-1.5">
+            <SummaryRow
+              label="From"
+              value={
+                <span className="truncate">
+                  {branding.emailSenderName} <span className="text-muted">&lt;{branding.emailSenderAddress}&gt;</span>
+                </span>
+              }
+            />
             <SummaryRow label="Quotation" value={quotation?.number ?? 'New (numbered on save)'} />
             <SummaryRow label="Title" value={form.title} />
             <SummaryRow label="Valid until" value={fmtDate(form.validUntil)} />

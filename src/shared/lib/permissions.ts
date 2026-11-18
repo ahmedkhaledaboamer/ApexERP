@@ -2,20 +2,22 @@ import type { Action, ModuleKey, Role, Scope, User } from '@/shared/types'
 
 /**
  * Permission matrix from the spec, section 3. Reports carry a report-family scope.
- * Departments (not in the spec table): System Admin, Management and HR Manager full; heads and
+ * Tasks: Own for Sales Agent and Employee (and Accountant, HR), Team for Sales Manager, Department Head
+ * and Marketing Manager (real department membership), Full for Company Admin and Management.
+ * Departments (not in the spec table): Company Admin, Management and HR Manager full; heads and
  * managers "team" (the departments they head plus their sub-departments); everyone else "view"
  * = read-only access to their own department.
  */
 export const PERMISSION_MATRIX: Record<Role, Record<ModuleKey, Scope>> = {
-  'System Admin': { sales: 'full', services: 'full', marketing: 'full', accounting: 'full', hr: 'full', reports: 'full', settings: 'full', departments: 'full' },
-  Management: { sales: 'full', services: 'full', marketing: 'full', accounting: 'full', hr: 'full', reports: 'full', settings: 'view', departments: 'full' },
-  'Sales Manager': { sales: 'full', services: 'full', marketing: 'view', accounting: 'view', hr: 'hidden', reports: 'team', settings: 'hidden', departments: 'team' },
-  'Sales Agent': { sales: 'own', services: 'view', marketing: 'hidden', accounting: 'hidden', hr: 'hidden', reports: 'own', settings: 'hidden', departments: 'view' },
-  'Marketing Manager': { sales: 'view', services: 'view', marketing: 'full', accounting: 'hidden', hr: 'hidden', reports: 'marketing', settings: 'hidden', departments: 'team' },
-  Accountant: { sales: 'view', services: 'view', marketing: 'hidden', accounting: 'full', hr: 'hidden', reports: 'finance', settings: 'hidden', departments: 'view' },
-  'HR Manager': { sales: 'hidden', services: 'hidden', marketing: 'hidden', accounting: 'hidden', hr: 'full', reports: 'hr', settings: 'hidden', departments: 'full' },
-  'Department Head': { sales: 'team', services: 'view', marketing: 'hidden', accounting: 'hidden', hr: 'team', reports: 'team', settings: 'hidden', departments: 'team' },
-  Employee: { sales: 'own', services: 'hidden', marketing: 'hidden', accounting: 'hidden', hr: 'own', reports: 'hidden', settings: 'hidden', departments: 'view' },
+  'Company Admin': { sales: 'full', services: 'full', marketing: 'full', accounting: 'full', hr: 'full', reports: 'full', settings: 'full', departments: 'full', tasks: 'full' },
+  Management: { sales: 'full', services: 'full', marketing: 'full', accounting: 'full', hr: 'full', reports: 'full', settings: 'view', departments: 'full', tasks: 'full' },
+  'Sales Manager': { sales: 'full', services: 'full', marketing: 'view', accounting: 'view', hr: 'hidden', reports: 'team', settings: 'hidden', departments: 'team', tasks: 'team' },
+  'Sales Agent': { sales: 'own', services: 'view', marketing: 'hidden', accounting: 'hidden', hr: 'hidden', reports: 'own', settings: 'hidden', departments: 'view', tasks: 'own' },
+  'Marketing Manager': { sales: 'view', services: 'view', marketing: 'full', accounting: 'hidden', hr: 'hidden', reports: 'marketing', settings: 'hidden', departments: 'team', tasks: 'team' },
+  Accountant: { sales: 'view', services: 'view', marketing: 'hidden', accounting: 'full', hr: 'hidden', reports: 'finance', settings: 'hidden', departments: 'view', tasks: 'own' },
+  'HR Manager': { sales: 'hidden', services: 'hidden', marketing: 'hidden', accounting: 'hidden', hr: 'full', reports: 'hr', settings: 'hidden', departments: 'full', tasks: 'own' },
+  'Department Head': { sales: 'team', services: 'view', marketing: 'hidden', accounting: 'hidden', hr: 'team', reports: 'team', settings: 'hidden', departments: 'team', tasks: 'team' },
+  Employee: { sales: 'own', services: 'hidden', marketing: 'hidden', accounting: 'hidden', hr: 'own', reports: 'hidden', settings: 'hidden', departments: 'view', tasks: 'own' },
 }
 
 export const SCOPE_LABELS: Record<Scope, string> = {
@@ -39,6 +41,18 @@ export function can(role: Role, module: ModuleKey, action: Action): boolean {
   if (scope === 'hidden') return false
   if (action === 'view') return true
   return scope !== 'view'
+}
+
+/**
+ * Settings > Company profile and the onboarding checklist follow the Settings column of the
+ * matrix: whoever can view Settings (Company Admin, Management) reads them; only roles that can
+ * edit Settings (Company Admin) change the profile. Everyone else gets 403.
+ */
+export function canViewCompanyProfile(role: Role): boolean {
+  return can(role, 'settings', 'view')
+}
+export function canEditCompanyProfile(role: Role): boolean {
+  return can(role, 'settings', 'edit')
 }
 
 /** The part of a department the team rule needs (Departments module). */

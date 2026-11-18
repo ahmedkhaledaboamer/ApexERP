@@ -11,6 +11,7 @@ import { Field, SelectInput } from '@/shared/components/form/Field'
 import { useCreateSchedule, useDeleteSchedule, useSchedules } from '@/modules/reports/hooks/useReports'
 import { REPORT_IDS, SCHEDULE_REPORT_TITLES, WEEKDAYS } from '@/modules/reports/lib/reportCatalog'
 import type { ReportSchedule, ScheduleFormat, ScheduleFrequency, ScheduleReport } from '@/modules/reports/types'
+import { getRegion } from '@/shared/lib/region'
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const TIMES = ['07:00', '08:00', '09:00', '10:00', '12:00', '14:00', '17:00']
@@ -98,7 +99,7 @@ export function ScheduleModal({ open, onClose, defaultReport, defaultEmail }: { 
           <Button variant="ghost" onClick={onClose}>
             Done
           </Button>
-          <Button onClick={submit} loading={create.isPending}>
+          <Button write onClick={submit} loading={create.isPending}>
             <CalendarClock />
             Add schedule
           </Button>
@@ -151,7 +152,7 @@ export function ScheduleModal({ open, onClose, defaultReport, defaultEmail }: { 
               </SelectInput>
             </Field>
           )}
-          <Field id="schedule-time" label="Time (GST)">
+          <Field id="schedule-time" label={`Time (${getRegion().timezone})`}>
             <SelectInput id="schedule-time" value={time} onChange={(e) => setTime(e.target.value)}>
               {TIMES.map((t) => (
                 <option key={t} value={t}>
@@ -179,7 +180,7 @@ export function ScheduleModal({ open, onClose, defaultReport, defaultEmail }: { 
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={onKey}
               onBlur={() => draft && addDraft()}
-              placeholder={recipients.length ? '' : 'name@company.ae'}
+              placeholder={recipients.length ? '' : 'name@company.com'}
               className="h-6 min-w-32 flex-1 bg-transparent text-[0.8125rem] outline-none placeholder:text-subtle"
             />
           </div>
@@ -240,7 +241,7 @@ export function ScheduleModal({ open, onClose, defaultReport, defaultEmail }: { 
                       To {s.recipients.join(', ')} · by {s.createdByName}
                     </p>
                   </div>
-                  <Button
+                  <Button write
                     variant="ghost"
                     size="sm"
                     iconOnly

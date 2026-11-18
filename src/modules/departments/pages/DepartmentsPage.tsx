@@ -101,7 +101,7 @@ export default function DepartmentsPage() {
   const filtered = (filters.length > 0 && !onlyDefault) || !!search
   const newButton = isFull ? (
     <Can module="departments" action="edit">
-      <Button size="sm" onClick={() => setDrawer({ department: null })}>
+      <Button write size="sm" onClick={() => setDrawer({ department: null })}>
         <Plus />
         New department
       </Button>
@@ -435,7 +435,7 @@ function buildColumns({ isFull, pendingId, onOpen, onEdit, onMove, onSetActive }
             <Menu
               className="w-52"
               trigger={(props) => (
-                <Button variant="ghost" size="xs" iconOnly aria-label={`Actions for ${d.name}`} loading={pendingId === d.id} {...props}>
+                <Button write variant="ghost" size="xs" iconOnly aria-label={`Actions for ${d.name}`} loading={pendingId === d.id} {...props}>
                   {pendingId !== d.id && <MoreHorizontal />}
                 </Button>
               )}

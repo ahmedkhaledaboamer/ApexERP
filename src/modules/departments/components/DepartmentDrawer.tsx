@@ -142,7 +142,7 @@ export function DepartmentDrawer({ open, onClose, department, defaultParentId, o
             <Button variant="secondary" onClick={close}>
               Cancel
             </Button>
-            <Button type="submit" form="department-form" loading={pending}>
+            <Button write type="submit" form="department-form" loading={pending}>
               {editing ? 'Save department' : 'Create department'}
             </Button>
           </>
@@ -210,7 +210,7 @@ export function DepartmentDrawer({ open, onClose, department, defaultParentId, o
               <Button variant="secondary" size="sm" onClick={() => setConfirmHead(null)} disabled={update.isPending}>
                 Back
               </Button>
-              <Button size="sm" loading={update.isPending} onClick={() => save(confirmHead, true)}>
+              <Button write size="sm" loading={update.isPending} onClick={() => save(confirmHead, true)}>
                 Move and make head
               </Button>
             </div>

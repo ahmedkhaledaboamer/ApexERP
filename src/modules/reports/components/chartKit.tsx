@@ -3,7 +3,7 @@ import { cn } from '@/shared/lib/utils'
 
 /** Chart colours; SVG can't read Tailwind classes. Same set as the dashboard. */
 export const C = {
-  brand: '#7c3aed',
+  brand: 'var(--color-brand-600)',
   blue: '#2563eb',
   green: '#10b981',
   amber: '#f59e0b',

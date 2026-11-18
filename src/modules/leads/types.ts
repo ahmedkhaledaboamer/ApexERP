@@ -217,4 +217,11 @@ export interface ImportResult {
   /** Rows skipped on purpose (duplicates), with why. */
   skippedRows: ImportFailure[]
   createdIds: string[]
+  /**
+   * Valid rows NOT imported because the plan's leads + contacts limit was reached (the import creates
+   * rows up to the limit and reports the rest here; they are not in `failed` or `skippedRows`).
+   */
+  skippedForLimit: number
+  /** Set when `skippedForLimit > 0`: the limit that stopped the import (same shape as the 402 body). */
+  limitReached: import('@/modules/billing/types').LimitReachedDetails | null
 }

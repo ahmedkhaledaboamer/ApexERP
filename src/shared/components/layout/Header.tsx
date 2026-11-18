@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import {
   Check,
   ChevronDown,
@@ -31,6 +31,7 @@ import { Button } from '@/shared/components/ui/Button'
 import { Kbd } from '@/shared/components/ui/Kbd'
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from '@/shared/components/ui/Menu'
 import { useToast } from '@/shared/components/ui/Toast'
+import { WorkspaceSwitcher } from '@/modules/tenancy/components/WorkspaceSwitcher'
 import { navMatch } from './navigation'
 
 /** Top bar: breadcrumbs, global search, "New", notifications, theme and the user menu. */
@@ -59,6 +60,7 @@ export function Header() {
           <Search />
         </Button>
 
+        <WorkspaceSwitcher />
         <NewMenu />
         <AlertsBell />
 
@@ -79,6 +81,14 @@ export function Header() {
   )
 }
 
+/** Sub-page slugs read as words ("company-profile" → "Company profile"); record ids (L-1001) stay as they are. */
+function crumbLabel(segment: string): string {
+  const first = segment.split('/')[0]
+  if (!/^[a-z]+(-[a-z]+)*$/.test(first)) return segment
+  const words = first.replace(/-/g, ' ')
+  return words.charAt(0).toUpperCase() + words.slice(1)
+}
+
 function Breadcrumbs() {
   const { pathname } = useLocation()
   const match = navMatch(pathname)
@@ -87,7 +97,7 @@ function Breadcrumbs() {
   if (match) {
     const exact = match.item.to === pathname
     crumbs.push({ label: match.item.label, to: exact ? undefined : match.item.to })
-    if (!exact) crumbs.push({ label: decodeURIComponent(pathname.slice(match.item.to.length + 1)) })
+    if (!exact) crumbs.push({ label: crumbLabel(decodeURIComponent(pathname.slice(match.item.to.length + 1))) })
   }
   if (crumbs.length === 0) return null
   return (
@@ -97,7 +107,7 @@ function Breadcrumbs() {
           const last = i === crumbs.length - 1
           return (
             <li key={`${c.label}-${i}`} className="flex min-w-0 items-center gap-1.5">
-              {i > 0 && <ChevronRight className="size-4 shrink-0 text-subtle" aria-hidden />}
+              {i > 0 && <ChevronRight className="size-4 shrink-0 text-subtle rtl:-scale-x-100" aria-hidden />}
               {c.to ? (
                 <Link to={c.to} className="truncate text-muted hover:text-ink">
                   {c.label}
@@ -118,12 +128,15 @@ function Breadcrumbs() {
 function NewMenu() {
   const dispatch = useAppDispatch()
   const user = useCurrentUser()
+  // Sales and tasks are in every plan; the role decides. `write`: nothing to create while read-only.
+  const sales = !!user && can(user.role, 'sales', 'view')
+  const tasks = !!user && can(user.role, 'tasks', 'view')
   const canLead = !!user && can(user.role, 'sales', 'create')
   return (
     <Menu
       className="w-56"
       trigger={(props) => (
-        <Button size="md" {...props}>
+        <Button size="md" write {...props}>
           <Plus />
           <span className="hidden sm:inline">New</span>
         </Button>
@@ -144,15 +157,21 @@ function NewMenu() {
               New lead
             </MenuItem>
           )}
-          <MenuItem icon={<Building2 />} hint="Soon" onSelect={close}>
-            New customer
-          </MenuItem>
-          <MenuItem icon={<FileText />} hint="Soon" onSelect={close}>
-            New quotation
-          </MenuItem>
-          <MenuItem icon={<CheckSquare />} hint="Soon" onSelect={close}>
-            New task
-          </MenuItem>
+          {sales && (
+            <MenuItem icon={<Building2 />} hint="Soon" onSelect={close}>
+              New customer
+            </MenuItem>
+          )}
+          {sales && (
+            <MenuItem icon={<FileText />} hint="Soon" onSelect={close}>
+              New quotation
+            </MenuItem>
+          )}
+          {tasks && (
+            <MenuItem icon={<CheckSquare />} hint="Soon" onSelect={close}>
+              New task
+            </MenuItem>
+          )}
         </>
       )}
     </Menu>
@@ -162,14 +181,13 @@ function NewMenu() {
 function UserMenu() {
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
   const user = useCurrentUser()
   const toast = useToast()
 
   const roleMutation = useMutation({
     mutationFn: (role: Role) => switchRole(role),
+    // Same company, another seeded user: sessionTransitions clears the cache and tenant state.
     onSuccess: (session) => {
-      queryClient.removeQueries()
       dispatch(signedIn(session))
       toast.info(`Viewing as ${session.user.role}`, session.user.name)
     },
@@ -229,7 +247,6 @@ function UserMenu() {
           <MenuItem
             icon={<LogOut />}
             onSelect={() => {
-              queryClient.clear()
               dispatch(signedOut())
               navigate(PATHS.login, { replace: true })
             }}

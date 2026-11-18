@@ -104,14 +104,14 @@ function AutomationForm({ saved }: { saved: AutomationRules }) {
           <p className="mt-0.5 text-[0.8125rem] text-muted">Reminders, automatic moves and alerts. Every change is recorded in the audit log.</p>
         </div>
         {canEdit && (
-          <Button variant="secondary" size="sm" onClick={() => setConfirmReset(true)} disabled={isDefault && !dirty}>
+          <Button write variant="secondary" size="sm" onClick={() => setConfirmReset(true)} disabled={isDefault && !dirty}>
             <RotateCcw />
             Reset to defaults
           </Button>
         )}
       </div>
 
-      {readOnly && <ReadOnlyNote>You can view the automation rules. Only a System Admin can change them.</ReadOnlyNote>}
+      {readOnly && <ReadOnlyNote>You can view the automation rules. Only a Company Admin can change them.</ReadOnlyNote>}
       {serverError && <InlineError>{serverError}</InlineError>}
 
       <JourneyTimeline rules={values} status={status} />
@@ -168,7 +168,7 @@ function AutomationForm({ saved }: { saved: AutomationRules }) {
             <Button variant="secondary" onClick={() => setConfirmReset(false)}>
               Cancel
             </Button>
-            <Button variant="danger" onClick={doReset} loading={reset.isPending}>
+            <Button write variant="danger" onClick={doReset} loading={reset.isPending}>
               Reset to defaults
             </Button>
           </>

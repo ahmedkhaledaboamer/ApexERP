@@ -83,6 +83,6 @@ export interface UpdateTargetsInput {
 /** GET / PUT /targets/defaults: company defaults used by every month without a per-agent row. */
 export interface TargetDefaults {
   values: TargetValues
-  /** Whether the caller may change the defaults (System Admin). */
+  /** Whether the caller may change the defaults (Company Admin). */
   canEdit: boolean
 }

@@ -12,9 +12,10 @@ export const MODULE_LABELS: Record<ModuleKey, string> = {
   reports: 'Reports',
   settings: 'Settings',
   departments: 'Departments',
+  tasks: 'Tasks',
 }
 
-const MODULE_ORDER: ModuleKey[] = ['sales', 'services', 'marketing', 'accounting', 'hr', 'reports', 'settings', 'departments']
+const MODULE_ORDER: ModuleKey[] = ['sales', 'services', 'marketing', 'accounting', 'hr', 'reports', 'settings', 'departments', 'tasks']
 
 export const SCOPE_TONE: Record<Scope, Tone> = {
   full: 'green',
@@ -29,7 +30,7 @@ export const SCOPE_TONE: Record<Scope, Tone> = {
 
 /** One-line description per role, for the role picker. */
 export const ROLE_HINTS: Record<Role, string> = {
-  'System Admin': 'Runs the system: users, settings and every module.',
+  'Company Admin': 'Runs the system: users, settings and every module.',
   Management: 'Sees everything; settings are view-only.',
   'Sales Manager': 'Runs the sales team; reports for the team.',
   'Sales Agent': 'Works their own leads and customers.',
@@ -41,7 +42,7 @@ export const ROLE_HINTS: Record<Role, string> = {
 }
 
 export const ROLE_TONE: Record<Role, Tone> = {
-  'System Admin': 'red',
+  'Company Admin': 'red',
   Management: 'brand',
   'Sales Manager': 'blue',
   'Sales Agent': 'sky',

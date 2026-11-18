@@ -24,6 +24,8 @@ import { delay, fail } from '@/shared/mocks/server'
 import { isClosedStatus, isLostStatus, isWonStatus, probabilityOf } from '@/shared/mocks/data/lookups'
 import { visibleLeads } from '@/shared/mocks/services/leads'
 import { targetTotalsFor } from '@/shared/mocks/services/targets'
+import { dueThisWeek, isOverdue, myTasks, overdueTasks, toTaskView } from '@/shared/mocks/selectors/tasks'
+import { scoped, tenantOf } from '@/shared/mocks/tenant'
 
 export const DASHBOARD_PERIODS: DashboardPeriod[] = ['30d', 'quarter', 'ytd', '12m']
 
@@ -91,19 +93,50 @@ function baseline(start: Date, end: Date, scale: number) {
   }
 }
 
+/** Task figures, all from the shared task selectors so they match My tasks, alerts and reports. */
+function taskFigures(user: User): DashboardSummary['tasks'] {
+  const scope = scopeOf(user.role, 'tasks')
+  const mine = myTasks(user)
+  const order = (dueDate: string | null) => dueDate ?? '9999-12-31'
+  const next = [...mine]
+    .sort((a, b) => Number(isOverdue(b)) - Number(isOverdue(a)) || order(a.dueDate).localeCompare(order(b.dueDate)))
+    .slice(0, 5)
+    .map((t) => toTaskView(t, user))
+    .map((t) => ({
+      id: t.id,
+      title: t.title,
+      dueDate: t.dueDate,
+      priority: t.priority,
+      status: t.status,
+      overdue: t.overdue,
+      linkLabel: t.linkView?.label ?? t.projectName,
+      ownerName: t.ownerName,
+    }))
+  return {
+    myOpenTasks: mine.length,
+    myOverdueTasks: mine.filter((t) => isOverdue(t)).length,
+    dueThisWeek: dueThisWeek(user).length,
+    teamOverdueTasks: scope === 'hidden' ? 0 : overdueTasks(user).length,
+    scope: scope === 'full' || scope === 'team' || scope === 'hidden' ? scope : 'own',
+    next,
+  }
+}
+
 export async function getDashboardSummary(user: User, period: DashboardPeriod = '12m'): Promise<DashboardSummary> {
   if (!DASHBOARD_PERIODS.includes(period)) return fail('Pick 30d, quarter, ytd or 12m.', 422)
   const scope = scopeOf(user.role, 'sales')
-  const scoped = scope === 'hidden' ? [] : visibleLeads(user)
-  const scopedIds = new Set(scoped.map((l) => l.id))
+  // Everything below is the caller's company only (tenant first, then the role's sales scope).
+  const co = tenantOf(user)
+  const inScope = scope === 'hidden' ? [] : scoped(visibleLeads(user), user)
+  const scopedIds = new Set(inScope.map((l) => l.id))
   const scopedActivities = activities.filter((a) => scopedIds.has(a.leadId))
   const now = new Date()
   const today = startOfDay(now)
-  const scale = Math.max(0.15, scoped.length / 30)
+  const scale = Math.max(0.15, inScope.length / 30)
 
   // Open = statuses of kind "open" (parked Cold leads are out of the active pipeline).
-  const open = scoped.filter((l) => !isClosedStatus(l.status))
-  const won = scoped.filter((l) => isWonStatus(l.status))
+  const open = inScope.filter((l) => !isClosedStatus(co, l.status))
+  const won = inScope.filter((l) => isWonStatus(co, l.status))
 
   let dueToday = 0
   let overdue = 0
@@ -124,7 +157,7 @@ export async function getDashboardSummary(user: User, period: DashboardPeriod = 
     const base = baseline(from, to, scale)
     const wonIn = won.filter((l) => inRange(l.stageChangedAt, from, to))
     return {
-      created: scoped.filter((l) => inRange(l.createdAt, from, to)).length + base.created,
+      created: inScope.filter((l) => inRange(l.createdAt, from, to)).length + base.created,
       won: wonIn.length + base.won,
       wonValue: wonIn.reduce((s, l) => s + l.value, 0) + base.wonValue,
       activities: scopedActivities.filter((a) => inRange(a.at, from, to)).length + base.activities,
@@ -154,9 +187,9 @@ export async function getDashboardSummary(user: User, period: DashboardPeriod = 
   )
 
   // Win rate from deals closed inside the period.
-  const closedIn = scoped.filter((l) => (isWonStatus(l.status) || isLostStatus(l.status)) && inRange(l.stageChangedAt, from, to))
+  const closedIn = inScope.filter((l) => (isWonStatus(co, l.status) || isLostStatus(co, l.status)) && inRange(l.stageChangedAt, from, to))
   const wonInPeriod = sum('won')
-  const lostInPeriod = closedIn.filter((l) => isLostStatus(l.status)).length + Math.round(wonInPeriod * 0.45)
+  const lostInPeriod = closedIn.filter((l) => isLostStatus(co, l.status)).length + Math.round(wonInPeriod * 0.45)
   const closedCount = wonInPeriod + lostInPeriod
 
   // Targets: summed over the agents in scope; actuals come from logged activities (see services/targets).
@@ -177,11 +210,11 @@ export async function getDashboardSummary(user: User, period: DashboardPeriod = 
     to: format(subDays(to, 1), 'yyyy-MM-dd'),
     openPipelineValue: open.reduce((s, l) => s + l.value, 0),
     openLeads: open.length,
-    weightedForecast: Math.round(open.reduce((s, l) => s + (l.value * probabilityOf(l.status)) / 100, 0)),
+    weightedForecast: Math.round(open.reduce((s, l) => s + (l.value * probabilityOf(co, l.status)) / 100, 0)),
     wonValue: sum('wonValue'),
     wonValuePrev: prev.wonValue,
     wonCount: wonInPeriod,
-    totalLeads: scoped.length,
+    totalLeads: inScope.length,
     newLeads: sum('created'),
     newLeadsPrev: prev.created,
     winRate: closedCount ? Math.round((wonInPeriod / closedCount) * 100) : 0,
@@ -192,5 +225,6 @@ export async function getDashboardSummary(user: User, period: DashboardPeriod = 
     activitiesPrev: prev.activities,
     series,
     targets,
+    tasks: taskFigures(user),
   })
 }

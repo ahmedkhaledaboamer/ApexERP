@@ -66,7 +66,7 @@ export function AuditEntryDrawer({ entry, onClose }: { entry: AuditEntry | null;
                       <span className="max-w-full rounded-md bg-danger-50 px-1.5 py-0.5 break-words text-danger-700 line-through decoration-danger-700/40 dark:bg-danger-500/10 dark:text-danger-500">
                         {c.from}
                       </span>
-                      <ArrowRight className="size-3.5 shrink-0 text-subtle" aria-label="changed to" />
+                      <ArrowRight className="size-3.5 shrink-0 text-subtle rtl:-scale-x-100" aria-label="changed to" />
                       <span className="max-w-full rounded-md bg-success-50 px-1.5 py-0.5 break-words text-success-700 dark:bg-success-500/10 dark:text-success-500">
                         {c.to}
                       </span>

@@ -3,12 +3,16 @@ import type { Department, SettingsUserRow, UserInput, UserUpdateInput } from '@/
 import { ApiError } from '@/shared/lib/apiError'
 import { can } from '@/shared/lib/permissions'
 import { ROLES } from '@/shared/lib/constants'
-import { formatUaeMobile, isUaeMobile, normalizeUaeMobile } from '@/shared/lib/phone'
+import { formatMobile, mobileError, normalizeMobile } from '@/shared/lib/phone'
 import { leads, users } from '@/shared/mocks/db'
-import { departments } from '@/shared/mocks/data/departments'
+import { departments, departmentsOf } from '@/shared/mocks/data/departments'
 import { statusOf } from '@/shared/mocks/data/lookups'
 import { diff, recordAudit } from '@/shared/mocks/data/audit'
 import { delay, fail } from '@/shared/mocks/server'
+import { addMembership, companyById, syncMembership } from '@/shared/mocks/data/tenancy'
+import { CodedApiError, getInTenant, scoped, tenantOf } from '@/shared/mocks/tenant'
+import { assertCapacity, noteUsage } from '@/shared/mocks/services/billing'
+import { EMAIL_IN_OTHER_COMPANY, userWithEmail } from '@/shared/mocks/data/identity'
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -22,11 +26,11 @@ export class ConfirmRequiredError extends ApiError {
   }
 }
 
-/** Leads still in play (open or parked as Cold): not won or lost. */
-function openLeadsOf(userId: string): number {
+/** Leads still in play (open or parked as Cold): not won or lost. Statuses are the user's company's. */
+function openLeadsOf(u: User): number {
   return leads.filter((l) => {
-    if (l.ownerId !== userId) return false
-    const kind = statusOf(l.status)?.kind ?? 'open'
+    if (l.ownerId !== u.id) return false
+    const kind = statusOf(u.companyId, l.status)?.kind ?? 'open'
     return kind === 'open' || kind === 'parked'
   }).length
 }
@@ -37,7 +41,7 @@ function toRow(u: User): SettingsUserRow {
     departmentName: departments.find((d) => d.id === u.departmentId)?.name ?? '—',
     managerName: u.managerId ? (users.find((m) => m.id === u.managerId)?.name ?? '') : '',
     directReports: users.filter((r) => r.managerId === u.id && r.active).length,
-    openLeads: openLeadsOf(u.id),
+    openLeads: openLeadsOf(u),
   }
 }
 
@@ -55,29 +59,35 @@ function auditView(u: User) {
   }
 }
 
-function activeAdmins(): User[] {
-  return users.filter((u) => u.active && u.role === 'System Admin')
+/** Active Company Admins of one company (the "last admin" rule is per company). */
+function activeAdmins(companyId: string): User[] {
+  return users.filter((u) => u.companyId === companyId && u.active && u.role === 'Company Admin')
 }
+
+/** People of the admin's company only. */
+const companyUsers = (user: User): User[] => scoped(users, user)
 
 async function requireView(user: User) {
   if (!can(user.role, 'settings', 'view')) await fail('Users & roles are for admins.', 403)
 }
 async function requireEdit(user: User) {
-  if (!can(user.role, 'settings', 'edit')) await fail('Only a System Admin can change users.', 403)
+  if (!can(user.role, 'settings', 'edit')) await fail('Only a Company Admin can change users.', 403)
 }
 
 export async function getSettingsUsers(user: User): Promise<SettingsUserRow[]> {
   await requireView(user)
-  return delay(users.map(toRow))
+  return delay(companyUsers(user).map(toRow))
 }
 
-export async function getDepartments(): Promise<Department[]> {
-  return delay(departments)
+export async function getDepartments(user: User): Promise<Department[]> {
+  return delay(departmentsOf(tenantOf(user)).map(({ companyId: _co, ...d }) => d))
 }
 
-/** Validates the fields present in `input`; returns the cleaned values or an error message. */
-function clean(input: UserUpdateInput, target: User | null): Partial<User> | string {
+/** Validates the fields present in `input` within the admin's company; returns the cleaned values or an error message. */
+function clean(user: User, input: UserUpdateInput, target: User | null): Partial<User> | string {
   const out: Partial<User> = {}
+  const people = companyUsers(user)
+  const country = companyById(tenantOf(user))!.regional.country
   if (input.name !== undefined) {
     const name = String(input.name).trim().replace(/\s+/g, ' ')
     if (name.length < 2) return 'Enter the person’s full name.'
@@ -87,14 +97,18 @@ function clean(input: UserUpdateInput, target: User | null): Partial<User> | str
   if (input.email !== undefined) {
     const email = String(input.email).trim().toLowerCase()
     if (!EMAIL.test(email)) return 'That doesn’t look like an email address.'
-    if (users.some((u) => u.email.toLowerCase() === email && u.id !== target?.id)) return `${email} already belongs to another user.`
+    // One email = one company, platform-wide. Inside the company the message can name the clash;
+    // outside it must not reveal which company holds the address.
+    const owner = userWithEmail(email, target?.id)
+    if (owner && people.some((u) => u.id === owner.id)) return `${email} already belongs to another user.`
+    if (owner) throw new CodedApiError(EMAIL_IN_OTHER_COMPANY, 409, 'email_taken')
     out.email = email
   }
   if (input.mobile !== undefined) {
     const raw = String(input.mobile).trim()
-    const normalized = normalizeUaeMobile(raw)
-    if (!normalized || !isUaeMobile(formatUaeMobile(normalized))) return 'Enter a UAE mobile: +971 5X XXX XXXX.'
-    out.mobile = formatUaeMobile(normalized)
+    const normalized = normalizeMobile(raw, country)
+    if (!normalized) return mobileError(country)
+    out.mobile = formatMobile(normalized, country)
   }
   if (input.role !== undefined) {
     if (!ROLES.includes(input.role as Role)) return 'Pick one of the listed roles.'
@@ -106,12 +120,13 @@ function clean(input: UserUpdateInput, target: User | null): Partial<User> | str
     out.title = title
   }
   if (input.departmentId !== undefined) {
-    const dept = departments.find((d) => d.id === input.departmentId)
+    const companyDepts = departmentsOf(tenantOf(user))
+    const dept = companyDepts.find((d) => d.id === input.departmentId)
     if (!dept) return 'Pick a department.'
     if (!dept.active && dept.id !== target?.departmentId) return `${dept.name} is inactive; pick an active department.`
     // A head must be a member of the department they head (Departments module rule).
     if (target && target.departmentId !== dept.id) {
-      const headed = departments.find((d) => d.headId === target.id && d.active)
+      const headed = companyDepts.find((d) => d.headId === target.id && d.active)
       if (headed) return `${target.name} heads ${headed.name}. Pick a new head for ${headed.name} first (Departments).`
     }
     out.departmentId = input.departmentId
@@ -119,7 +134,7 @@ function clean(input: UserUpdateInput, target: User | null): Partial<User> | str
   if (input.managerId !== undefined) {
     const managerId = input.managerId || null
     if (managerId) {
-      const manager = users.find((u) => u.id === managerId)
+      const manager = people.find((u) => u.id === managerId)
       if (!manager) return 'That manager doesn’t exist.'
       if (target && manager.id === target.id) return 'A person can’t be their own manager.'
       if (!manager.active) return `${manager.name} is deactivated; pick an active manager.`
@@ -130,7 +145,7 @@ function clean(input: UserUpdateInput, target: User | null): Partial<User> | str
         while (cur?.managerId && !seen.has(cur.id)) {
           seen.add(cur.id)
           if (cur.managerId === target.id) return `${manager.name} already reports to ${target.name}, so this would create a loop.`
-          cur = users.find((u) => u.id === cur!.managerId)
+          cur = people.find((u) => u.id === cur!.managerId)
         }
       }
     }
@@ -144,11 +159,13 @@ export async function createUser(user: User, input: UserInput): Promise<Settings
   for (const k of ['name', 'email', 'mobile', 'role', 'departmentId'] as const) {
     if (!input?.[k]) return fail('Name, email, mobile, role and department are required.', 422)
   }
-  const values = clean({ ...input, title: input.title ?? '', managerId: input.managerId ?? null }, null)
+  const values = clean(user, { ...input, title: input.title ?? '', managerId: input.managerId ?? null }, null)
   if (typeof values === 'string') return fail(values, 422)
+  assertCapacity(tenantOf(user), 'users')
   const next = Math.max(0, ...users.map((u) => Number(u.id.replace(/\D/g, '')) || 0)) + 1
   const created: User = {
     id: `u${next}`,
+    companyId: tenantOf(user),
     name: values.name!,
     email: values.email!,
     mobile: values.mobile!,
@@ -162,6 +179,8 @@ export async function createUser(user: User, input: UserInput): Promise<Settings
     createdAt: new Date().toISOString(),
   }
   users.push(created)
+  addMembership(created.id, created.companyId, created.role)
+  noteUsage(created.companyId)
   recordAudit(user, {
     action: 'create',
     entity: 'user',
@@ -174,18 +193,19 @@ export async function createUser(user: User, input: UserInput): Promise<Settings
 
 export async function updateUser(user: User, id: string, input: UserUpdateInput): Promise<SettingsUserRow> {
   await requireEdit(user)
-  const target = users.find((u) => u.id === id)
-  if (!target) return fail('User not found.', 404)
-  const values = clean(input ?? {}, target)
+  const target = getInTenant(users, user, id, 'User not found.')
+  const values = clean(user, input ?? {}, target)
   if (typeof values === 'string') return fail(values, 422)
   if (values.role && values.role !== target.role) {
-    if (target.id === user.id) return fail('You can’t change your own role. Ask another System Admin.', 422)
-    if (target.role === 'System Admin' && target.active && activeAdmins().length <= 1) {
-      return fail(`${target.name} is the last active System Admin. Make someone else an admin first.`, 422)
+    if (target.id === user.id) return fail('You can’t change your own role. Ask another Company Admin.', 422)
+    if (target.role === 'Company Admin' && target.active && activeAdmins(target.companyId).length <= 1) {
+      return fail(`${target.name} is the last active Company Admin. Make someone else an admin first.`, 422)
     }
   }
   const before = auditView(target)
   Object.assign(target, values)
+  // The membership is the source of truth for the role (handlers/utils userFrom).
+  if (values.role) syncMembership(target.id, { role: values.role })
   const changes = diff(before, auditView(target))
   if (changes.length) {
     recordAudit(user, {
@@ -212,14 +232,13 @@ const FIELD_LABEL: Record<string, string> = {
 
 export async function deactivateUser(user: User, id: string, confirm: boolean): Promise<SettingsUserRow> {
   await requireEdit(user)
-  const target = users.find((u) => u.id === id)
-  if (!target) return fail('User not found.', 404)
+  const target = getInTenant(users, user, id, 'User not found.')
   if (!target.active) return fail(`${target.name} is already deactivated.`, 422)
   if (target.id === user.id) return fail('You can’t deactivate your own account.', 422)
-  if (target.role === 'System Admin' && activeAdmins().length <= 1) {
-    return fail(`${target.name} is the last active System Admin.`, 422)
+  if (target.role === 'Company Admin' && activeAdmins(target.companyId).length <= 1) {
+    return fail(`${target.name} is the last active Company Admin.`, 422)
   }
-  const open = openLeadsOf(target.id)
+  const open = openLeadsOf(target)
   if (open > 0 && !confirm) {
     await delay(null)
     throw new ConfirmRequiredError(
@@ -228,6 +247,7 @@ export async function deactivateUser(user: User, id: string, confirm: boolean): 
     )
   }
   target.active = false
+  syncMembership(target.id, { status: 'suspended' })
   recordAudit(user, {
     action: 'deactivate',
     entity: 'user',
@@ -240,10 +260,11 @@ export async function deactivateUser(user: User, id: string, confirm: boolean): 
 
 export async function reactivateUser(user: User, id: string): Promise<SettingsUserRow> {
   await requireEdit(user)
-  const target = users.find((u) => u.id === id)
-  if (!target) return fail('User not found.', 404)
+  const target = getInTenant(users, user, id, 'User not found.')
   if (target.active) return fail(`${target.name} is already active.`, 422)
+  assertCapacity(target.companyId, 'users')
   target.active = true
+  syncMembership(target.id, { status: 'active' })
   recordAudit(user, {
     action: 'reactivate',
     entity: 'user',

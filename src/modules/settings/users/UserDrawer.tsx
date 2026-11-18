@@ -12,12 +12,14 @@ import type { Role } from '@/shared/types'
 import type { SettingsUserRow, UserInput } from '@/modules/settings/users/types'
 import { useCreateUser, useDepartmentsQuery, useUpdateUser } from '@/modules/settings/hooks/useSettingsUsers'
 import { ROLES } from '@/shared/lib/constants'
-import { normalizeUaeMobile } from '@/shared/lib/phone'
+import { isMobile, mobileError, mobileExample, mobileSample } from '@/shared/lib/phone'
+import { getRegion } from '@/shared/lib/region'
 import { Button } from '@/shared/components/ui/Button'
 import { Drawer } from '@/shared/components/ui/Drawer'
 import { useToast } from '@/shared/components/ui/Toast'
 import { Field, SelectInput, TextInput } from '@/shared/components/form/Field'
 import { ROLE_HINTS, RoleAccess } from './RoleAccess'
+import { useBranding, useRegion } from '@/modules/tenancy/hooks'
 
 const schema = z.object({
   name: z.string().trim().min(2, 'Enter the person’s full name.').max(80, 'Keep it under 80 characters.'),
@@ -26,7 +28,7 @@ const schema = z.object({
     .string()
     .trim()
     .min(1, 'Mobile is required.')
-    .refine((v) => normalizeUaeMobile(v) !== null, 'Use the UAE format +971 5X XXX XXXX.'),
+    .refine((v) => isMobile(v, getRegion().country), () => ({ message: mobileError(getRegion().country) })),
   role: z.enum(ROLES as [Role, ...Role[]], { errorMap: () => ({ message: 'Pick a role.' }) }),
   title: z.string().trim().max(80, 'Keep it under 80 characters.'),
   departmentId: z.string().min(1, 'Pick a department.'),
@@ -66,6 +68,8 @@ function reportsUnder(id: string, all: SettingsUserRow[]): Set<string> {
 
 /** Add or edit a user. Shows the chosen role's row of the permission matrix. */
 export function UserDrawer({ open, onClose, user, allUsers, currentUserId, readOnly }: UserDrawerProps) {
+  const region = useRegion()
+  const emailDomain = useBranding().emailSenderAddress.split('@')[1] || 'company.com'
   const editing = !!user
   const isSelf = user?.id === currentUserId
   const create = useCreateUser()
@@ -172,7 +176,7 @@ export function UserDrawer({ open, onClose, user, allUsers, currentUserId, readO
       onClose={onClose}
       width="lg"
       title={title}
-      description={readOnly ? 'View only. A System Admin can change users.' : editing ? user?.email : 'They sign in with this email.'}
+      description={readOnly ? 'View only. A Company Admin can change users.' : editing ? user?.email : 'They sign in with this email.'}
       footer={
         readOnly ? (
           <Button variant="secondary" onClick={onClose}>
@@ -183,7 +187,7 @@ export function UserDrawer({ open, onClose, user, allUsers, currentUserId, readO
             <Button variant="secondary" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit" form="user-form" loading={pending} disabled={editing && !isDirty}>
+            <Button write type="submit" form="user-form" loading={pending} disabled={editing && !isDirty}>
               {editing ? 'Save changes' : 'Add user'}
             </Button>
           </>
@@ -205,18 +209,18 @@ export function UserDrawer({ open, onClose, user, allUsers, currentUserId, readO
                 id="us-email"
                 type="email"
                 autoComplete="off"
-                placeholder="name@apexaora.ae"
+                placeholder={`name@${emailDomain}`}
                 invalid={!!errors.email}
                 aria-describedby={errors.email ? 'us-email-error' : undefined}
                 {...register('email')}
               />
             </Field>
-            <Field id="us-mobile" label="Mobile" required error={errors.mobile?.message} hint="+971 5X XXX XXXX">
+            <Field id="us-mobile" label="Mobile" required error={errors.mobile?.message} hint={mobileExample(region.country)}>
               <TextInput
                 id="us-mobile"
                 type="tel"
                 inputMode="tel"
-                placeholder="+971 50 123 4567"
+                placeholder={mobileSample(region.country)}
                 invalid={!!errors.mobile}
                 aria-describedby={errors.mobile ? 'us-mobile-error' : 'us-mobile-hint'}
                 {...register('mobile')}

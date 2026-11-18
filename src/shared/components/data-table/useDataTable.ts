@@ -7,6 +7,7 @@ import {
   useReactTable,
   type ColumnDef,
   type ColumnFiltersState,
+  type ColumnOrderState,
   type FilterFn,
   type OnChangeFn,
   type RowSelectionState,
@@ -41,6 +42,9 @@ function resolve<S>(updater: Updater<S>, prev: S): S {
  * TanStack Table with the app's defaults: client-side sort, filter and pagination;
  * persistent view preferences in Redux (`tablePrefs[id]`); local filters and selection.
  */
+const EMPTY_FILTERS: ColumnFiltersState = []
+const EMPTY_ORDER: ColumnOrderState = []
+
 export function useDataTable<T>({
   id,
   data,
@@ -70,7 +74,8 @@ export function useDataTable<T>({
   const sorting = prefs?.sorting ?? defaultSorting
   const pageSize = prefs?.pageSize ?? defaultPageSize
 
-  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
+  const columnFilters = prefs?.columnFilters ?? EMPTY_FILTERS
+  const columnOrder = prefs?.columnOrder ?? EMPTY_ORDER
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
   const [pageIndex, setPageIndex] = useState(0)
   const [lastFilter, setLastFilter] = useState(globalFilter)
@@ -91,6 +96,7 @@ export function useDataTable<T>({
       sorting,
       columnVisibility,
       columnFilters,
+      columnOrder,
       rowSelection,
       globalFilter,
       pagination: { pageIndex, pageSize },
@@ -100,9 +106,10 @@ export function useDataTable<T>({
     onSortingChange: onSorting,
     onColumnVisibilityChange: onVisibility,
     onColumnFiltersChange: (u) => {
-      setColumnFilters(u)
+      dispatch(tablePrefsChanged({ id, prefs: { columnFilters: resolve(u, columnFilters) } }))
       setPageIndex(0)
     },
+    onColumnOrderChange: (u) => dispatch(tablePrefsChanged({ id, prefs: { columnOrder: resolve(u, columnOrder) } })),
     onRowSelectionChange: setRowSelection,
     onPaginationChange: (u) => {
       const next = resolve(u, { pageIndex, pageSize })

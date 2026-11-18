@@ -3,7 +3,8 @@ import type { ImportLeadRow, LeadOwnerOption } from '@/modules/leads/types'
 import type { IndustryOption, ListOption, StatusOption } from '@/modules/settings/types'
 import type { Service } from '@/modules/services/types'
 import { matchServiceText } from '@/modules/services/match'
-import { isUaeMobile, normalizeUaeMobile } from '@/shared/lib/phone'
+import { MOBILE_RULES, normalizeMobile } from '@/shared/lib/phone'
+import { getRegion } from '@/shared/lib/region'
 
 /**
  * Pure logic for the Excel import wizard: reading files, matching headers, suggesting value
@@ -63,7 +64,7 @@ export const TARGET_FIELDS: TargetField[] = [
   { key: 'owner', label: 'Owner', listed: true, aliases: ['owner', 'assigned to', 'agent', 'sales agent', 'salesperson', 'sales person', 'rep', 'account manager', 'handled by'], example: 'Bincy Thomas' },
   { key: 'nextFollowUpDate', label: 'Next follow-up', aliases: ['next follow up', 'next follow-up', 'follow up', 'follow-up', 'follow up date', 'followup', 'next action date', 'next contact', 'reminder'], example: '2026-11-20' },
   { key: 'nextStep', label: 'Next step', aliases: ['next step', 'next action', 'action', 'to do', 'todo'], example: 'Send chatbot demo' },
-  { key: 'value', label: 'Value (AED)', aliases: ['value', 'deal value', 'amount', 'budget', 'aed', 'estimated value', 'deal size'], example: '45000' },
+  { key: 'value', label: 'Value', aliases: ['value', 'deal value', 'amount', 'budget', 'aed', 'sar', 'estimated value', 'deal size'], example: '45000' },
   { key: 'companyServices', label: 'Services they offer', hint: 'Comma or semicolon separated', aliases: ['services', 'company services', 'services offered', 'what they do', 'offerings', 'products'], example: 'Dental implants; Orthodontics' },
   { key: 'recommendedService', label: 'Recommended service', hint: 'Matched to the service catalog; unmatched text is kept as “unmatched”', aliases: ['recommended service', 'service', 'service of interest', 'service interest', 'interested in', 'proposed service', 'recommended solution', 'solution'], example: 'AI customer-service chatbot (WhatsApp + web)' },
   { key: 'notes', label: 'Notes', aliases: ['notes', 'note', 'comments', 'comment', 'remarks', 'remark', 'description', 'details'], example: 'Met at Arab Health' },
@@ -435,7 +436,7 @@ export function suggestValueMaps(
 
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
 
-/** yyyy-mm-dd, dd/mm/yyyy (UAE order), dd-mm-yyyy, d MMM yyyy, Excel serials. '' when not a date. */
+/** yyyy-mm-dd, dd/mm/yyyy (Gulf order), dd-mm-yyyy, d MMM yyyy, Excel serials. '' when not a date. */
 export function parseDate(raw: string): string {
   const v = raw.trim()
   if (!v) return ''
@@ -444,7 +445,7 @@ export function parseDate(raw: string): string {
   m = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})$/.exec(v)
   if (m) {
     const y = +m[3] < 100 ? 2000 + +m[3] : +m[3]
-    // UAE writes day first; flip only when the "month" can't be a month.
+    // The Gulf writes day first; flip only when the "month" can't be a month.
     return +m[2] > 12 && +m[1] <= 12 ? valid(y, +m[1], +m[2]) : valid(y, +m[2], +m[1])
   }
   m = /^(\d{1,2})[\s-]([a-z]{3})[a-z]*[\s-,]+(\d{4})$/i.exec(v)
@@ -512,6 +513,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 /** Applies the mapping, value maps and fixes to every row. */
 export function buildRows(sheet: SheetFile, mapping: Mapping, maps: ValueMaps, fixes: Fixes, lists: ImportLists): CleanRow[] {
+  const country = getRegion().country
   const get = (r: string[], key: TargetKey) => {
     const col = mapping[key]
     return col === null ? '' : (r[col] ?? '').trim()
@@ -525,14 +527,14 @@ export function buildRows(sheet: SheetFile, mapping: Mapping, maps: ValueMaps, f
     const company = raw.company!.replace(/\s+/g, ' ')
     if (!company) issues.push({ field: 'company', level: 'error', message: 'Company is missing', raw: '' })
 
-    // Mobile: normalize to +9715XXXXXXXX.
+    // Mobile: normalize to +<dial code><number> for the workspace country.
     const rawMobile = fixes[row]?.mobile ?? raw.mobile!
     let mobile = ''
     if (rawMobile) {
       const first = rawMobile.split(/[/,;]| or /i)[0]
-      const n = normalizeUaeMobile(first)
-      if (n && isUaeMobile(n)) mobile = n
-      else issues.push({ field: 'mobile', level: 'warning', message: 'Not a UAE mobile', raw: rawMobile })
+      const n = normalizeMobile(first, country)
+      if (n) mobile = n
+      else issues.push({ field: 'mobile', level: 'warning', message: `Not a ${MOBILE_RULES[country].countryName} mobile`, raw: rawMobile })
     }
 
     // Email: trim + lowercase; first address if several.

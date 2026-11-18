@@ -1,11 +1,15 @@
 import type { ReportSchedule } from '@/modules/reports/types'
+import type { Tenant } from '@/shared/mocks/tenant'
+import { registerArray, registerValue } from '@/shared/mocks/persist/registry'
 
 /**
- * Scheduled report e-mails, kept in memory for the session. Seeded with one schedule per
- * manager so the list isn't empty on first open. `nextRunAt` is filled in by the service.
+ * Scheduled report e-mails, kept in memory for the session, per company. Seeded with one
+ * schedule per manager so the list isn't empty on first open. `nextRunAt` is filled in by the
+ * service. Ids come from one global sequence so they never collide across tenants.
  */
-export const reportSchedules: ReportSchedule[] = [
+export const reportSchedules: Tenant<ReportSchedule>[] = [
   {
+    companyId: 'co_apex',
     id: 'RS-1',
     report: 'all',
     frequency: 'weekly',
@@ -19,6 +23,7 @@ export const reportSchedules: ReportSchedule[] = [
     nextRunAt: '',
   },
   {
+    companyId: 'co_apex',
     id: 'RS-2',
     report: 'agents',
     frequency: 'monthly',
@@ -31,9 +36,26 @@ export const reportSchedules: ReportSchedule[] = [
     createdAt: '2026-09-12T06:00:00.000Z',
     nextRunAt: '',
   },
+  {
+    companyId: 'co_crest',
+    id: 'RS-3',
+    report: 'all',
+    frequency: 'weekly',
+    // Sunday: the first working day of the Saudi week.
+    day: 7,
+    time: '07:30',
+    recipients: ['noura@crestlogistics.sa', 'majed@crestlogistics.sa'],
+    format: 'excel',
+    createdBy: 'u102',
+    createdByName: 'Noura Al Qahtani',
+    createdAt: '2026-09-20T05:00:00.000Z',
+    nextRunAt: '',
+  },
 ]
 
 let seq = reportSchedules.length
+registerArray('reportSchedules', reportSchedules)
+registerValue('reportSchedules.seq', () => seq, (v) => { seq = v })
 
 export function nextScheduleId(): string {
   seq += 1

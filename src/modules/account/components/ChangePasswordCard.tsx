@@ -6,6 +6,7 @@ import { formatDistanceToNowStrict } from 'date-fns'
 import { Check, Circle, Eye, EyeOff, KeyRound } from 'lucide-react'
 import { passwordProblem, passwordRules, passwordStrength, type StrengthLevel } from '@/modules/account/lib/passwordRules'
 import { useChangePassword } from '@/modules/account/hooks/useAccount'
+import { useSupportSessionBlock } from '@/modules/tenancy/hooks'
 import { cn, fmtDate } from '@/shared/lib/utils'
 import { Button } from '@/shared/components/ui/Button'
 import { Card, CardBody, CardHeader } from '@/shared/components/ui/Card'
@@ -56,6 +57,7 @@ const STRENGTH_TEXT: Record<Exclude<StrengthLevel, 0>, string> = {
 export function ChangePasswordCard({ minLength, changedAt }: { minLength: number; changedAt: string | null | undefined }) {
   const toast = useToast()
   const change = useChangePassword()
+  const support = useSupportSessionBlock()
   const minRef = useRef(minLength)
   minRef.current = minLength
   // The schema is rebuilt per validation so a policy change applies without remounting the form.
@@ -176,7 +178,7 @@ export function ChangePasswordCard({ minLength, changedAt }: { minLength: number
             )}
 
             <div className="flex flex-wrap items-center gap-3">
-              <Button type="submit" loading={change.isPending}>
+              <Button type="submit" loading={change.isPending} disabled={support.blocked} title={support.hint} data-support-blocked={support.blocked || undefined}>
                 Change password
               </Button>
               <p className="text-xs text-muted">Your other devices will be signed out.</p>

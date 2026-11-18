@@ -30,7 +30,7 @@ export default function CustomersPage() {
   if (scope === 'hidden') {
     return (
       <PageBody>
-        <EmptyState title="Customers aren’t part of your role" body={`${user.role} has no access to Sales & CRM. Ask a System Admin if you need it.`} />
+        <EmptyState title="Customers aren’t part of your role" body={`${user.role} has no access to Sales & CRM. Ask a Company Admin if you need it.`} />
       </PageBody>
     )
   }
@@ -279,7 +279,7 @@ function buildColumns(lookups: LookupsApi) {
       cell: ({ getValue }) => <Badge>{lookups.industryLabel(getValue())}</Badge>,
     }),
     col.accessor('emirate', {
-      header: 'Emirate',
+      header: 'Emirate / region',
       cell: ({ getValue }) => <span className="whitespace-nowrap text-ink-2">{getValue() || '—'}</span>,
     }),
     col.accessor('contactsCount', {

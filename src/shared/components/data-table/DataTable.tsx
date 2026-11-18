@@ -187,13 +187,13 @@ function Pagination<T>({ table }: { table: Table<T> }) {
           </select>
         </label>
         <Button variant="ghost" size="xs" iconOnly aria-label="Previous page" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}>
-          <ChevronLeft />
+          <ChevronLeft className="rtl:-scale-x-100" />
         </Button>
         <span className="num">
           {pageIndex + 1} / {Math.max(1, table.getPageCount())}
         </span>
         <Button variant="ghost" size="xs" iconOnly aria-label="Next page" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()}>
-          <ChevronRight />
+          <ChevronRight className="rtl:-scale-x-100" />
         </Button>
       </div>
     </div>

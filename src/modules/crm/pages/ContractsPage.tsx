@@ -32,7 +32,7 @@ export default function ContractsPage() {
   if (scope === 'hidden') {
     return (
       <PageBody>
-        <EmptyState title="Contracts aren’t part of your role" body={`${user.role} has no access to Sales & CRM. Ask a System Admin if you need it.`} />
+        <EmptyState title="Contracts aren’t part of your role" body={`${user.role} has no access to Sales & CRM. Ask a Company Admin if you need it.`} />
       </PageBody>
     )
   }
@@ -97,7 +97,7 @@ function ContractsList({ scope, canEdit }: { scope: Scope; canEdit: boolean }) {
         }
         actions={
           canEdit && (
-            <Button size="sm" onClick={() => setDrawer({ contract: null })}>
+            <Button write size="sm" onClick={() => setDrawer({ contract: null })}>
               <Plus />
               New contract
             </Button>
@@ -147,7 +147,7 @@ function ContractsList({ scope, canEdit }: { scope: Scope; canEdit: boolean }) {
               body={data.length === 0 ? 'Record what customers signed to track renewals and recurring revenue.' : 'Try another search or clear the filters.'}
               action={
                 data.length === 0 && canEdit ? (
-                  <Button size="sm" onClick={() => setDrawer({ contract: null })}>
+                  <Button write size="sm" onClick={() => setDrawer({ contract: null })}>
                     <Plus />
                     New contract
                   </Button>
@@ -379,7 +379,7 @@ function RowActions({ contract: k, onEdit }: { contract: ContractRow; onEdit: ()
       <Menu
         className="w-52"
         trigger={(props) => (
-          <Button variant="ghost" size="xs" iconOnly aria-label={`Actions for ${k.title}`} loading={update.isPending} {...props}>
+          <Button write variant="ghost" size="xs" iconOnly aria-label={`Actions for ${k.title}`} loading={update.isPending} {...props}>
             {!update.isPending && <MoreHorizontal />}
           </Button>
         )}

@@ -1,4 +1,5 @@
-import type { ActivityType, LeadStatus, Priority, SourceType, TaskStatus } from '@/shared/types'
+import type { ActivityType, LeadStatus, SourceType } from '@/shared/types'
+import type { TaskLinkType, TaskPriority, TaskStatus } from '@/modules/tasks/types'
 
 /** Ready-made sales reports (spec: Reports, phase 1). */
 export type ReportId = 'status' | 'industry' | 'source' | 'funnel' | 'agents' | 'targets' | 'overdue'
@@ -192,16 +193,24 @@ export interface OverdueFollowUp {
   nextStep: string
 }
 
+/** An open task past its due date (from the shared overdueTasks selector), as of today. */
 export interface OverdueTask {
   taskId: string
   title: string
-  leadId: string
-  company: string
+  /** What the task is linked to; null for personal to-dos. */
+  linkType: TaskLinkType | null
+  linkId: string | null
+  /** Resolved label of the link (project name, lead company, customer name). */
+  linkLabel: string | null
+  /** False when the linked record can't be opened. */
+  linkAvailable: boolean
+  projectId: string | null
+  projectName: string | null
   ownerId: string
   ownerName: string
   dueDate: string
   daysOverdue: number
-  priority: Priority
+  priority: TaskPriority
   status: TaskStatus
 }
 
@@ -265,7 +274,7 @@ export interface ReportSchedule {
   frequency: ScheduleFrequency
   /** Weekly: 1 (Mon) … 7 (Sun). Monthly: day of month 1 … 28. */
   day: number
-  /** `HH:mm`, Gulf Standard Time. */
+  /** `HH:mm` in the workspace timezone. */
   time: string
   recipients: string[]
   format: ScheduleFormat

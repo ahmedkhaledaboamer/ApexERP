@@ -53,7 +53,7 @@ export function BackupsCard({ canEdit }: { canEdit: boolean }) {
         description="Automatic copies of all ERP data, kept off-site."
         action={
           canEdit && (
-            <Button variant="secondary" size="sm" loading={run.isPending} disabled={running || !query.data} onClick={start}>
+            <Button write variant="secondary" size="sm" loading={run.isPending} disabled={running || !query.data} onClick={start}>
               {!run.isPending && <Play />}
               {running ? 'Backup running…' : 'Run backup now'}
             </Button>

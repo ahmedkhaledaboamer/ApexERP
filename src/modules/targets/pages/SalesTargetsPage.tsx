@@ -57,7 +57,7 @@ export default function SalesTargetsPage() {
       <PageBody>
         <EmptyState
           title="Sales targets aren’t part of your role"
-          body={`${user.role} has no access to Sales & CRM. Ask a System Admin if you need it.`}
+          body={`${user.role} has no access to Sales & CRM. Ask a Company Admin if you need it.`}
         />
       </PageBody>
     )
@@ -99,7 +99,7 @@ function SalesTargets({ scope }: { scope: ReturnType<typeof scopeOf> }) {
           <>
             <MonthSwitcher month={month} thisMonth={thisMonth} lastAllowed={lastAllowed} onChange={goTo} />
             {data?.canEdit && data.rows.length > 0 && (
-              <Button onClick={() => setEditing(data.rows[0].userId)}>
+              <Button write onClick={() => setEditing(data.rows[0].userId)}>
                 <Pencil />
                 Edit targets
               </Button>
@@ -276,7 +276,7 @@ function Matrix({ data, canEdit, onEdit }: { data: TargetsMonth; canEdit: boolea
       <div className="overflow-x-auto border-t border-line">
         <table className="w-full min-w-[75rem] border-collapse text-[0.8125rem]">
           <thead>
-            <tr className="border-b border-line bg-sunken/50 text-left text-xs font-medium text-muted">
+            <tr className="border-b border-line bg-sunken/50 text-start text-xs font-medium text-muted">
               <th scope="col" className="sticky start-0 z-10 w-[13.75rem] bg-sunken px-5 py-2.5 font-medium">
                 Agent
               </th>
@@ -307,7 +307,7 @@ function Matrix({ data, canEdit, onEdit }: { data: TargetsMonth; canEdit: boolea
           {showTotals && (
             <tfoot>
               <tr className="border-t border-line-strong bg-sunken/40">
-                <th scope="row" className="sticky start-0 z-10 bg-sunken px-5 py-3 text-left text-[0.8125rem] font-semibold">
+                <th scope="row" className="sticky start-0 z-10 bg-sunken px-5 py-3 text-start text-[0.8125rem] font-semibold">
                   Team total
                   <span className="block text-xs font-normal text-muted">{data.rows.length} agents</span>
                 </th>
@@ -332,7 +332,7 @@ function Matrix({ data, canEdit, onEdit }: { data: TargetsMonth; canEdit: boolea
 function AgentRow({ row, elapsed, canEdit, onEdit }: { row: AgentTargetRow; elapsed: number; canEdit: boolean; onEdit: (id: string) => void }) {
   return (
     <tr className="group transition-colors hover:bg-hover/50">
-      <th scope="row" className="sticky start-0 z-10 bg-surface px-5 py-3 text-left font-normal group-hover:bg-hover">
+      <th scope="row" className="sticky start-0 z-10 bg-surface px-5 py-3 text-start font-normal group-hover:bg-hover">
         <div className="flex min-w-0 items-center gap-2.5">
           <Avatar name={row.name} size="md" />
           <div className="min-w-0">
@@ -358,7 +358,7 @@ function AgentRow({ row, elapsed, canEdit, onEdit }: { row: AgentTargetRow; elap
       </td>
       {canEdit && (
         <td className="px-3 py-3 text-end">
-          <Button variant="ghost" size="sm" iconOnly aria-label={`Edit targets for ${row.name}`} title="Edit targets" onClick={() => onEdit(row.userId)}>
+          <Button write variant="ghost" size="sm" iconOnly aria-label={`Edit targets for ${row.name}`} title="Edit targets" onClick={() => onEdit(row.userId)}>
             <Pencil />
           </Button>
         </td>

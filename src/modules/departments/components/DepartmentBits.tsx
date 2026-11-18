@@ -61,7 +61,7 @@ export function DepartmentIcon({ size = 'md', muted }: { size?: 'sm' | 'md' | 'l
 }
 
 const ROLE_TONE: Record<Role, Tone> = {
-  'System Admin': 'red',
+  'Company Admin': 'red',
   Management: 'brand',
   'Sales Manager': 'blue',
   'Sales Agent': 'sky',

@@ -8,6 +8,7 @@ export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   whatsapp: 'WhatsApp',
   visit: 'Visit',
   meeting: 'Meeting',
+  system: 'System',
 }
 
 /** Outreach a Do Not Contact lead must not receive. */
@@ -26,7 +27,7 @@ export const PRIORITY_STYLES: Record<Priority, string> = {
 }
 
 export const ROLES: Role[] = [
-  'System Admin',
+  'Company Admin',
   'Management',
   'Sales Manager',
   'Sales Agent',
@@ -37,22 +38,4 @@ export const ROLES: Role[] = [
   'Employee',
 ]
 
-/** The seeded user who represents each role in the role switcher and the demo logins. */
-export const DEMO_USER_BY_ROLE: Record<Role, string> = {
-  'System Admin': 'u1',
-  Management: 'u2',
-  'Sales Manager': 'u3',
-  'Sales Agent': 'u4',
-  'Marketing Manager': 'u7',
-  Accountant: 'u8',
-  'HR Manager': 'u9',
-  'Department Head': 'u10',
-  Employee: 'u11',
-}
-
 export const DEMO_PASSWORD = 'apex2025'
-
-export const LOGO_URL = 'https://cdn.magicpatterns.com/uploads/eKKXVjahfoDq12vpjN8HQk/logo.png'
-
-/** SVG charts cannot read Tailwind classes, so the brand colours are repeated here. */
-export const BRAND_HEX = { violet: '#7c3aed', blue: '#2563eb' }

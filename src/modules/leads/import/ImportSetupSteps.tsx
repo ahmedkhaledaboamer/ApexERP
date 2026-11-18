@@ -2,7 +2,8 @@ import { useMemo, useRef, useState, type DragEvent } from 'react'
 import { AlertTriangle, CheckCircle2, Download, FileSpreadsheet, FlaskConical, RefreshCw, Sparkles, UploadCloud, Wand2 } from 'lucide-react'
 import type { LeadOwnerOption } from '@/modules/leads/types'
 import { useLookups } from '@/shared/hooks/useLookups'
-import { formatUaeMobile } from '@/shared/lib/phone'
+import { formatMobile, mobileExample, mobileSample } from '@/shared/lib/phone'
+import { getRegion } from '@/shared/lib/region'
 import { cn } from '@/shared/lib/utils'
 import { Badge } from '@/shared/components/ui/Badge'
 import { Button } from '@/shared/components/ui/Button'
@@ -97,11 +98,11 @@ export function UploadStep({ sheet, onLoaded }: { sheet: SheetFile | null; onLoa
             .xlsx or .csv, first row as headers, up to {MAX_FILE_ROWS.toLocaleString()} rows. Only the first sheet is read.
           </p>
           <div className="mt-5 flex flex-wrap justify-center gap-2">
-            <Button onClick={() => inputRef.current?.click()} disabled={reading}>
+            <Button write onClick={() => inputRef.current?.click()} disabled={reading}>
               <FileSpreadsheet />
               Choose file
             </Button>
-            <Button variant="secondary" onClick={() => onLoaded(sampleSheet())} disabled={reading}>
+            <Button write variant="secondary" onClick={() => onLoaded(sampleSheet())} disabled={reading}>
               <FlaskConical />
               Try a sample file
             </Button>
@@ -158,7 +159,7 @@ export function UploadStep({ sheet, onLoaded }: { sheet: SheetFile | null; onLoa
             <ul className="list-disc space-y-1.5 ps-4 text-xs text-muted">
               <li>Upload it as is — you’ll map its columns next.</li>
               <li>Free-typed sources, industries, statuses and owners are cleaned up in step 3.</li>
-              <li>Mobiles like 050 123 4567 become +971 50 123 4567.</li>
+              <li>Local mobiles (with a leading 0) get the country code, e.g. {mobileSample(getRegion().country)}.</li>
               <li>Duplicates are checked by company, domain and email before anything is saved.</li>
             </ul>
           </CardBody>
@@ -371,7 +372,7 @@ export function CleanStep({
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Tile label="Rows" value={rows.length.toLocaleString()} />
-        <Tile label="Mobiles normalized" value={stats.mobiles} tone="brand" hint="To +971 5X XXX XXXX" />
+        <Tile label="Mobiles normalized" value={stats.mobiles} tone="brand" hint={`To ${mobileExample(getRegion().country)}`} />
         <Tile label="Rows with warnings" value={stats.warnings} tone={stats.warnings ? 'amber' : 'neutral'} hint="Imported, value cleared" />
         <Tile label="Rows with errors" value={stats.errors} tone={stats.errors ? 'red' : 'green'} hint={stats.errors ? 'Won’t import until fixed' : 'All good'} />
       </div>
@@ -449,7 +450,7 @@ export function CleanStep({
                       {r.issues.some((i) => i.field === 'mobile') || fixes[r.data.row]?.mobile !== undefined ? (
                         <TextInput
                           aria-label={`Mobile for row ${r.data.row}`}
-                          placeholder="+971 5X XXX XXXX"
+                          placeholder={mobileExample(getRegion().country)}
                           defaultValue={fixes[r.data.row]?.mobile ?? r.raw.mobile}
                           onBlur={(e) => onFix(r.data.row, 'mobile', e.target.value)}
                           className="h-8"
@@ -458,7 +459,7 @@ export function CleanStep({
                       {r.issues.some((i) => i.field === 'email') || fixes[r.data.row]?.email !== undefined ? (
                         <TextInput
                           aria-label={`Email for row ${r.data.row}`}
-                          placeholder="name@company.ae"
+                          placeholder="name@company.com"
                           defaultValue={fixes[r.data.row]?.email ?? r.raw.email}
                           onBlur={(e) => onFix(r.data.row, 'email', e.target.value)}
                           className="h-8"
@@ -475,7 +476,7 @@ export function CleanStep({
                           </span>
                         )}
                       {r.data.mobile && fixes[r.data.row]?.mobile !== undefined && (
-                        <span className="block text-xs text-success-700 dark:text-success-500">✓ {formatUaeMobile(r.data.mobile)}</span>
+                        <span className="block text-xs text-success-700 dark:text-success-500">✓ {formatMobile(r.data.mobile, getRegion().country)}</span>
                       )}
                     </td>
                   </tr>

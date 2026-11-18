@@ -116,7 +116,7 @@ function Edge({ children, extra }: { children: ReactNode; extra?: ReactNode }) {
         <span>{children}</span>
       </span>
       <span aria-hidden className="relative hidden h-px bg-line-strong md:block">
-        <ChevronRight className="absolute -end-1.5 top-1/2 size-3.5 -translate-y-1/2 text-subtle" />
+        <ChevronRight className="absolute -end-1.5 top-1/2 size-3.5 -translate-y-1/2 text-subtle rtl:-scale-x-100" />
       </span>
     </li>
   )
@@ -126,9 +126,9 @@ function Branch({ from, label, to, icon }: { from: { label: string; tone: Tone }
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-line bg-sunken/50 px-3 py-2.5">
       <Chip status={from} />
-      <ChevronRight className="size-3.5 text-subtle" aria-hidden />
+      <ChevronRight className="size-3.5 text-subtle rtl:-scale-x-100" aria-hidden />
       <span className="text-[0.75rem] text-muted">{label}</span>
-      <ChevronRight className="size-3.5 text-subtle" aria-hidden />
+      <ChevronRight className="size-3.5 text-subtle rtl:-scale-x-100" aria-hidden />
       <span className="flex items-center gap-1.5 text-[0.8125rem] font-medium text-ink [&_svg]:size-3.5 [&_svg]:text-brand-600 dark:[&_svg]:text-brand-300">
         {icon}
         {to}

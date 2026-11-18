@@ -13,6 +13,7 @@ import { Segmented } from '@/shared/components/ui/Segmented'
 import { useToast } from '@/shared/components/ui/Toast'
 import { Field, SelectInput, Switch, TextArea, TextInput } from '@/shared/components/form/Field'
 import { IndustryPicker } from '@/modules/services/components/IndustryPicker'
+import { getRegion } from '@/shared/lib/region'
 
 interface ServiceDrawerProps {
   open: boolean
@@ -23,17 +24,18 @@ interface ServiceDrawerProps {
   openAfterCreate?: boolean
 }
 
-const EMPTY: ServiceValues = {
+/** New records start in the workspace currency. */
+const empty = (): ServiceValues => ({
   name: '',
   category: '',
   description: '',
   industries: [],
   pricingType: 'Fixed',
   price: '' as unknown as number,
-  currency: 'AED',
+  currency: getRegion().currency,
   deliveryDays: '' as unknown as number,
   active: true,
-}
+})
 
 const PRICE_LABEL = { Fixed: 'Price', Monthly: 'Price per month', Hourly: 'Price per hour' } as const
 
@@ -54,7 +56,7 @@ export function ServiceDrawer({ open, onClose, service, openAfterCreate }: Servi
     reset,
     watch,
     formState: { errors, isDirty },
-  } = useForm<ServiceValues>({ resolver: zodResolver(serviceSchema), mode: 'onTouched', defaultValues: EMPTY })
+  } = useForm<ServiceValues>({ resolver: zodResolver(serviceSchema), mode: 'onTouched', defaultValues: empty() })
 
   useEffect(() => {
     if (!open) return
@@ -71,7 +73,7 @@ export function ServiceDrawer({ open, onClose, service, openAfterCreate }: Servi
             deliveryDays: service.deliveryDays,
             active: service.active,
           }
-        : EMPTY,
+        : empty(),
     )
     create.reset()
     update.reset()
@@ -140,7 +142,7 @@ export function ServiceDrawer({ open, onClose, service, openAfterCreate }: Servi
           <Button variant="secondary" onClick={close}>
             Cancel
           </Button>
-          <Button type="submit" form="service-form" loading={pending}>
+          <Button write type="submit" form="service-form" loading={pending}>
             {editing ? 'Save service' : 'Create service'}
           </Button>
         </>

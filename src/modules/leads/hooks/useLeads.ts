@@ -122,6 +122,7 @@ export function useCreateLead() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: leadKeys.all })
       qc.invalidateQueries({ queryKey: dashboardKeys.all })
+      qc.invalidateQueries({ queryKey: ['onboarding'] })
       // Service usage counts (leads recommending / interested) change with lead edits.
       qc.invalidateQueries({ queryKey: ['services'] })
     },
@@ -202,6 +203,7 @@ export function useImportLeads() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: leadKeys.all })
       qc.invalidateQueries({ queryKey: dashboardKeys.all })
+      qc.invalidateQueries({ queryKey: ['onboarding'] })
     },
   })
 }

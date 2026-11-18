@@ -103,7 +103,7 @@ export function FollowUpRow({ lead, alerts, canEdit, showOwner, rescheduling, on
       <div className="flex shrink-0 items-center gap-1.5 ps-[3.25rem] lg:ps-0">
         {canEdit && (
           <>
-            <Button variant="secondary" size="sm" onClick={() => onLog(lead)}>
+            <Button write variant="secondary" size="sm" onClick={() => onLog(lead)}>
               <MessageSquarePlus />
               Log activity
             </Button>
@@ -116,7 +116,7 @@ export function FollowUpRow({ lead, alerts, canEdit, showOwner, rescheduling, on
           title="Open lead"
           className="inline-flex size-8 items-center justify-center rounded-md text-muted transition-colors hover:bg-hover hover:text-ink"
         >
-          <ArrowUpRight className="size-4" />
+          <ArrowUpRight className="size-4 rtl:-scale-x-100" />
         </Link>
       </div>
     </li>

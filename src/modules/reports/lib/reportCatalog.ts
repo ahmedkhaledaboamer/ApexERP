@@ -38,8 +38,8 @@ export const DIMENSION_LABELS: Record<CustomDimension, string> = {
 
 export const MEASURE_LABELS: Record<CustomMeasure, string> = {
   count: 'Number of leads',
-  value: 'Pipeline value (AED)',
-  wonValue: 'Won value (AED)',
+  value: 'Pipeline value',
+  wonValue: 'Won value',
   conversion: 'Conversion rate (%)',
 }
 

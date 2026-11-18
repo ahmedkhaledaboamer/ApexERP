@@ -83,7 +83,7 @@ export function AddItem({ noun, existing, onAdd }: { noun: string; existing: str
           }}
           className="h-8"
         />
-        <Button type="submit" variant="secondary" size="sm">
+        <Button write type="submit" variant="secondary" size="sm">
           <Plus />
           Add
         </Button>
@@ -195,7 +195,7 @@ export function ListEditor({ items, onChange: emit, noun, label, readOnly, error
                   {onSelect && (
                     <ChevronRight
                       aria-hidden
-                      className={cn('size-4 shrink-0 transition-colors', selected ? 'text-brand-600 dark:text-brand-300' : 'text-subtle')}
+                      className={cn('size-4 shrink-0 transition-colors rtl:-scale-x-100', selected ? 'text-brand-600 dark:text-brand-300' : 'text-subtle')}
                     />
                   )}
                 </div>

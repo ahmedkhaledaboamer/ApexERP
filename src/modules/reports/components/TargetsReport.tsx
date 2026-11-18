@@ -135,7 +135,7 @@ export function TargetsReport({ data }: { data: SalesReport }) {
                       {t.elapsed < 100 && (
                         <span
                           className="absolute -top-1 h-4 w-px bg-ink/40"
-                          style={{ left: `${t.elapsed}%` }}
+                          style={{ insetInlineStart: `${t.elapsed}%` }}
                           title="Where the month should be by today"
                           aria-hidden
                         />

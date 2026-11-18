@@ -20,6 +20,7 @@ import type { DashboardPeriod, DashboardSummary, Role } from '@/shared/types'
 import { leadPath, PATHS } from '@/app/paths'
 import { getDashboardSummary } from '@/modules/dashboard/api/dashboardApi'
 import { dashboardKeys } from '@/modules/dashboard/queryKeys'
+import { MyTasksCard, TaskStats } from '@/modules/dashboard/components/TaskWidgets'
 import { useLeadsQuery } from '@/modules/leads/hooks/useLeads'
 import { FollowUpLabel, followUpState } from '@/modules/leads/components/FollowUpLabel'
 import type { LeadRow } from '@/modules/leads/types'
@@ -40,8 +41,10 @@ import { PageBody, PageHeader } from '@/shared/components/layout/PageHeader'
 import { PrintStyles } from '@/shared/components/layout/PrintStyles'
 import { Button } from '@/shared/components/ui/Button'
 import { Segmented, type SegmentedOption } from '@/shared/components/ui/Segmented'
+import { useRegion } from '@/modules/tenancy/hooks'
+import { OnboardingChecklist } from '@/modules/onboarding/OnboardingChecklist'
 
-const C = { brand: '#7c3aed', blue: '#2563eb', green: '#10b981', amber: '#f59e0b', grey: '#d4d4d0' }
+const C = { brand: 'var(--color-brand-600)', blue: '#2563eb', green: '#10b981', amber: '#f59e0b', grey: '#d4d4d0' }
 
 const PERIODS: SegmentedOption<DashboardPeriod>[] = [
   { value: '30d', label: '30 days' },
@@ -52,7 +55,7 @@ const PERIODS: SegmentedOption<DashboardPeriod>[] = [
 
 /** Spec: agent, manager and management dashboards. Data scope still comes from permissions. */
 function dashboardFor(role: Role, scope: ReturnType<typeof scopeOf>): { title: string; subject: string } {
-  if (role === 'Management' || role === 'System Admin') return { title: 'Management dashboard', subject: 'the company is' }
+  if (role === 'Management' || role === 'Company Admin') return { title: 'Management dashboard', subject: 'the company is' }
   if (role === 'Sales Manager' || role === 'Department Head') return { title: 'Manager dashboard', subject: 'your team is' }
   if (scope === 'own') return { title: 'My dashboard', subject: 'your pipeline is' }
   return { title: 'Sales overview', subject: 'sales are' }
@@ -99,13 +102,9 @@ export default function DashboardPage() {
         }
       />
       <PageBody>
+        <OnboardingChecklist className="mb-6" />
         {scope === 'hidden' ? (
-          <Card>
-            <EmptyState
-              title="No sales figures for your role"
-              body={`As ${user.role}, your dashboard fills in as HR and your other modules come online.`}
-            />
-          </Card>
+          <TasksOnlyDashboard userId={user.id} role={user.role} showTasks={scopeOf(user.role, 'tasks') !== 'hidden'} />
         ) : (
           <SalesDashboard userId={user.id} period={period} />
         )}
@@ -193,15 +192,70 @@ function SalesDashboard({ userId, period }: { userId: string; period: DashboardP
         <StatCard label="Lead → won" icon={<Percent />} value={`${d.winRate}%`} hint={`${d.wonCount} won of ${d.closedCount} closed`} />
       </section>
 
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
+      {d.tasks.scope !== 'hidden' && <TaskRow data={d} />}
+
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_26.25rem]">
         <TrendCard data={d} />
         <TargetCard data={d} />
       </div>
 
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[26.25rem_minmax(0,1fr)]">
         <StageCard leads={leads.data} loading={leads.isPending} />
         <AttentionCard leads={leads.data} loading={leads.isPending} />
       </div>
+    </div>
+  )
+}
+
+/* ---------------- Tasks ---------------- */
+
+/** My tasks card + overdue / due-this-week stats, from the shared task selectors. */
+function TaskRow({ data }: { data: DashboardSummary }) {
+  return (
+    <section aria-label="Tasks" className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+      <MyTasksCard data={data.tasks} />
+      <div className="grid grid-cols-1 content-start gap-5 sm:grid-cols-2 xl:grid-cols-1">
+        <TaskStats data={data.tasks} />
+      </div>
+    </section>
+  )
+}
+
+/** Roles without sales access: the dashboard shows their tasks only. */
+function TasksOnlyDashboard({ userId, role, showTasks }: { userId: string; role: Role; showTasks: boolean }) {
+  const summary = useQuery({
+    queryKey: dashboardKeys.summary(userId, '12m'),
+    queryFn: () => getDashboardSummary('12m'),
+    enabled: showTasks,
+  })
+  const noSales = (
+    <Card>
+      <EmptyState title="No sales figures for your role" body={`As ${role}, your dashboard fills in as HR and your other modules come online.`} />
+    </Card>
+  )
+  if (!showTasks) return noSales
+  if (summary.isPending) {
+    return (
+      <div aria-busy="true" aria-label="Loading dashboard" className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <Skeleton className="h-80 rounded-card" />
+        <div className="space-y-5">
+          <Skeleton className="h-36 rounded-card" />
+          <Skeleton className="h-36 rounded-card" />
+        </div>
+      </div>
+    )
+  }
+  if (summary.isError) {
+    return (
+      <Card>
+        <ErrorState message={summary.error.message} onRetry={() => summary.refetch()} />
+      </Card>
+    )
+  }
+  return (
+    <div className="space-y-5">
+      <TaskRow data={summary.data} />
+      {noSales}
     </div>
   )
 }
@@ -211,6 +265,7 @@ function SalesDashboard({ userId, period }: { userId: string; period: DashboardP
 type TrendView = 'leads' | 'revenue'
 
 function TrendCard({ data }: { data: DashboardSummary }) {
+  const wonLabel = `Won (${useRegion().currency})`
   const [view, setView] = useState<TrendView>('leads')
   return (
     <Card className="p-1">
@@ -240,13 +295,13 @@ function TrendCard({ data }: { data: DashboardSummary }) {
           </>
         ) : (
           <>
-            <Legend color={C.brand} label="Won (AED)" />
+            <Legend color={C.brand} label={wonLabel} />
             <Legend color={C.green} label="Deals won" line />
           </>
         )}
       </div>
       <CardBody className="pt-3">
-        <div className="h-80">
+        <div dir="ltr" className="h-80">
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={data.series} margin={{ top: 8, right: 4, left: 0, bottom: 0 }} barGap={4}>
               <CartesianGrid vertical={false} stroke="currentColor" strokeOpacity={0.08} strokeDasharray="4 4" />
@@ -262,7 +317,7 @@ function TrendCard({ data }: { data: DashboardSummary }) {
               <YAxis yAxisId="right" orientation="right" hide />
               <Tooltip
                 cursor={{ fill: 'currentColor', fillOpacity: 0.04 }}
-                formatter={(value: number, name: string) => (name === 'Won (AED)' ? fmtCompactMoney(value) : value)}
+                formatter={(value: number, name: string) => (name === wonLabel ? fmtCompactMoney(value) : value)}
                 contentStyle={{
                   background: 'var(--color-surface)',
                   border: '1px solid var(--color-line)',
@@ -280,7 +335,7 @@ function TrendCard({ data }: { data: DashboardSummary }) {
                 </>
               ) : (
                 <>
-                  <Bar yAxisId="left" dataKey="wonValue" name="Won (AED)" fill={C.brand} radius={[4, 4, 0, 0]} maxBarSize={30} />
+                  <Bar yAxisId="left" dataKey="wonValue" name={wonLabel} fill={C.brand} radius={[4, 4, 0, 0]} maxBarSize={30} />
                   <Line yAxisId="right" type="monotone" dataKey="won" name="Deals won" stroke={C.green} strokeWidth={2} dot={false} />
                 </>
               )}
@@ -496,7 +551,7 @@ function DashboardSkeleton() {
           ))}
         </div>
       ))}
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_26.25rem]">
         <Skeleton className="h-[26rem] rounded-card" />
         <Skeleton className="h-[26rem] rounded-card" />
       </div>

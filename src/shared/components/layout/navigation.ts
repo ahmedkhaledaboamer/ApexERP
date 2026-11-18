@@ -36,6 +36,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import type { ModuleKey } from '@/shared/types'
+import type { PlanModule } from '@/modules/billing/types'
 import { PATHS } from '@/app/paths'
 
 export interface NavItem {
@@ -44,6 +45,11 @@ export interface NavItem {
   to: string
   /** Hidden when the role has no view access to this module. */
   module?: ModuleKey
+  /**
+   * Plan module that must be in the subscription (defaults to `module`). Items whose plan module
+   * isn't included are shown locked and their route renders the upgrade page (billing/gating.ts).
+   */
+  planModule?: PlanModule
   /** Built and live. Unbuilt items open the "coming soon" page with their spec summary. */
   ready?: boolean
   phase?: 1 | 2 | 3
@@ -75,8 +81,8 @@ export const NAV_TOP: NavItem[] = [
     phase: 1,
     description: 'Today’s and overdue follow-ups for each agent, with one-click logging.',
   },
-  { label: 'My tasks', icon: CheckSquare, to: '/tasks/my', phase: 1, description: 'Your tasks across leads, customers, projects and events.' },
-  { label: 'Calendar', icon: CalendarDays, to: '/calendar', phase: 1, description: 'Meetings, follow-ups and task due dates in one calendar.' },
+  { label: 'My tasks', icon: CheckSquare, to: '/tasks/my', module: 'tasks', ready: true, phase: 1, description: 'Your tasks across leads, customers, projects and events.' },
+  { label: 'Calendar', icon: CalendarDays, to: '/tasks/calendar', module: 'tasks', ready: true, phase: 1, description: 'Task due dates by month or week; drag to reschedule.' },
 ]
 
 /** Department sections, in the spec's phase order. */
@@ -160,10 +166,13 @@ export const NAV_SECTIONS: NavSection[] = [
         label: 'Projects',
         icon: FolderKanban,
         to: '/projects',
+        module: 'tasks',
+        ready: true,
         phase: 1,
         description: 'Delivery projects: customer, service, manager, dates, status and hours.',
       },
-      { label: 'Task board', icon: ClipboardList, to: '/tasks/board', phase: 1, description: 'Kanban, list and calendar views of all tasks.' },
+      { label: 'Task board', icon: ClipboardList, to: '/tasks/board', module: 'tasks', ready: true, phase: 1, description: 'Kanban board of tasks by status.' },
+      { label: 'All tasks', icon: CheckSquare, to: '/tasks/list', module: 'tasks', ready: true, phase: 1, description: 'Every task you can see, as a table.' },
     ],
   },
   {
@@ -198,6 +207,7 @@ export const NAV_SECTIONS: NavSection[] = [
         label: 'Events',
         icon: Ticket,
         to: '/events',
+        planModule: 'events',
         phase: 2,
         description: 'Exhibitions, meetings and webinars; registered attendees become leads with source “Event”.',
       },
@@ -281,6 +291,7 @@ export const NAV_SECTIONS: NavSection[] = [
         icon: Plug,
         to: '/integrations',
         module: 'settings',
+        planModule: 'integrations',
         phase: 1,
         description: 'Email and website form now; WhatsApp, ads, calendar and payments in phase 3. Status and sync log.',
       },
@@ -296,6 +307,8 @@ export const NAV_SECTIONS: NavSection[] = [
         label: 'AI assistant',
         icon: Bot,
         to: '/ai',
+        // Hook point for the AI assistant: gated by useEntitlements().hasModule('ai').
+        planModule: 'ai',
         phase: 1,
         description: 'Drafts emails, suggests services, summarizes notes. Any change asks for your confirmation first.',
       },

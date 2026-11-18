@@ -11,35 +11,43 @@ import type {
 } from '@/modules/quotations/types'
 import {
   AWAITING_STATUSES,
-  DEFAULT_QUOTE_CURRENCY,
   DEFAULT_VALIDITY_DAYS,
-
-  DEFAULT_VAT_PCT,
   addDaysIso,
   computeTotals,
   daysUntil,
-  fmtAed,
+  fmtIn,
   todayIso,
 } from '@/modules/quotations/lib/totals'
-import { can, inScope, scopeOf, teamIdsFor } from '@/shared/lib/permissions'
-import { departments } from '@/shared/mocks/data/departments'
-import { activities, leads, users } from '@/shared/mocks/db'
-import { quotations } from '@/shared/mocks/data/quotations'
+import { can, inScope, scopeOf } from '@/shared/lib/permissions'
+import { activities, leads } from '@/shared/mocks/db'
+import { CREST_SEED_QUOTATION_BASE, quotations } from '@/shared/mocks/data/quotations'
 import { services as catalog } from '@/shared/mocks/data/services'
+import { companyById } from '@/shared/mocks/data/tenancy'
 import { delay, fail, ownerName } from '@/shared/mocks/server'
 import { statusOf, SYSTEM_STATUS } from '@/shared/mocks/data/lookups'
+import { findInTenant, scoped, stamp, tenantOf, type Tenant } from '@/shared/mocks/tenant'
+import { assertCapacity, recordUsage } from '@/shared/mocks/services/billing'
+import { salesTeamOf, untenant } from '@/shared/mocks/services/leads'
 
 /* ------------------------------------------------------------------------------------------
- * Quotations. Scope follows the lead: you see a quotation when you can see its lead.
+ * Quotations. Scope follows the lead: you see a quotation when you can see its lead, inside
+ * your own company. Currency and VAT default to the company's regional settings.
  * ---------------------------------------------------------------------------------------- */
+
+/** Currency and VAT defaults of a company (Settings > Company > Regional). */
+function regionalDefaults(companyId: string): { currency: string; vatPct: number } {
+  const regional = companyById(companyId)?.regional
+  if (!regional) throw new Error(`Unknown company ${companyId}`)
+  return { currency: regional.currency, vatPct: regional.vatPct }
+}
 
 /**
  * Open stages ordered before Proposal (per the statuses lookup); sending a quotation moves these
  * leads to Proposal. Parked and closed leads are left alone.
  */
-function isBeforeProposal(status: LeadStatus): boolean {
-  const proposal = statusOf(SYSTEM_STATUS.proposal)
-  const current = statusOf(status)
+function isBeforeProposal(companyId: string, status: LeadStatus): boolean {
+  const proposal = statusOf(companyId, SYSTEM_STATUS.proposal)
+  const current = statusOf(companyId, status)
   return !!proposal?.active && current?.kind === 'open' && current.order < proposal.order
 }
 
@@ -52,11 +60,11 @@ function effectiveStatus(q: QuotationRecord): QuotationStatus {
   return q.status
 }
 
-function toView(q: QuotationRecord): Quotation {
-  const lead = leads.find((l) => l.id === q.leadId)
+function toView(q: Tenant<QuotationRecord>): Quotation {
+  const lead = leads.find((l) => l.id === q.leadId && l.companyId === q.companyId)
   const ownerId = lead?.ownerId ?? q.createdBy
   return {
-    ...q,
+    ...untenant(q),
     status: effectiveStatus(q),
     customerId: lead?.customerId ?? q.customerId,
     ownerId,
@@ -66,9 +74,12 @@ function toView(q: QuotationRecord): Quotation {
   }
 }
 
+/** The lead of the caller's company with this id (another company's lead doesn't exist here). */
+const companyLead = (user: User, id: string | undefined) => (id ? findInTenant(leads, user, (l) => l.id === id) : undefined)
+
 function canSee(user: User, lead: Lead | undefined): boolean {
   if (!lead) return false
-  return inScope(scopeOf(user.role, 'sales'), user, lead.ownerId, teamIdsFor(user, users, departments))
+  return inScope(scopeOf(user.role, 'sales'), user, lead.ownerId, salesTeamOf(user))
 }
 
 async function requireSales(user: User): Promise<void> {
@@ -76,37 +87,55 @@ async function requireSales(user: User): Promise<void> {
 }
 
 /** Finds a quotation the user may see; with `write`, also checks they may change it. */
-async function quotationFor(user: User, id: string, write = false): Promise<QuotationRecord> {
+async function quotationFor(user: User, id: string, write = false): Promise<Tenant<QuotationRecord>> {
   await requireSales(user)
-  const q = quotations.find((x) => x.id === id)
+  const q = findInTenant(quotations, user, (x) => x.id === id)
   if (!q) return fail('That quotation doesn’t exist.', 404)
-  if (!canSee(user, leads.find((l) => l.id === q.leadId))) {
+  if (!canSee(user, companyLead(user, q.leadId))) {
     return fail('This quotation belongs to a lead outside your access.', 403)
   }
   if (write && !can(user.role, 'sales', 'edit')) return fail('Your role can view quotations but not change them.', 403)
   return q
 }
 
-/** Next number for the current year: QT-2026-0016. */
+/** Below the seeded second-tenant block (Q-5001+, QT-yyyy-5001+), which never advances the sequences. */
+const inSequence = (n: number) => n < CREST_SEED_QUOTATION_BASE
+
+/**
+ * Next number for the current year: QT-2026-0016. One global sequence for every company, so
+ * quotation numbers stay unique across tenants.
+ */
 function nextNumber(): string {
   const year = new Date().getFullYear()
   const prefix = `QT-${year}-`
   const max = quotations
     .filter((q) => q.number.startsWith(prefix))
-    .reduce((m, q) => Math.max(m, Number(q.number.slice(prefix.length)) || 0), 0)
-  return `${prefix}${String(max + 1).padStart(4, '0')}`
+    .map((q) => Number(q.number.slice(prefix.length)) || 0)
+    .filter(inSequence)
+    .reduce((m, n) => Math.max(m, n), 0)
+  let next = max + 1
+  while (quotations.some((q) => q.number === `${prefix}${String(next).padStart(4, '0')}`)) next++
+  return `${prefix}${String(next).padStart(4, '0')}`
 }
 
+/** Global id sequence (Q-1001…) shared by every company. */
 function nextId(): string {
-  const max = quotations.reduce((m, q) => Math.max(m, Number(q.id.slice(2)) || 0), 1000)
-  return `Q-${max + 1}`
+  const max = quotations
+    .map((q) => Number(q.id.slice(2)) || 0)
+    .filter(inSequence)
+    .reduce((m, n) => Math.max(m, n), 1000)
+  let next = max + 1
+  while (quotations.some((q) => q.id === `Q-${next}`)) next++
+  return `Q-${next}`
 }
 
 /** Validates and normalises the editable fields. Returns an error message or the clean values. */
 function clean(
+  companyId: string,
   input: QuotationUpdateInput,
   current?: QuotationRecord,
 ): { error: string } | { value: Pick<QuotationRecord, 'title' | 'validUntil' | 'items' | 'notes' | 'terms' | 'vatPct' | 'currency'> } {
+  const defaults = regionalDefaults(companyId)
   const title = (input.title ?? current?.title ?? '').trim()
   if (!title) return { error: 'Give the quotation a title.' }
 
@@ -114,8 +143,8 @@ function clean(
   if (!/^\d{4}-\d{2}-\d{2}$/.test(validUntil)) return { error: 'Set the date the quotation is valid until.' }
   if (validUntil < todayIso()) return { error: 'The validity date can’t be in the past.' }
 
-  const currency = String(input.currency ?? current?.currency ?? DEFAULT_QUOTE_CURRENCY).trim().toUpperCase()
-  if (!CURRENCY_RE.test(currency)) return { error: 'Currency must be a 3-letter ISO code, e.g. AED.' }
+  const currency = String(input.currency ?? current?.currency ?? defaults.currency).trim().toUpperCase()
+  if (!CURRENCY_RE.test(currency)) return { error: `Currency must be a 3-letter ISO code, e.g. ${defaults.currency}.` }
 
   const rawItems: QuotationItemInput[] = input.items ?? current?.items ?? []
   if (rawItems.length === 0) return { error: 'Add at least one line item.' }
@@ -137,7 +166,8 @@ function clean(
     if (!UNITS.includes(it.unit)) return { error: `Line ${n}: choose a unit.` }
     const serviceId = it.serviceId || null
     if (serviceId) {
-      const service = catalog.find((s) => s.id === serviceId)
+      // The company's own catalog only: another company's service id isn't in "the catalog".
+      const service = catalog.find((s) => s.id === serviceId && s.companyId === companyId)
       if (!service) return { error: `Line ${n}: service ${serviceId} isn’t in the catalog.` }
       if (!service.active && !keptServices.has(serviceId)) {
         return { error: `Line ${n}: ${service.name} is no longer offered; pick an active service.` }
@@ -160,7 +190,7 @@ function clean(
     })
   }
 
-  const vatPct = Number(input.vatPct ?? current?.vatPct ?? DEFAULT_VAT_PCT)
+  const vatPct = Number(input.vatPct ?? current?.vatPct ?? defaults.vatPct)
   if (!Number.isFinite(vatPct) || vatPct < 0 || vatPct > 100) return { error: 'VAT must be between 0 and 100%.' }
 
   return {
@@ -179,12 +209,14 @@ function clean(
 
 export async function getQuotations(user: User, filter: { leadId?: string } = {}): Promise<Quotation[]> {
   await requireSales(user)
-  if (filter.leadId && !canSee(user, leads.find((l) => l.id === filter.leadId))) {
-    return fail('This lead belongs to someone outside your access.', 403)
+  if (filter.leadId) {
+    const lead = companyLead(user, filter.leadId)
+    if (!lead) return fail('That lead doesn’t exist.', 404)
+    if (!canSee(user, lead)) return fail('This lead belongs to someone outside your access.', 403)
   }
-  const rows = quotations
+  const rows = scoped(quotations, user)
     .filter((q) => (filter.leadId ? q.leadId === filter.leadId : true))
-    .filter((q) => canSee(user, leads.find((l) => l.id === q.leadId)))
+    .filter((q) => canSee(user, companyLead(user, q.leadId)))
     .map(toView)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   return delay(rows)
@@ -197,15 +229,15 @@ export async function getQuotation(user: User, id: string): Promise<Quotation> {
 export async function createQuotation(user: User, input: QuotationInput): Promise<Quotation> {
   await requireSales(user)
   if (!can(user.role, 'sales', 'create')) return fail('Your role can’t create quotations.', 403)
-  const lead = leads.find((l) => l.id === input.leadId)
+  const lead = companyLead(user, input.leadId)
   if (!lead) return fail('Pick the lead this quotation is for.', 422)
   if (!canSee(user, lead)) return fail('This lead belongs to someone outside your access.', 403)
 
-  const result = clean(input)
+  const result = clean(tenantOf(user), input)
   if ('error' in result) return fail(result.error, 422)
 
   const now = new Date().toISOString()
-  const record: QuotationRecord = {
+  const record: Tenant<QuotationRecord> = stamp({
     id: nextId(),
     number: nextNumber(),
     leadId: lead.id,
@@ -220,7 +252,7 @@ export async function createQuotation(user: User, input: QuotationInput): Promis
     updatedAt: now,
     sentAt: null,
     decidedAt: null,
-  }
+  }, user)
   quotations.push(record)
   return delay(toView(record))
 }
@@ -228,7 +260,7 @@ export async function createQuotation(user: User, input: QuotationInput): Promis
 export async function updateQuotation(user: User, id: string, input: QuotationUpdateInput): Promise<Quotation> {
   const q = await quotationFor(user, id, true)
   if (q.status !== 'Draft') return fail(`${q.number} was already sent, so it can’t be edited. Duplicate it instead.`, 409)
-  const result = clean(input, q)
+  const result = clean(q.companyId, input, q)
   if ('error' in result) return fail(result.error, 422)
   Object.assign(q, result.value, { updatedAt: new Date().toISOString() })
   return delay(toView(q))
@@ -238,33 +270,41 @@ export async function updateQuotation(user: User, id: string, input: QuotationUp
 export async function sendQuotation(user: User, id: string): Promise<Quotation> {
   const q = await quotationFor(user, id, true)
   if (q.status !== 'Draft') return fail(`${q.number} was already sent.`, 409)
-  const lead = leads.find((l) => l.id === q.leadId)
+  const lead = companyLead(user, q.leadId)
   if (!lead) return fail('The lead for this quotation no longer exists.', 422)
   if (lead.doNotContact) return fail(`${lead.company} is marked Do Not Contact, so emails are blocked.`, 422)
   if (!q.contactEmail.trim()) return fail('The lead has no contact email to send to.', 422)
 
   // Re-check the stored draft before it leaves the building.
-  const result = clean({}, q)
+  const result = clean(q.companyId, {}, q)
   if ('error' in result) return fail(result.error, 422)
+  // Sending is an email: counts toward the plan's emails per period (402 LIMIT_REACHED).
+  assertCapacity(q.companyId, 'emailsPerMonth')
 
   const now = new Date().toISOString()
   q.status = 'Sent'
   q.sentAt = now
   q.updatedAt = now
 
-  if (isBeforeProposal(lead.status)) {
+  if (isBeforeProposal(lead.companyId, lead.status)) {
     lead.status = SYSTEM_STATUS.proposal
     lead.stageChangedAt = now
     lead.nextStep = 'Walk through the quotation and confirm the start date'
   }
-  activities.push({
-    id: `A-${Date.now().toString(36)}`,
-    leadId: lead.id,
-    type: 'email',
-    summary: `Sent quotation ${q.number} · ${q.title} (${fmtAed(computeTotals(q.items, q.vatPct).total)}) to ${q.contactEmail}`,
-    userId: user.id,
-    at: now,
-  })
+  activities.push(
+    stamp(
+      {
+        id: `A-${Date.now().toString(36)}`,
+        leadId: lead.id,
+        type: 'email' as const,
+        summary: `Sent quotation ${q.number} · ${q.title} (${fmtIn(computeTotals(q.items, q.vatPct).total, q.currency)}) to ${q.contactEmail}`,
+        userId: user.id,
+        at: now,
+      },
+      user,
+    ),
+  )
+  recordUsage(q.companyId, 'emailsPerMonth')
   return delay(toView(q))
 }
 
@@ -290,11 +330,12 @@ export async function setQuotationStatus(user: User, id: string, status: Quotati
 export async function duplicateQuotation(user: User, id: string): Promise<Quotation> {
   const source = await quotationFor(user, id)
   if (!can(user.role, 'sales', 'create')) return fail('Your role can’t create quotations.', 403)
-  const lead = leads.find((l) => l.id === source.leadId)
+  const lead = companyLead(user, source.leadId)
   const now = new Date().toISOString()
   const newId = nextId()
-  const record: QuotationRecord = {
+  const record: Tenant<QuotationRecord> = {
     ...structuredClone(source),
+    companyId: source.companyId,
     id: newId,
     number: nextNumber(),
     customerId: lead?.customerId ?? source.customerId,

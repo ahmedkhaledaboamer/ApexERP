@@ -44,7 +44,7 @@ export function LeadsHeader({ count, scope }: { count: number | undefined; scope
           <>
             {canCreate && (
               <Link to={PATHS.leadImport}>
-                <Button variant="secondary" size="sm" tabIndex={-1}>
+                <Button write variant="secondary" size="sm" tabIndex={-1}>
                   <Upload />
                   Import
                 </Button>
@@ -57,13 +57,13 @@ export function LeadsHeader({ count, scope }: { count: number | undefined; scope
             </Tooltip>
             {canCreate && (
               <div className="flex items-center">
-                <Button size="sm" className="rounded-e-none" onClick={() => dispatch(quickAddLeadSet(true))}>
+                <Button write size="sm" className="rounded-e-none" onClick={() => dispatch(quickAddLeadSet(true))}>
                   <Plus />
                   New lead
                 </Button>
                 <Menu
                   trigger={(props) => (
-                    <Button
+                    <Button write
                       size="sm"
                       iconOnly
                       aria-label="More ways to add a lead"

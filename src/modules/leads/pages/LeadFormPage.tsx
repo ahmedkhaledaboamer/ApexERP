@@ -38,7 +38,8 @@ import { useLeaveGuard } from '@/modules/leads/import/useLeaveGuard'
 import { useLookups } from '@/shared/hooks/useLookups'
 import { useLastSource } from '@/modules/leads/lastSource'
 import { can, scopeOf } from '@/shared/lib/permissions'
-import { formatUaeMobile, normalizeUaeMobile } from '@/shared/lib/phone'
+import { formatMobile, mobileExample, mobileSample, normalizeMobile } from '@/shared/lib/phone'
+import { getRegion } from '@/shared/lib/region'
 import { ApiError } from '@/shared/lib/apiError'
 import { cn } from '@/shared/lib/utils'
 import { useCurrentUser } from '@/store/hooks'
@@ -47,9 +48,12 @@ import { Button } from '@/shared/components/ui/Button'
 import { Card, CardBody, CardHeader } from '@/shared/components/ui/Card'
 import { EmptyState, ErrorState, Skeleton } from '@/shared/components/ui/Feedback'
 import { StatusBadge } from '@/shared/components/ui/StatusBadge'
+import { useOpenWonDialog } from '@/modules/won/hooks'
+import { moveActionFor } from '@/modules/leads/lib/transitions'
 import { useToast } from '@/shared/components/ui/Toast'
 import { Checkbox, Field, SelectInput, Switch, TextArea, TextInput } from '@/shared/components/form/Field'
 import { PageBody } from '@/shared/components/layout/PageHeader'
+import { useRegion } from '@/modules/tenancy/hooks'
 
 /**
  * Full lead form (spec: Leads › "Quick add (few fields) and full add"). Serves /leads/new and
@@ -161,7 +165,7 @@ function defaultsFor(lead: LeadDetail | undefined, startStatus: string): LeadFor
           id: c.id,
           name: c.name,
           title: c.title,
-          mobile: c.mobile ? formatUaeMobile(c.mobile) : '',
+          mobile: c.mobile ? formatMobile(c.mobile, getRegion().country) : '',
           email: c.email,
           isDecisionMaker: c.isDecisionMaker,
         }))
@@ -169,7 +173,7 @@ function defaultsFor(lead: LeadDetail | undefined, startStatus: string): LeadFor
           {
             name: lead.contactName,
             title: '',
-            mobile: lead.mobile ? formatUaeMobile(lead.mobile) : '',
+            mobile: lead.mobile ? formatMobile(lead.mobile, getRegion().country) : '',
             email: lead.contactEmail,
             isDecisionMaker: false,
           },
@@ -207,12 +211,14 @@ const SECTIONS = [
 ] as const
 
 function LeadForm({ lead, isManager }: { lead?: LeadDetail; isManager: boolean }) {
+  const region = useRegion()
   const mode = lead ? 'edit' : 'create'
   const navigate = useNavigate()
   const toast = useToast()
   const create = useCreateLead()
   const update = useUpdateLead()
   const move = useMoveLeadStage()
+  const openWon = useOpenWonDialog()
   const owners = useLeadOwnersQuery(isManager)
   const catalog = useCatalog()
   const leadsList = useLeadsQuery()
@@ -250,6 +256,8 @@ function LeadForm({ lead, isManager }: { lead?: LeadDetail; isManager: boolean }
   const ownerId = useWatch({ control, name: 'ownerId' })
   const closed = lookups.isClosed(status)
   const target = lookups.status(status)
+  // Same rule as the board and the lead page: a won-kind or "convert" status opens the Won dialog.
+  const isWonTarget = (key: string) => moveActionFor(lookups.status(key)) === 'won'
   const sourceType = useWatch({ control, name: 'sourceType' })
   const subIndustry = useWatch({ control, name: 'subIndustry' })
 
@@ -330,7 +338,7 @@ function LeadForm({ lead, isManager }: { lead?: LeadDetail; isManager: boolean }
       id: c.id,
       name: c.name,
       title: c.title,
-      mobile: c.mobile ? (normalizeUaeMobile(c.mobile) ?? c.mobile) : '',
+      mobile: c.mobile ? (normalizeMobile(c.mobile, region.country) ?? c.mobile) : '',
       email: c.email.toLowerCase(),
       isDecisionMaker: c.isDecisionMaker,
     }))
@@ -374,7 +382,8 @@ function LeadForm({ lead, isManager }: { lead?: LeadDetail; isManager: boolean }
         contacts: contactRows,
         ownerId: isManager && v.ownerId ? v.ownerId : undefined,
         value,
-        nextFollowUpDate: closed ? null : fromDateInput(v.nextFollowUpDate),
+        // Picking Won doesn't close the lead yet (the Won dialog does), so keep its follow-up.
+        nextFollowUpDate: closed && !isWonTarget(v.status) ? null : fromDateInput(v.nextFollowUpDate),
         nextStep: v.nextStep,
         companyServices: v.companyServices,
         serviceIds: v.serviceIds,
@@ -385,6 +394,13 @@ function LeadForm({ lead, isManager }: { lead?: LeadDetail; isManager: boolean }
         force,
       }
       await update.mutateAsync({ id: lead.id, input })
+      if (v.status !== lead.status && isWonTarget(v.status)) {
+        // Won never goes through the stage endpoint: save the other fields, then confirm in the Won dialog.
+        toast.success('Lead saved', 'Confirm the Won details to finish.')
+        navigate(leadPath(lead.id))
+        openWon(lead.id)
+        return
+      }
       if (v.status !== lead.status) {
         try {
           await move.mutateAsync({
@@ -506,7 +522,7 @@ function LeadForm({ lead, isManager }: { lead?: LeadDetail; isManager: boolean }
                 <TextInput
                   id="lf-website"
                   inputMode="url"
-                  placeholder="company.ae"
+                  placeholder="company.com"
                   invalid={!!errors.website}
                   {...register('website')}
                 />
@@ -627,18 +643,18 @@ function LeadForm({ lead, isManager }: { lead?: LeadDetail; isManager: boolean }
                       <Field id={`lf-c${i}-title`} label="Title" error={e?.title?.message}>
                         <TextInput id={`lf-c${i}-title`} placeholder="e.g. Operations Manager" {...register(`contacts.${i}.title`)} />
                       </Field>
-                      <Field id={`lf-c${i}-mobile`} label="Mobile" error={e?.mobile?.message} hint="+971 5X XXX XXXX">
+                      <Field id={`lf-c${i}-mobile`} label="Mobile" error={e?.mobile?.message} hint={mobileExample(region.country)}>
                         <TextInput
                           id={`lf-c${i}-mobile`}
                           type="tel"
                           inputMode="tel"
                           autoComplete="tel"
-                          placeholder="+971 50 123 4567"
+                          placeholder={mobileSample(region.country)}
                           invalid={!!e?.mobile}
                           {...register(mobilePath, {
                             onBlur: (ev: { target: { value: string } }) => {
-                              const n = normalizeUaeMobile(ev.target.value)
-                              if (n) setValue(mobilePath, formatUaeMobile(n), { shouldValidate: true, shouldDirty: true })
+                              const n = normalizeMobile(ev.target.value, region.country)
+                              if (n) setValue(mobilePath, formatMobile(n, region.country), { shouldValidate: true, shouldDirty: true })
                             },
                           })}
                         />
@@ -648,7 +664,7 @@ function LeadForm({ lead, isManager }: { lead?: LeadDetail; isManager: boolean }
                           id={`lf-c${i}-email`}
                           type="email"
                           autoComplete="email"
-                          placeholder="name@company.ae"
+                          placeholder="name@company.com"
                           invalid={!!e?.email}
                           {...register(`contacts.${i}.email`)}
                         />
@@ -742,13 +758,13 @@ function LeadForm({ lead, isManager }: { lead?: LeadDetail; isManager: boolean }
                   </SelectInput>
                 </Field>
               )}
-              {lead && target.requires === 'convert' && status !== lead.status && (
+              {lead && isWonTarget(status) && status !== lead.status && (
                 <p className="rounded-lg bg-success-50 px-3 py-2 text-[0.8125rem] text-success-700 sm:col-span-2 dark:bg-success-700/20 dark:text-success-500">
-                  Saving as {target.label} converts this lead into a customer.
+                  After saving, the Won dialog opens: confirm there to convert this lead into a customer with its projects.
                 </p>
               )}
 
-              <Field id="lf-value" label="Estimated value (AED)" error={errors.value?.message}>
+              <Field id="lf-value" label={`Estimated value (${region.currency})`} error={errors.value?.message}>
                 <TextInput id="lf-value" inputMode="decimal" placeholder="0" invalid={!!errors.value} className="num" {...register('value')} />
               </Field>
               <Field
@@ -935,7 +951,7 @@ function LeadForm({ lead, isManager }: { lead?: LeadDetail; isManager: boolean }
                 <ul className="space-y-1.5 text-xs text-muted">
                   <li>Status, source and industry come from lists.</li>
                   <li>Services are picked from the service catalog.</li>
-                  <li>Mobiles use the UAE format +971 5X XXX XXXX.</li>
+                  <li>Mobiles use the format {mobileExample(region.country)}.</li>
                   <li>A follow-up date is required unless the lead is closed.</li>
                 </ul>
               </CardBody>
@@ -967,7 +983,7 @@ function LeadForm({ lead, isManager }: { lead?: LeadDetail; isManager: boolean }
           <Button variant="secondary" onClick={cancel} disabled={saving}>
             Cancel
           </Button>
-          <Button type="submit" loading={saving} disabled={blocked || (!!lead && !isDirty)}>
+          <Button write type="submit" loading={saving} disabled={blocked || (!!lead && !isDirty)}>
             {matches.length > 0 && override ? (lead ? 'Save anyway' : 'Create anyway') : lead ? 'Save changes' : 'Create lead'}
           </Button>
         </div>

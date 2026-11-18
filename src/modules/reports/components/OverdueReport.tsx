@@ -1,10 +1,10 @@
 import { useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import type { ColumnDef } from '@tanstack/react-table'
 import { CheckCircle2 } from 'lucide-react'
 import { leadPath } from '@/app/paths'
-import { PRIORITY_STYLES } from '@/shared/lib/constants'
+import type { TaskLinkType, TaskPriority } from '@/modules/tasks/types'
 import { cn, fmtDate } from '@/shared/lib/utils'
 import { DataTable, useDataTable } from '@/shared/components/data-table'
 import { Avatar } from '@/shared/components/ui/Avatar'
@@ -23,6 +23,20 @@ function Days({ n }: { n: number }) {
   )
 }
 
+const TASK_PRIORITY_STYLES: Record<TaskPriority, string> = {
+  Low: 'text-muted',
+  Medium: 'text-accent-700 dark:text-accent-300',
+  High: 'text-warning-700 dark:text-warning-500',
+  Urgent: 'text-danger-600 dark:text-danger-500',
+}
+
+const LINK_TYPE_LABEL: Record<TaskLinkType, string> = {
+  project: 'Project',
+  lead: 'Lead',
+  customer: 'Customer',
+  event: 'Event',
+}
+
 function Owner({ name }: { name: string }) {
   return (
     <span className="flex items-center gap-2">
@@ -34,6 +48,13 @@ function Owner({ name }: { name: string }) {
 
 export function OverdueReport({ data }: { data: SalesReport }) {
   const navigate = useNavigate()
+  const { pathname, search } = useLocation()
+  /** Opens the global task drawer over the report (`?task=<id>` on the current URL). */
+  const openTask = (id: string) => {
+    const q = new URLSearchParams(search)
+    q.set('task', id)
+    navigate(`${pathname}?${q.toString()}`)
+  }
   const followUps = data.overdueFollowUps
   const tasks = data.overdueTasks
 
@@ -79,15 +100,32 @@ export function OverdueReport({ data }: { data: SalesReport }) {
         cell: ({ row }) => (
           <span className="block min-w-0">
             <span className="block truncate font-medium">{row.original.title}</span>
-            <span className="block truncate text-xs text-muted">{row.original.company}</span>
+            <span className="block truncate text-xs text-muted">{row.original.status}</span>
           </span>
         ),
+      },
+      {
+        id: 'link',
+        accessorFn: (t) => t.linkLabel ?? '',
+        header: 'Linked to',
+        meta: { width: 220 },
+        cell: ({ row }) =>
+          row.original.linkType && row.original.linkLabel ? (
+            <span className="block min-w-0">
+              <span className={cn('block truncate', row.original.linkAvailable ? 'text-ink' : 'text-muted')}>{row.original.linkLabel}</span>
+              <span className="block text-xs text-muted">{LINK_TYPE_LABEL[row.original.linkType]}</span>
+            </span>
+          ) : (
+            <span className="text-muted">Personal</span>
+          ),
       },
       {
         accessorKey: 'priority',
         header: 'Priority',
         meta: { width: 100 },
-        cell: ({ row }) => <span className={cn('text-[0.8125rem] font-medium', PRIORITY_STYLES[row.original.priority])}>{row.original.priority}</span>,
+        cell: ({ row }) => (
+          <span className={cn('text-[0.8125rem] font-medium', TASK_PRIORITY_STYLES[row.original.priority])}>{row.original.priority}</span>
+        ),
       },
       { accessorKey: 'ownerName', header: 'Owner', meta: { width: 180 }, cell: ({ getValue }) => <Owner name={getValue<string>()} /> },
       { accessorKey: 'dueDate', header: 'Due', meta: { width: 120 }, cell: ({ getValue }) => <span className="num text-ink-2">{fmtDate(getValue<string>())}</span> },
@@ -107,7 +145,7 @@ export function OverdueReport({ data }: { data: SalesReport }) {
         allClear ? (
           <EmptyState icon={<CheckCircle2 aria-hidden />} title="Nothing overdue" body="Every follow-up date and task in your scope is on time." />
         ) : (
-          <div className="grid grid-cols-1 gap-8 lg:grid-cols-[220px_minmax(0,1fr)]">
+          <div className="grid grid-cols-1 gap-8 lg:grid-cols-[13.75rem_minmax(0,1fr)]">
             <dl className="grid grid-cols-2 gap-3 self-start lg:grid-cols-1">
               <div className="rounded-lg bg-sunken/70 px-4 py-3">
                 <dt className="text-xs text-muted">Overdue follow-ups</dt>
@@ -124,7 +162,7 @@ export function OverdueReport({ data }: { data: SalesReport }) {
                 <Legend color={C.brand} label="Follow-ups" />
                 <Legend color={C.blue} label="Tasks" />
               </LegendRow>
-              <div style={{ height: Math.max(140, byOwner.length * 40 + 30) }}>
+              <div dir="ltr" style={{ height: Math.max(140, byOwner.length * 40 + 30) }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={byOwner} layout="vertical" margin={{ top: 4, right: 12, left: 0, bottom: 0 }} barGap={2}>
                     <CartesianGrid horizontal={false} stroke="currentColor" strokeOpacity={0.08} strokeDasharray="4 4" />
@@ -154,8 +192,8 @@ export function OverdueReport({ data }: { data: SalesReport }) {
         <SubHeading hint={`${tasks.length} tasks not done by their due date`}>Overdue tasks</SubHeading>
         <DataTable
           table={taskTable}
-          minWidth={760}
-          onRowClick={(r) => navigate(leadPath(r.leadId))}
+          minWidth={960}
+          onRowClick={(r) => openTask(r.taskId)}
           empty={<EmptyState title="No overdue tasks" body="All open tasks are due today or later." className="py-10" />}
         />
       </div>

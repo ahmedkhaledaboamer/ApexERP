@@ -7,6 +7,8 @@ import { useSendMessage } from '@/modules/leads/hooks/useMessages'
 import { useQuotationsQuery } from '@/modules/quotations/hooks/useQuotations'
 import { useTemplatesQuery } from '@/modules/settings/hooks/useTemplates'
 import { buildTemplateContext } from '@/modules/settings/templates/context'
+import { issuerFor } from '@/modules/quotations/lib/company'
+import { useTenant } from '@/modules/tenancy/hooks'
 import { renderTemplate, type TemplateContext } from '@/modules/settings/templates/render'
 import { SUBJECT_MAX, WHATSAPP_MAX, type MessageTemplate } from '@/modules/settings/templates/types'
 import { quotationPath } from '@/app/paths'
@@ -99,6 +101,7 @@ function Composer({ onClose, lead, user, channel: initialChannel, onSent }: Omit
     [quotationsQuery.data],
   )
 
+  const tenant = useTenant()
   const ctxFor = (r: Recipient | null): TemplateContext =>
     buildTemplateContext({
       // The chosen contact is who the message greets.
@@ -107,6 +110,7 @@ function Composer({ onClose, lead, user, channel: initialChannel, onSent }: Omit
       quotation,
       quotationLink: quotation ? `${window.location.origin}${quotationPath(quotation.id)}` : undefined,
       labels: { status: lookups.statusLabel, industry: lookups.industryLabel, source: lookups.sourceLabel },
+      company: issuerFor(tenant),
     })
   const ctx = ctxFor(recipient)
 
@@ -195,7 +199,7 @@ function Composer({ onClose, lead, user, channel: initialChannel, onSent }: Omit
     : !recipient
       ? channel === 'email'
         ? 'No contact on this lead has an email address.'
-        : 'No contact on this lead has a UAE mobile.'
+        : 'No contact on this lead has a valid mobile.'
       : issues.length > 0
         ? 'Fill in or remove the highlighted variables.'
         : channel === 'email' && !finalSubject
@@ -260,7 +264,7 @@ function Composer({ onClose, lead, user, channel: initialChannel, onSent }: Omit
             <Button variant="secondary" onClick={requestClose}>
               Cancel
             </Button>
-            <Button onClick={submit} disabled={!!blocker || !ready} loading={send.isPending} title={blocker ?? undefined}>
+            <Button write onClick={submit} disabled={!!blocker || !ready} loading={send.isPending} title={blocker ?? undefined}>
               <Send />
               Send {channelLabel}
             </Button>
@@ -289,7 +293,7 @@ function Composer({ onClose, lead, user, channel: initialChannel, onSent }: Omit
                 </SelectInput>
               ) : (
                 <p className="flex h-9 items-center rounded-lg border border-dashed border-line-strong px-3 text-[0.8125rem] text-muted">
-                  {channel === 'email' ? 'No contact with an email' : 'No contact with a UAE mobile'}
+                  {channel === 'email' ? 'No contact with an email' : 'No contact with a valid mobile'}
                 </p>
               )}
             </Field>

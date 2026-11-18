@@ -53,7 +53,9 @@ import { NotesLog } from '@/modules/leads/components/NotesLog'
 import { TasksList } from '@/modules/leads/components/TasksList'
 import { LogActivityModal } from '@/modules/leads/components/LogActivityModal'
 import { FollowUpLabel } from '@/modules/leads/components/FollowUpLabel'
-import { requirementFor, StageChangeModal, type PendingMove } from '@/modules/leads/components/StageChangeModal'
+import { StageChangeModal, type PendingMove } from '@/modules/leads/components/StageChangeModal'
+import { moveActionFor } from '@/modules/leads/lib/transitions'
+import { useOpenWonDialog } from '@/modules/won/hooks'
 import { MessageComposer } from '@/modules/leads/components/MessageComposer'
 import { recipientsFor } from '@/modules/leads/components/composer/compose'
 import type { MessageChannel } from '@/modules/leads/api/messagesApi'
@@ -88,6 +90,7 @@ function LeadRecord({ id, user, canEdit }: { id: string; user: User; canEdit: bo
   const [logging, setLogging] = useState(false)
   const [pending, setPending] = useState<PendingMove | null>(null)
   const [composing, setComposing] = useState<MessageChannel | null>(null)
+  const openWon = useOpenWonDialog()
 
   if (query.isPending) return <DetailSkeleton />
   if (query.isError) {
@@ -118,7 +121,7 @@ function LeadRecord({ id, user, canEdit }: { id: string; user: User; canEdit: bo
     if (!canEdit) return 'Your role can view leads but not contact them'
     if (lead.doNotContact) return 'Do Not Contact is on for this lead'
     if (recipientsFor(lead, channel).length === 0) {
-      return channel === 'email' ? 'No contact on this lead has an email address' : 'No contact on this lead has a UAE mobile'
+      return channel === 'email' ? 'No contact on this lead has an email address' : 'No contact on this lead has a valid mobile'
     }
     return null
   }
@@ -131,7 +134,13 @@ function LeadRecord({ id, user, canEdit }: { id: string; user: User; canEdit: bo
 
   function changeStage(to: LeadStatus) {
     if (to === lead.status) return
-    if (requirementFor(lookups.status(to)) === 'none') {
+    const action = moveActionFor(lookups.status(to))
+    // Won goes through the Won dialog (one atomic endpoint), never the stage endpoint.
+    if (action === 'won') {
+      openWon(lead.id)
+      return
+    }
+    if (action === 'direct') {
       move.mutate(
         { id: lead.id, status: to },
         {
@@ -210,7 +219,7 @@ function LeadRecord({ id, user, canEdit }: { id: string; user: User; canEdit: bo
                     </Tooltip>
                   </span>
                 ) : (
-                  <Button key={o.channel} variant="secondary" size="sm" className="hidden md:inline-flex" onClick={() => setComposing(o.channel)}>
+                  <Button write key={o.channel} variant="secondary" size="sm" className="hidden md:inline-flex" onClick={() => setComposing(o.channel)}>
                     {o.icon}
                     {o.label}
                   </Button>
@@ -222,7 +231,7 @@ function LeadRecord({ id, user, canEdit }: { id: string; user: User; canEdit: bo
                   align="start"
                   className="w-64"
                   trigger={(props) => (
-                    <Button variant="secondary" size="sm" {...props}>
+                    <Button write variant="secondary" size="sm" {...props}>
                       <Mail />
                       Contact
                       <ChevronDown />
@@ -261,22 +270,28 @@ function LeadRecord({ id, user, canEdit }: { id: string; user: User; canEdit: bo
                 </Menu>
               </div>
               {canEdit && (
-                <Button variant="secondary" size="sm" onClick={() => navigate(leadEditPath(lead.id))}>
+                <Button write variant="secondary" size="sm" onClick={() => navigate(leadEditPath(lead.id))}>
                   <Pencil />
                   Edit
                 </Button>
               )}
               {canEdit && lead.reopenEligible && reopenTo && (
-                <Button variant="secondary" size="sm" loading={move.isPending} onClick={reopen}>
+                <Button write variant="secondary" size="sm" loading={move.isPending} onClick={reopen}>
                   <RotateCcw />
                   Reopen
+                </Button>
+              )}
+              {canEdit && !(lookups.isWon(lead.status) && lead.customerId) && (
+                <Button write variant="secondary" size="sm" onClick={() => openWon(lead.id)}>
+                  <Trophy className="text-success-600" />
+                  Win deal
                 </Button>
               )}
               {canEdit && (
                 <StageMenu current={lead.status} statuses={lookups.statuses} onPick={changeStage} />
               )}
               {canEdit && (
-                <Button size="sm" onClick={() => setLogging(true)}>
+                <Button write size="sm" onClick={() => setLogging(true)}>
                   <Plus />
                   Log activity
                 </Button>
@@ -481,7 +496,7 @@ function StageMenu({ current, statuses, onPick }: { current: LeadStatus; statuse
     <Menu
       className="w-52"
       trigger={(props) => (
-        <Button variant="secondary" size="sm" {...props}>
+        <Button write variant="secondary" size="sm" {...props}>
           Change stage
           <ChevronDown />
         </Button>

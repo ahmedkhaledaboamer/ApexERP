@@ -20,6 +20,7 @@ import type { User } from '@/shared/types'
 import { scopeOf, SCOPE_LABELS } from '@/shared/lib/permissions'
 import { cn, fmtCompactMoney } from '@/shared/lib/utils'
 import { useCurrentUser } from '@/store/hooks'
+import { useBranding } from '@/modules/tenancy/hooks'
 import { PageBody, PageHeader } from '@/shared/components/layout/PageHeader'
 import { Badge } from '@/shared/components/ui/Badge'
 import { Button } from '@/shared/components/ui/Button'
@@ -102,6 +103,7 @@ export default function SalesReportsPage() {
 
 function SalesReportsWorkspace({ user, scope }: { user: User; scope: ReportScope }) {
   const toast = useToast()
+  const branding = useBranding()
   const [params, setParams] = useSearchParams()
   const [builderOpen, setBuilderOpen] = useState(false)
   const [scheduleOpen, setScheduleOpen] = useState(false)
@@ -257,7 +259,7 @@ function SalesReportsWorkspace({ user, scope }: { user: User; scope: ReportScope
       <PageBody className="space-y-5">
         {/* Print-only title block */}
         <div className="hidden border-b border-line pb-3 print:block">
-          <p className="text-xs text-muted">Apex Aora · Sales reports</p>
+          <p className="text-xs text-muted">{branding.displayName} · Sales reports</p>
           <h1 className="mt-1 text-[1.375rem] font-semibold">{REPORT_TITLES[current]}</h1>
           <p className="mt-1 text-[0.8125rem] text-ink-2">
             {context} · Generated {format(new Date(), 'd MMM yyyy, HH:mm')} by {user.name}
@@ -395,7 +397,7 @@ function ReportNav({ current, data, onPick }: { current: ReportId; data: SalesRe
 function WorkspaceSkeleton() {
   return (
     <div aria-busy="true" aria-label="Loading reports" className="space-y-5">
-      <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2 md:grid-cols-3 2xl:grid-cols-6">
+      <div className="grid grid-cols-1 gap-4 min-[26.25rem]:grid-cols-2 md:grid-cols-3 2xl:grid-cols-6">
         {Array.from({ length: 6 }, (_, i) => (
           <Skeleton key={i} className="h-32 rounded-card" />
         ))}

@@ -10,9 +10,11 @@ import type {
   StatusOption,
 } from '@/modules/settings/types'
 import { DEFAULT_AUTOMATION_RULES } from '@/modules/settings/types'
-import { automationRules, lookups } from '@/shared/mocks/data/lookups'
+import { automationRulesFor, lookupsFor } from '@/shared/mocks/data/lookups'
 import { auditLog, diff, recordAudit } from '@/shared/mocks/data/audit'
 import { delay, fail } from '@/shared/mocks/server'
+import { scoped, tenantOf } from '@/shared/mocks/tenant'
+import { leads } from '@/shared/mocks/db'
 
 const KINDS = ['open', 'parked', 'won', 'lost'] as const
 const REQUIRES = ['none', 'next-step', 'loss-reason', 'convert'] as const
@@ -35,9 +37,9 @@ function slug(label: string): string {
 
 /* ---------------- Lookups ---------------- */
 
-/** Every list, including inactive items (pickers filter to active; history shows old labels). Any signed-in user. */
-export async function getLookups(): Promise<Lookups> {
-  return delay(lookups)
+/** The company's lists, including inactive items (pickers filter to active; history shows old labels). Any signed-in user. */
+export async function getLookups(user: User): Promise<Lookups> {
+  return delay(lookupsFor(tenantOf(user)))
 }
 
 type Incoming = Partial<ListOption> & { label: string }
@@ -120,9 +122,11 @@ const LIST_LABEL: Record<LookupList, string> = {
   serviceCategories: 'service categories',
 }
 
-/** Replaces one list (edit, reorder, activate/deactivate, add). System Admin only. */
+/** Replaces one list (edit, reorder, activate/deactivate, add). Company Admin only. */
 export async function saveLookupList(user: User, list: LookupList, items: unknown): Promise<Lookups> {
-  if (!canEdit(user)) return fail('Only a System Admin can change fixed lists.', 403)
+  if (!canEdit(user)) return fail('Only a Company Admin can change fixed lists.', 403)
+  // Each company has its own lists; keys and labels are unique within the company only.
+  const lookups = lookupsFor(tenantOf(user))
   if (!(list in lookups)) return fail('Unknown list.', 404)
   const before = lookups[list] as ListOption[]
   // On statuses `system` means "built in" (renamable); the pinned-item rules are for plain lists.
@@ -153,6 +157,12 @@ export async function saveLookupList(user: User, list: LookupList, items: unknow
       if (!REQUIRES.includes(requires)) return fail(`“${b.label}” has an unknown requirement.`, 422)
       if (!TONES.includes(tone)) return fail(`“${b.label}” has an unknown colour.`, 422)
       if (prev?.system && prev.kind !== kind) return fail(`“${b.label}” is built in; its kind can’t change.`, 422)
+      // Turning a status that leads sit in into a Won-flow status would make them "won" without a
+      // customer or projects (a Won bypass): only the Won flow may put a lead there.
+      const wonFlow = (k: string, r2: string) => k === 'won' || r2 === 'convert'
+      if (prev && !wonFlow(prev.kind, prev.requires) && wonFlow(kind, requires) && scoped(leads, user).some((l) => l.status === b.key)) {
+        return fail(`Leads are in “${b.label}”: move them out before making it a Won status (only the Won flow can win a lead).`, 422)
+      }
       next.push({
         ...b,
         probability: Math.round(probability),
@@ -205,8 +215,7 @@ export async function saveLookupList(user: User, list: LookupList, items: unknow
 
 /** Readable by every signed-in user: screens like CRM renewals and follow-ups need the numbers. */
 export async function getAutomationRules(user: User): Promise<AutomationRules> {
-  void user
-  return delay(automationRules)
+  return delay(automationRulesFor(tenantOf(user)))
 }
 
 const RULE_LIMITS: Record<keyof AutomationRules, [number, number]> = {
@@ -220,7 +229,8 @@ const RULE_LIMITS: Record<keyof AutomationRules, [number, number]> = {
 }
 
 export async function saveAutomationRules(user: User, input: Partial<AutomationRules>): Promise<AutomationRules> {
-  if (!canEdit(user)) return fail('Only a System Admin can change automation rules.', 403)
+  if (!canEdit(user)) return fail('Only a Company Admin can change automation rules.', 403)
+  const automationRules = automationRulesFor(tenantOf(user))
   const next = { ...automationRules }
   for (const [k, v] of Object.entries(input) as [keyof AutomationRules, unknown][]) {
     if (!(k in RULE_LIMITS)) return fail(`Unknown rule “${k}”.`, 422)
@@ -255,8 +265,9 @@ export async function getAuditLog(user: User, q: AuditQuery): Promise<AuditEntry
   if (!canView(user)) return fail('The audit log is for admins.', 403)
   const fromT = q.from ? new Date(q.from).getTime() : -Infinity
   const toT = q.to ? new Date(q.to).getTime() + 86_400_000 : Infinity
+  // Only the company's own entries; another company's audit trail is invisible.
   return delay(
-    auditLog.filter((e) => {
+    scoped(auditLog, user).filter((e) => {
       const t = new Date(e.at).getTime()
       return (
         t >= fromT &&

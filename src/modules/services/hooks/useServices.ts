@@ -58,6 +58,7 @@ function useInvalidate() {
   return () => {
     qc.invalidateQueries({ queryKey: serviceKeys.all })
     qc.invalidateQueries({ queryKey: ['audit'] })
+    qc.invalidateQueries({ queryKey: ['onboarding'] })
   }
 }
 

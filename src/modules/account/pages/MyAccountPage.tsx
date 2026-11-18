@@ -82,13 +82,13 @@ export default function MyAccountPage() {
                 </PropertyList>
                 <p className="mt-2 flex items-start gap-2 rounded-lg bg-sunken/60 px-3 py-2 text-xs text-muted">
                   <Info className="mt-px size-3.5 shrink-0" aria-hidden />
-                  Ask a System Admin to change these details.
+                  Ask a Company Admin to change these details.
                 </p>
               </CardBody>
             </Card>
 
             <Card>
-              <CardHeader icon={<Timer />} title="Session timeout" description="Set for everyone by your System Admin." />
+              <CardHeader icon={<Timer />} title="Session timeout" description="Set for everyone by your Company Admin." />
               <CardBody>
                 {policyQuery.isPending ? (
                   <Skeleton className="h-12 w-full rounded-lg" />

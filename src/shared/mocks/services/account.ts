@@ -4,17 +4,18 @@ import { passwordProblem } from '@/modules/account/lib/passwordRules'
 import { users } from '@/shared/mocks/db'
 import { departments } from '@/shared/mocks/data/departments'
 import { passwordChangedAt, passwordMatches, setPassword } from '@/shared/mocks/data/passwords'
-import { securityPolicy, sessionsFor, setSessionsFor } from '@/shared/mocks/data/security'
+import { securityPolicyFor, sessionsFor, setSessionsFor } from '@/shared/mocks/data/security'
 import { recordAudit } from '@/shared/mocks/data/audit'
 import { delay, fail } from '@/shared/mocks/server'
+import { findInTenant, tenantOf } from '@/shared/mocks/tenant'
 
 /* Every endpoint here acts on the signed-in user from the token; any role may call them. */
 
 export async function getAccount(user: User): Promise<AccountInfo> {
   return delay({
     user,
-    departmentName: departments.find((d) => d.id === user.departmentId)?.name ?? null,
-    managerName: user.managerId ? (users.find((u) => u.id === user.managerId)?.name ?? null) : null,
+    departmentName: findInTenant(departments, user, (d) => d.id === user.departmentId)?.name ?? null,
+    managerName: user.managerId ? (findInTenant(users, user, (u) => u.id === user.managerId)?.name ?? null) : null,
     lastLoginAt: user.lastLoginAt,
     passwordChangedAt: passwordChangedAt(user.id),
   })
@@ -31,7 +32,7 @@ export async function changePassword(user: User, input: Partial<ChangePasswordIn
   if (!current) return fail('Enter your current password.', 422)
   if (!passwordMatches(user.id, current)) return fail('Your current password isn’t right.', 422)
   if (!next) return fail('Enter a new password.', 422)
-  const problem = passwordProblem(next, securityPolicy.passwordMinLength)
+  const problem = passwordProblem(next, securityPolicyFor(tenantOf(user)).passwordMinLength)
   if (problem) return fail(problem, 422)
   if (next === current) return fail('Choose a password different from your current one.', 422)
 

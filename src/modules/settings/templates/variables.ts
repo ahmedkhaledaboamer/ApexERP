@@ -46,35 +46,59 @@ export const VARIABLE_GROUPS: VariableGroup[] = [
   group('agent', 'Agent', [
     ['name', 'Name', 'Full name of the sender.', 'Sara Khalil'],
     ['firstName', 'First name', 'First name of the sender.', 'Sara'],
-    ['email', 'Email', 'Sender’s work email.', 'sara.khalil@apexaorainnovations.com'],
-    ['mobile', 'Mobile', 'Sender’s mobile number.', '+971 50 123 4567'],
+    ['email', 'Email', 'Sender’s work email.', 'sara.khalil@yourcompany.com'],
+    ['mobile', 'Mobile', 'Sender’s mobile number.', '+000 50 123 4567'],
     ['title', 'Job title', 'Sender’s job title.', 'Senior Account Executive'],
   ]),
   group('company', 'Company', [
-    ['name', 'Name', 'Our company name.', 'Apex Aora Innovations'],
-    ['website', 'Website', 'Our website.', 'apexaorainnovations.com'],
-    ['phone', 'Phone', 'Our main phone number.', '+971 4 000 0000'],
+    // Values come from Settings > Company profile through `issuerFor(tenant)` (see `companyContext`);
+    // the samples here are only a fallback, the picker and previews show the tenant's real values.
+    ['name', 'Name', 'Our trade name, as customers know us (falls back to the workspace name).', 'Your Company'],
+    ['legal_name', 'Legal name', 'Our registered company name, as on the trade licence.', 'Your Company LLC'],
+    ['phone', 'Phone', 'Our main phone number.', '+000 0 000 0000'],
+    ['email', 'Email', 'Our main email address.', 'hello@yourcompany.com'],
+    ['website', 'Website', 'Our website.', 'yourcompany.com'],
+    ['address', 'Address', 'Our address on one line.', 'Business district, Your city'],
+    ['tax_label', 'Tax label', 'What the tax number is called in our country (TRN, VAT number…).', 'TRN'],
+    ['tax_number', 'Tax number', 'Our tax registration number.', '100XXXXXXXXXXXX'],
   ]),
   group('quotation', 'Quotation', [
     ['number', 'Number', 'Quotation number.', 'QT-2026-0012'],
     ['title', 'Title', 'Quotation title.', 'Website redesign and SEO retainer'],
-    ['total', 'Total', 'Grand total including VAT.', 'AED 48,300'],
+    ['total', 'Total', 'Grand total including VAT.', '48,300'],
     ['validUntil', 'Valid until', 'Last day the quotation is valid.', '17 Dec 2026'],
-    ['link', 'Link', 'Link to view the quotation online.', 'https://apexaorainnovations.com/q/QT-2026-0012'],
+    ['link', 'Link', 'Link to view the quotation online.', 'https://yourcompany.com/q/QT-2026-0012'],
   ]),
   group('date', 'Date', [['today', 'Today', 'Today’s date when the message is sent.', '17 Nov 2026']]),
 ]
 
+/** The canonical variables (what the picker offers). Deprecated aliases are not listed. */
 export const VARIABLES: TemplateVariable[] = VARIABLE_GROUPS.flatMap((g) => g.variables)
+
+/**
+ * Deprecated spellings that still render (templates saved before the snake_case company keys).
+ * Hidden from the picker; resolved to their canonical key everywhere else.
+ */
+export const VARIABLE_ALIASES: Readonly<Record<string, string>> = {
+  'company.legalName': 'company.legal_name',
+  'company.taxLabel': 'company.tax_label',
+  'company.taxNumber': 'company.tax_number',
+}
 
 const BY_KEY = new Map(VARIABLES.map((v) => [v.key, v]))
 
-export function isKnownVariable(key: string): boolean {
-  return BY_KEY.has(key)
+/** The canonical key for a key or a deprecated alias (`company.legalName` → `company.legal_name`). */
+export function canonicalKey(key: string): string {
+  return VARIABLE_ALIASES[key] ?? key
 }
 
+export function isKnownVariable(key: string): boolean {
+  return BY_KEY.has(canonicalKey(key))
+}
+
+/** The variable for a key; an alias returns its canonical variable. */
 export function getVariable(key: string): TemplateVariable | undefined {
-  return BY_KEY.get(key)
+  return BY_KEY.get(canonicalKey(key))
 }
 
 /** `{{lead.company}}`. */
@@ -88,6 +112,10 @@ export function suggestVariable(key: string): TemplateVariable | null {
   if (!k) return null
   const exact = VARIABLES.find((v) => v.key.toLowerCase() === k)
   if (exact) return exact
+  // `company.LegalName`, `company.legal-name`, `company.taxnumber`: same key once separators go.
+  const squash = (x: string) => x.replace(/[_\s-]/g, '')
+  const loose = VARIABLES.find((v) => squash(v.key.toLowerCase()) === squash(k))
+  if (loose) return loose
   const field = k.includes('.') ? k.split('.').pop()! : k
   const groupPart = k.includes('.') ? k.split('.')[0] : ''
   const sameField = VARIABLES.filter((v) => v.field.toLowerCase() === field)

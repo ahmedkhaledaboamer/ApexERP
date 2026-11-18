@@ -23,6 +23,11 @@ export function Modal({ open, onClose, title, description, children, footer, siz
   const panelRef = useRef<HTMLDivElement>(null)
   const reduceMotion = useReducedMotion()
 
+  // Callers often pass an inline onClose; keep it in a ref so a re-render (a query settling while the
+  // user types) never re-runs the focus effect and moves focus back to the first field.
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
+
   useEffect(() => {
     if (!open) return
     const previouslyFocused = document.activeElement as HTMLElement | null
@@ -33,7 +38,7 @@ export function Modal({ open, onClose, title, description, children, footer, siz
       first?.focus()
     })
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') onCloseRef.current()
     }
     document.addEventListener('keydown', onKey)
     return () => {
@@ -41,7 +46,7 @@ export function Modal({ open, onClose, title, description, children, footer, siz
       document.removeEventListener('keydown', onKey)
       previouslyFocused?.focus()
     }
-  }, [open, onClose])
+  }, [open])
 
   return (
     <AnimatePresence>

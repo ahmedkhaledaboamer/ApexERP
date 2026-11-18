@@ -1,5 +1,6 @@
 import { z } from 'zod'
-import { isUaeMobile } from '@/shared/lib/phone'
+import { isMobile, mobileError } from '@/shared/lib/phone'
+import { getRegion } from '@/shared/lib/region'
 
 const optionalEmail = z
   .string()
@@ -9,7 +10,8 @@ const optionalEmail = z
 const optionalMobile = z
   .string()
   .trim()
-  .refine((v) => v === '' || isUaeMobile(v), 'Use the UAE format +971 5X XXX XXXX.')
+  // The workspace country decides the format (Settings > Company > Regional).
+  .refine((v) => v === '' || isMobile(v, getRegion().country), () => ({ message: mobileError(getRegion().country) }))
 
 export const contactSchema = z
   .object({
@@ -30,7 +32,7 @@ export const contractSchema = z
     customerId: z.string().min(1, 'Pick a customer.'),
     title: z.string().trim().min(1, 'Give the contract a title.').max(120, 'Keep it under 120 characters.'),
     serviceIds: z.array(z.string()).min(1, 'Pick at least one service.'),
-    value: z.coerce.number({ invalid_type_error: 'Enter an amount.' }).positive('Value must be more than AED 0.'),
+    value: z.coerce.number({ invalid_type_error: 'Enter an amount.' }).positive('Value must be more than 0.'),
     billing: z.enum(['One-off', 'Monthly', 'Annual']),
     startDate: z.string().min(1, 'Pick a start date.'),
     renewalDate: z.string().min(1, 'Pick a renewal date.'),
@@ -47,7 +49,7 @@ export const customerSchema = z.object({
   website: z
     .string()
     .trim()
-    .refine((v) => v === '' || /^(https?:\/\/)?[^\s/.]+(\.[^\s/.]+)+(\/\S*)?$/i.test(v), 'Enter a valid website, e.g. company.ae.'),
+    .refine((v) => v === '' || /^(https?:\/\/)?[^\s/.]+(\.[^\s/.]+)+(\/\S*)?$/i.test(v), 'Enter a valid website, e.g. company.com.'),
   address: z.string().trim().max(200, 'Keep it under 200 characters.'),
   emirate: z.enum(['', 'Dubai', 'Abu Dhabi', 'Sharjah', 'Ajman', 'Umm Al Quwain', 'Ras Al Khaimah', 'Fujairah']),
   ownerId: z.string().min(1, 'Pick an owner.'),

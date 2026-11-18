@@ -1,13 +1,16 @@
-import { format, parseISO } from 'date-fns'
+import { fmtDate } from '@/shared/lib/utils'
+import { getRegion } from '@/shared/lib/region'
 import { ACTIVITY_LABELS, ACTIVITY_TYPES } from '@/shared/lib/constants'
 import type { CustomReport, ReportId, SalesReport } from '@/modules/reports/types'
 import { DIMENSION_LABELS, MEASURE_LABELS, REPORT_TITLES } from '@/modules/reports/lib/reportCatalog'
 import { XL, type ExportSheet } from '@/modules/reports/lib/exportExcel'
 
-const d = (iso: string) => format(parseISO(iso), 'd MMM yyyy')
+/** Dates in the workspace's date format. */
+const d = (iso: string) => fmtDate(iso)
 
 /** Worksheet(s) for one ready-made report; the same rows the on-screen tables show. */
 export function sheetsFor(id: ReportId, r: SalesReport): ExportSheet[] {
+  const cur = getRegion().currency
   const title = REPORT_TITLES[id]
   switch (id) {
     case 'status':
@@ -15,7 +18,7 @@ export function sheetsFor(id: ReportId, r: SalesReport): ExportSheet[] {
         {
           name: 'By status',
           title,
-          columns: [{ header: 'Status', width: 18 }, { header: 'Leads', format: XL.int }, { header: 'Share', format: XL.pct }, { header: 'Value (AED)', format: XL.money, width: 16 }],
+          columns: [{ header: 'Status', width: 18 }, { header: 'Leads', format: XL.int }, { header: 'Share', format: XL.pct }, { header: `Value (${cur})`, format: XL.money, width: 16 }],
           rows: r.byStatus.map((s) => [s.label, s.count, s.share, s.value]),
         },
         {
@@ -34,7 +37,7 @@ export function sheetsFor(id: ReportId, r: SalesReport): ExportSheet[] {
             { header: 'Industry', width: 24 },
             { header: 'Sub-industry', width: 22 },
             { header: 'Leads', format: XL.int },
-            { header: 'Value (AED)', format: XL.money, width: 16 },
+            { header: `Value (${cur})`, format: XL.money, width: 16 },
             { header: 'Won', format: XL.int },
             { header: 'Win rate', format: XL.pct },
           ],
@@ -55,15 +58,15 @@ export function sheetsFor(id: ReportId, r: SalesReport): ExportSheet[] {
             { header: 'Won', format: XL.int },
             { header: 'Lost', format: XL.int },
             { header: 'Win rate', format: XL.pct },
-            { header: 'Value (AED)', format: XL.money, width: 16 },
-            { header: 'Won value (AED)', format: XL.money, width: 18 },
+            { header: `Value (${cur})`, format: XL.money, width: 16 },
+            { header: `Won value (${cur})`, format: XL.money, width: 18 },
           ],
           rows: r.bySource.map((s) => [s.label, s.leads, s.won, s.lost, s.winRate, s.value, s.wonValue]),
         },
         {
           name: 'Source details',
           title: 'Source detail breakdown',
-          columns: [{ header: 'Source', width: 18 }, { header: 'Detail', width: 36 }, { header: 'Leads', format: XL.int }, { header: 'Won', format: XL.int }, { header: 'Value (AED)', format: XL.money, width: 16 }],
+          columns: [{ header: 'Source', width: 18 }, { header: 'Detail', width: 36 }, { header: 'Leads', format: XL.int }, { header: 'Won', format: XL.int }, { header: `Value (${cur})`, format: XL.money, width: 16 }],
           rows: r.bySource.flatMap((s) => s.details.map((x) => [s.label, x.detail, x.leads, x.won, x.value])),
         },
       ]
@@ -72,7 +75,7 @@ export function sheetsFor(id: ReportId, r: SalesReport): ExportSheet[] {
         {
           name: 'Conversion over time',
           title,
-          columns: [{ header: 'Month', width: 12 }, { header: 'Created', format: XL.int }, { header: 'Won', format: XL.int }, { header: 'Won value (AED)', format: XL.money, width: 18 }, { header: 'Conversion', format: XL.pct }],
+          columns: [{ header: 'Month', width: 12 }, { header: 'Created', format: XL.int }, { header: 'Won', format: XL.int }, { header: `Won value (${cur})`, format: XL.money, width: 18 }, { header: 'Conversion', format: XL.pct }],
           rows: r.funnelMonthly.map((m) => [m.label, m.created, m.won, m.wonValue, m.conversion]),
         },
       ]
@@ -88,7 +91,7 @@ export function sheetsFor(id: ReportId, r: SalesReport): ExportSheet[] {
             { header: 'Activities', format: XL.int },
             { header: 'Proposals', format: XL.int },
             { header: 'Won', format: XL.int },
-            { header: 'Won value (AED)', format: XL.money, width: 18 },
+            { header: `Won value (${cur})`, format: XL.money, width: 18 },
             { header: 'Conversion', format: XL.pct },
             { header: 'Avg response (h)', format: XL.hours, width: 18 },
           ],
@@ -134,8 +137,8 @@ export function sheetsFor(id: ReportId, r: SalesReport): ExportSheet[] {
         {
           name: 'Overdue tasks',
           title: 'Overdue tasks',
-          columns: [{ header: 'Task', width: 32 }, { header: 'Lead', width: 30 }, { header: 'Owner', width: 20 }, { header: 'Due', width: 14 }, { header: 'Days overdue', format: XL.int, width: 14 }, { header: 'Priority' }, { header: 'Status', width: 14 }],
-          rows: r.overdueTasks.map((t) => [t.title, t.company, t.ownerName, d(t.dueDate), t.daysOverdue, t.priority, t.status]),
+          columns: [{ header: 'Task', width: 32 }, { header: 'Linked to', width: 30 }, { header: 'Link type', width: 12 }, { header: 'Owner', width: 20 }, { header: 'Due', width: 14 }, { header: 'Days overdue', format: XL.int, width: 14 }, { header: 'Priority' }, { header: 'Status', width: 14 }],
+          rows: r.overdueTasks.map((t) => [t.title, t.linkLabel ?? 'Personal', t.linkType ?? '', t.ownerName, d(t.dueDate), t.daysOverdue, t.priority, t.status]),
         },
       ]
   }
@@ -144,10 +147,11 @@ export function sheetsFor(id: ReportId, r: SalesReport): ExportSheet[] {
 export function customSheet(r: CustomReport): ExportSheet {
   const { dimension, measure } = r.input
   const fmt = measure === 'conversion' ? XL.pct : measure === 'count' ? XL.int : XL.money
+  const money = measure === 'value' || measure === 'wonValue' ? ` (${getRegion().currency})` : ''
   return {
     name: 'Custom report',
     title: `${MEASURE_LABELS[measure]} by ${DIMENSION_LABELS[dimension].toLowerCase()}`,
-    columns: [{ header: DIMENSION_LABELS[dimension], width: 24 }, { header: MEASURE_LABELS[measure], format: fmt, width: 22 }, { header: 'Leads', format: XL.int }],
+    columns: [{ header: DIMENSION_LABELS[dimension], width: 24 }, { header: `${MEASURE_LABELS[measure]}${money}`, format: fmt, width: 22 }, { header: 'Leads', format: XL.int }],
     rows: [...r.rows.map((x) => [x.label, x.value, x.leads]), ['Total', r.total, r.rows.reduce((s, x) => s + x.leads, 0)]],
   }
 }

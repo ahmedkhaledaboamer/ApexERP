@@ -79,7 +79,7 @@ export function DepartmentMembersTab({ dept, canMove, canManage }: MembersTabPro
   })
 
   const addButton = canMove && dept.active && (
-    <Button size="sm" onClick={() => setAdding(true)}>
+    <Button write size="sm" onClick={() => setAdding(true)}>
       <UserPlus />
       Add members
     </Button>
@@ -100,7 +100,7 @@ export function DepartmentMembersTab({ dept, canMove, canManage }: MembersTabPro
         bulkActions={
           canMove
             ? (selected) => (
-                <Button variant="secondary" size="sm" disabled={!selected.some((m) => m.active)} onClick={() => setMoving(selected.filter((m) => m.active).map((m) => m.id))}>
+                <Button write variant="secondary" size="sm" disabled={!selected.some((m) => m.active)} onClick={() => setMoving(selected.filter((m) => m.active).map((m) => m.id))}>
                   <ArrowRightLeft />
                   Move to another department…
                 </Button>
@@ -261,7 +261,7 @@ function buildColumns({ dept, canMove, canManage, people, pendingManager, onMana
             <Menu
               className="w-60"
               trigger={(props) => (
-                <Button variant="ghost" size="xs" iconOnly aria-label={`Actions for ${m.name}`} {...props}>
+                <Button write variant="ghost" size="xs" iconOnly aria-label={`Actions for ${m.name}`} {...props}>
                   <MoreHorizontal />
                 </Button>
               )}

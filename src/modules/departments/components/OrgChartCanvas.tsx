@@ -368,7 +368,7 @@ export const OrgChartCanvas = forwardRef<OrgChartHandle, OrgChartCanvasProps>(fu
         )}
       >
         <div
-          className="oc-layer absolute top-0 left-0 w-max origin-top-left will-change-transform"
+          dir="ltr" className="oc-layer absolute top-0 left-0 w-max origin-top-left will-change-transform"
           style={{
             transform: `translate(${view.x}px, ${view.y}px) scale(${view.k})`,
             transition: smooth ? 'transform 180ms ease-out' : undefined,

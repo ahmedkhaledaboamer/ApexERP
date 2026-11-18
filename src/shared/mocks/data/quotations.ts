@@ -1,8 +1,10 @@
-import type { QuotationItem, QuotationRecord, QuotationStatus } from '@/modules/quotations/types'
+import type { QuotationItem, QuotationRecord, QuotationStatus, QuotationUnit } from '@/modules/quotations/types'
 import { DEFAULT_VAT_PCT, UNIT_FOR_PRICING, addDaysIso } from '@/modules/quotations/lib/totals'
 import { DEFAULT_NOTES, DEFAULT_TERMS } from '@/modules/quotations/lib/company'
 import { leads } from '@/shared/mocks/db'
 import { services } from '@/shared/mocks/data/services'
+import type { Tenant } from '@/shared/mocks/tenant'
+import { registerArray } from '@/shared/mocks/persist/registry'
 
 /**
  * Seed quotations (mock) for leads in Meeting, Proposal and Won, built from the service
@@ -65,11 +67,12 @@ function itemsFor(lines: Line[], key: string): QuotationItem[] {
   })
 }
 
-export const quotations: QuotationRecord[] = SEEDS.map((s, i) => {
+const apexQuotations: Tenant<QuotationRecord>[] = SEEDS.map((s, i) => {
   const lead = leads.find((l) => l.id === s.leadId)
   const id = `Q-${String(1001 + i)}`
   const createdAt = ago(s.createdDaysAgo)
   return {
+    companyId: 'co_apex',
     id,
     number: `QT-${new Date(createdAt).getFullYear()}-${String(i + 1).padStart(4, '0')}`,
     leadId: s.leadId,
@@ -93,3 +96,84 @@ export const quotations: QuotationRecord[] = SEEDS.map((s, i) => {
     decidedAt: s.decidedDaysAgo !== undefined ? ago(s.decidedDaysAgo) : null,
   }
 })
+
+/* ---------------- Crest Logistics (second tenant): SAR, VAT 15 % ---------------- */
+
+/**
+ * Crest seed ids and numbers live in their own block (Q-5001+, QT-yyyy-5001+) so they never collide
+ * with the global sequence that new quotations of every company continue (Q-1017…, QT-yyyy-0017…).
+ */
+export const CREST_SEED_QUOTATION_BASE = 5001
+
+/** [serviceId, description, quantity, unit, unit price (SAR), discount %] */
+type CrestLine = [serviceId: string, description: string, quantity: number, unit: QuotationUnit, unitPrice: number, discountPct?: number]
+
+interface CrestSeed extends Omit<Seed, 'lines'> {
+  lines: CrestLine[]
+}
+
+const CREST_SEEDS: CrestSeed[] = [
+  {
+    leadId: 'L-5007', status: 'Accepted', title: 'Import freight forwarding and customs clearance',
+    lines: [['S-901', 'Freight Forwarding (sea import shipments)', 24, 'project', 8500], ['S-903', 'Customs Clearance', 24, 'project', 2200, 5]],
+    createdDaysAgo: 75, sentDaysAgo: 73, decidedDaysAgo: 60, validInDays: -43,
+  },
+  {
+    leadId: 'L-5002', status: 'Sent', title: 'Site logistics and fleet tracking for the coastal project',
+    lines: [['S-901', 'Freight Forwarding (project cargo moves)', 6, 'project', 8500], ['S-904', 'Fleet Tracking', 12, 'month', 4500, 10]],
+    createdDaysAgo: 12, sentDaysAgo: 10, validInDays: 20,
+  },
+  {
+    leadId: 'L-5021', status: 'Viewed', title: 'Freight forwarding and supply chain assessment',
+    lines: [['S-905', 'Supply Chain Assessment', 1, 'project', 35000], ['S-901', 'Freight Forwarding', 10, 'project', 8500, 5]],
+    createdDaysAgo: 6, sentDaysAgo: 5, validInDays: 25,
+  },
+]
+
+const CREST_NOTES = 'Thank you for considering Crest Logistics. We look forward to moving your cargo.'
+const CREST_TERMS = [
+  '30% advance on acceptance; the balance monthly in arrears.',
+  'Invoices are payable within 30 days by bank transfer.',
+  'Prices are in SAR. VAT is charged at 15%.',
+  'Monthly services are billed in advance and can be cancelled with 60 days’ notice.',
+].join('\n')
+
+const crestQuotations: Tenant<QuotationRecord>[] = CREST_SEEDS.map((s, i) => {
+  const lead = leads.find((l) => l.id === s.leadId)
+  const id = `Q-${CREST_SEED_QUOTATION_BASE + i}`
+  const createdAt = ago(s.createdDaysAgo)
+  return {
+    companyId: 'co_crest',
+    id,
+    number: `QT-${new Date(createdAt).getFullYear()}-${CREST_SEED_QUOTATION_BASE + i}`,
+    leadId: s.leadId,
+    customerId: lead?.customerId ?? null,
+    company: lead?.company ?? '',
+    contactName: lead?.contactName ?? '',
+    contactEmail: lead?.contactEmail ?? '',
+    title: s.title,
+    status: s.status,
+    items: s.lines.map(([serviceId, description, quantity, unit, unitPrice, discountPct = 0], k) => ({
+      id: `${id}-${k + 1}`,
+      serviceId,
+      description,
+      quantity,
+      unit,
+      unitPrice,
+      discountPct,
+      currency: 'SAR',
+    })),
+    vatPct: 15,
+    currency: 'SAR',
+    notes: CREST_NOTES,
+    terms: CREST_TERMS,
+    validUntil: addDaysIso(s.validInDays),
+    createdBy: s.createdBy ?? lead?.ownerId ?? 'u103',
+    createdAt,
+    updatedAt: s.sentDaysAgo !== undefined ? ago(s.sentDaysAgo) : createdAt,
+    sentAt: s.sentDaysAgo !== undefined ? ago(s.sentDaysAgo) : null,
+    decidedAt: s.decidedDaysAgo !== undefined ? ago(s.decidedDaysAgo) : null,
+  }
+})
+
+export const quotations: Tenant<QuotationRecord>[] = registerArray('quotations', [...apexQuotations, ...crestQuotations])

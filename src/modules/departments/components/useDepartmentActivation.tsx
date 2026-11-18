@@ -76,7 +76,7 @@ export function useDepartmentActivation() {
               <Button variant="secondary" onClick={() => setConfirming(null)}>
                 Keep active
               </Button>
-              <Button variant="danger" loading={mutation.isPending} onClick={() => c && run(c, false)}>
+              <Button write variant="danger" loading={mutation.isPending} onClick={() => c && run(c, false)}>
                 Deactivate
               </Button>
             </>
@@ -102,7 +102,7 @@ export function useDepartmentActivation() {
                 Close
               </Button>
               {b && (b.memberCount > 0 || b.childCount === 0) && (
-                <Button onClick={() => openMove(b)}>
+                <Button write onClick={() => openMove(b)}>
                   <Users />
                   Move members…
                 </Button>

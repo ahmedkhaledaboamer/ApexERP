@@ -1,19 +1,25 @@
 import { useState, type FormEvent } from 'react'
-import { Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { useMutation } from '@tanstack/react-query'
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { ArrowLeft, BarChart3, Clock, Columns3, Eye, EyeOff, ShieldCheck, Sparkles, Users } from 'lucide-react'
 import type { Session } from '@/shared/types'
 import { PATHS } from '@/app/paths'
 import { login, loginTwoFactor } from '@/modules/auth/api/authApi'
 import { isTwoFactorChallenge } from '@/modules/auth/types'
 import { ApiError } from '@/shared/lib/apiError'
-import { MOCK_API } from '@/modules/auth/constants'
 import { DemoOtpHint, OtpInput } from '@/modules/auth/components/OtpInput'
 import { Button } from '@/shared/components/ui/Button'
 import { Field, SelectInput, TextInput } from '@/shared/components/form/Field'
 import { useAppDispatch, useAppSelector } from '@/store/hooks'
 import { signedIn } from '@/store/authSlice'
-import { DEMO_PASSWORD, DEMO_USER_BY_ROLE, LOGO_URL, ROLES } from '@/shared/lib/constants'
+import { publicWorkspaceLoaded } from '@/store/tenantSlice'
+import { DEMO_PASSWORD } from '@/shared/lib/constants'
+import { currentWorkspace, setWorkspace } from '@/shared/lib/tenantContext'
+import { getDevAccounts } from '@/modules/tenancy/api'
+import { DEV_TENANT_TOOLS } from '@/modules/tenancy/dev'
+import { useBranding } from '@/modules/tenancy/hooks'
+import { PRODUCT_NAME } from '@/modules/tenancy/branding'
+import { TenantLogo } from '@/modules/tenancy/components/TenantLogo'
 
 export default function LoginPage() {
   const signedInAlready = useAppSelector((s) => s.auth.session !== null)
@@ -32,8 +38,11 @@ function LoginScreen() {
   /** Set when the password was right but the account has 2FA: the OTP step shows instead. */
   const [challengeId, setChallengeId] = useState<string | null>(null)
   const idleMinutes = idleSignOutMinutes(location.state)
+  const branding = useBranding()
 
   function finish(session: Session) {
+    // Signed in on the bare domain: the workspace follows the account from now on.
+    if (!currentWorkspace()) setWorkspace(session.tenant.subdomain)
     dispatch(signedIn(session))
     navigate(redirectTarget(location.state), { replace: true })
   }
@@ -53,24 +62,31 @@ function LoginScreen() {
     if (!errors.email && !errors.password) mutation.mutate()
   }
 
-  async function fillDemo(userId: string) {
-    // Loaded on demand so the seed data never ships in a real-backend build.
-    const { users } = await import('@/shared/mocks/db')
-    const user = users.find((u) => u.id === userId)
-    if (!user) return
-    setEmail(user.email)
+  const devAccounts = useQuery({ queryKey: ['dev-accounts'], queryFn: getDevAccounts, enabled: DEV_TENANT_TOOLS, staleTime: 60_000 })
+
+  function fillDemo(email: string) {
+    const group = devAccounts.data?.find((g) => g.users.some((u) => u.email === email))
+    // Opened on another workspace's address: move to the account's workspace so sign-in matches it.
+    const workspace = currentWorkspace()
+    if (group && workspace && workspace !== group.company.subdomain) {
+      setWorkspace(group.company.subdomain)
+      dispatch(publicWorkspaceLoaded(group.company))
+    }
+    setEmail(email)
     setPassword(DEMO_PASSWORD)
     setFieldErrors({})
     mutation.reset()
   }
+
+  const workspaceRequired = mutation.error instanceof ApiError && mutation.error.code === 'workspace_required'
 
   return (
     <main className="grid min-h-full bg-surface lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
       {/* Form */}
       <div className="flex flex-col px-6 py-8 sm:px-12">
         <div className="flex items-center gap-2">
-          <img src={LOGO_URL} alt="" aria-hidden className="h-7 w-10 object-cover object-top" />
-          <span className="text-[0.8125rem] font-semibold">Apex Aora</span>
+          <TenantLogo id="signin-tenant-logo" size="sm" branding={branding} />
+          <span className="text-[0.8125rem] font-semibold">{branding.displayName}</span>
         </div>
 
         {challengeId ? (
@@ -106,7 +122,7 @@ function LoginScreen() {
                 onChange={(e) => setEmail(e.target.value)}
                 invalid={!!fieldErrors.email}
                 aria-describedby={fieldErrors.email ? 'email-error' : undefined}
-                placeholder="you@apexaora.ae"
+                placeholder="you@company.com"
                 className="h-10"
               />
             </Field>
@@ -136,7 +152,9 @@ function LoginScreen() {
 
             {mutation.isError && (
               <p role="alert" className="rounded-lg border border-danger-100 bg-danger-50 px-3 py-2 text-[0.8125rem] text-danger-700 dark:border-danger-500/20 dark:bg-danger-500/10 dark:text-danger-500">
-                {mutation.error.message}
+                {workspaceRequired
+                  ? 'This email is used in more than one workspace. Open your workspace’s own address (for example yourcompany.apexcrm.app) and sign in there.'
+                  : mutation.error.message}
               </p>
             )}
 
@@ -145,39 +163,55 @@ function LoginScreen() {
             </Button>
           </form>
 
-          {MOCK_API && (
+          <p className="mt-6 text-center text-[0.8125rem] text-muted">
+            New to {PRODUCT_NAME}?{' '}
+            <Link to={PATHS.signup} className="font-medium text-brand-600 hover:underline dark:text-brand-300">
+              Create a workspace
+            </Link>
+          </p>
+
+          {DEV_TENANT_TOOLS && (
             <div className="mt-8 rounded-lg border border-dashed border-line-strong p-3">
-              <Field id="demo-role" label="Demo: sign in as a role" hint={`Password: ${DEMO_PASSWORD}`}>
-                <SelectInput id="demo-role" defaultValue="" onChange={(e) => fillDemo(e.target.value)}>
+              <Field id="demo-account" label="Demo: sign in as" hint={`Password: ${DEMO_PASSWORD}`}>
+                <SelectInput id="demo-account" defaultValue="" disabled={!devAccounts.data} onChange={(e) => fillDemo(e.target.value)}>
                   <option value="" disabled>
-                    Choose a role…
+                    {devAccounts.isPending ? 'Loading accounts…' : 'Choose an account…'}
                   </option>
-                  {ROLES.map((role) => (
-                    <option key={role} value={DEMO_USER_BY_ROLE[role]}>
-                      {role}
-                    </option>
+                  {devAccounts.data?.map((group) => (
+                    <optgroup key={group.company.id} label={`${group.company.branding.displayName} (${group.company.subdomain})`}>
+                      {group.users.map((u) => (
+                        <option key={u.id} value={u.email}>
+                          {u.name} · {u.role}
+                        </option>
+                      ))}
+                    </optgroup>
                   ))}
                 </SelectInput>
               </Field>
+              <Link to={PATHS.platformLogin} className="mt-3 inline-block text-[0.8125rem] font-medium text-brand-600 hover:underline dark:text-brand-300">
+                Platform console
+              </Link>
             </div>
           )}
         </div>
         )}
 
-        <p className="text-xs text-subtle">© {new Date().getFullYear()} Apex Aora Innovations</p>
+        <p className="text-xs text-subtle">
+          © {new Date().getFullYear()} {branding.displayName === PRODUCT_NAME ? PRODUCT_NAME : `${branding.displayName} · ${PRODUCT_NAME}`}
+        </p>
       </div>
 
       {/* Brand panel */}
       <div className="relative hidden overflow-hidden bg-[#0d0b1a] p-12 lg:flex lg:flex-col lg:justify-between">
         <div
           aria-hidden
-          className="absolute -top-40 -right-40 size-[36rem] rounded-full opacity-60 blur-3xl"
-          style={{ background: 'radial-gradient(circle, #7c3aed 0%, transparent 65%)' }}
+          className="absolute -top-40 -end-40 size-[36rem] rounded-full opacity-60 blur-3xl"
+          style={{ background: 'radial-gradient(circle, var(--color-brand-600) 0%, transparent 65%)' }}
         />
         <div
           aria-hidden
-          className="absolute -bottom-48 -left-24 size-[32rem] rounded-full opacity-40 blur-3xl"
-          style={{ background: 'radial-gradient(circle, #2563eb 0%, transparent 65%)' }}
+          className="absolute -bottom-48 -start-24 size-[32rem] rounded-full opacity-40 blur-3xl"
+          style={{ background: 'radial-gradient(circle, var(--color-accent-600) 0%, transparent 65%)' }}
         />
         <div
           aria-hidden
@@ -189,7 +223,7 @@ function LoginScreen() {
         />
 
         <div className="relative max-w-md">
-          <p className="text-xs font-medium tracking-wide text-brand-300 uppercase">Internal ERP</p>
+          <p className="text-xs font-medium tracking-wide text-brand-300 uppercase">{PRODUCT_NAME}</p>
           <h2 className="mt-3 text-3xl leading-tight font-semibold tracking-[-0.02em] text-white">
             The whole sales journey, from first call to delivered project.
           </h2>
@@ -338,7 +372,7 @@ function TwoFactorStep({
 
       <div className="mt-6 flex flex-wrap items-center justify-between gap-3 text-[0.8125rem]">
         <button type="button" onClick={onBack} className="inline-flex items-center gap-1.5 text-muted hover:text-ink">
-          <ArrowLeft className="size-3.5" aria-hidden />
+          <ArrowLeft className="size-3.5 rtl:-scale-x-100" aria-hidden />
           Use a different account
         </button>
         <button

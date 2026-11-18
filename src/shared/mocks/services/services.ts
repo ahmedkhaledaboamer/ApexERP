@@ -21,9 +21,11 @@ import { packageListPrice, packages, projectTemplateFor, projectTemplates, servi
 import { contracts } from '@/shared/mocks/data/contracts'
 import { quotations } from '@/shared/mocks/data/quotations'
 import { customers, leads, users } from '@/shared/mocks/db'
-import { lookups } from '@/shared/mocks/data/lookups'
+import { lookupsFor } from '@/shared/mocks/data/lookups'
 import { diff, recordAudit } from '@/shared/mocks/data/audit'
+import { companyById } from '@/shared/mocks/data/tenancy'
 import { delay, fail } from '@/shared/mocks/server'
+import { findInTenant, scoped, stamp, tenantOf, type Tenant } from '@/shared/mocks/tenant'
 
 /* ---------------- Permissions ---------------- */
 
@@ -38,6 +40,19 @@ async function guardEdit(user: User): Promise<void> {
 
 const activeKey = (list: { key: string; active: boolean }[], key: string) => list.some((i) => i.key === key && i.active)
 const knownKey = (list: { key: string }[], key: string) => list.some((i) => i.key === key)
+
+/** The company's currency, used when a service or package is created without one. */
+const currencyOf = (user: User) => companyById(tenantOf(user))?.regional.currency ?? 'AED'
+
+/** Fields a client may set on update. Everything else (companyId, id, tenant fields, unknown keys) is dropped. */
+const SERVICE_FIELDS = ['name', 'category', 'description', 'industries', 'pricingType', 'price', 'currency', 'deliveryDays', 'active'] as const
+const PACKAGE_FIELDS = ['name', 'description', 'items', 'packagePrice', 'currency', 'active'] as const
+
+/** Only the whitelisted fields of an update body (tenant and identity come from the server; unknown keys are never stored). */
+function writable<T extends object>(input: T, fields: readonly string[]): Partial<T> {
+  const out = Object.fromEntries(Object.entries(input).filter(([k, v]) => v !== undefined && fields.includes(k)))
+  return out as Partial<T>
+}
 
 function usageOf(id: string): ServiceUsage {
   const leadsRecommending = leads.filter((l) => l.recommendedServiceId === id).length
@@ -58,14 +73,16 @@ function toRow(s: Service): ServiceRow {
   }
 }
 
-async function serviceOr404(id: string): Promise<Service> {
-  const s = services.find((x) => x.id === id)
+/** A service of the user's company; another company's service answers the same 404. */
+async function serviceOr404(user: User, id: string): Promise<Tenant<Service>> {
+  const s = findInTenant(services, user, (x) => x.id === id)
   if (!s) return fail('That service doesn’t exist.', 404)
   return s
 }
 
-/** Validates a full or partial service input; returns an error message or null. */
-function validateService(input: ServiceUpdateInput, partial: boolean): string | null {
+/** Validates a full or partial service input against the company's lists; returns an error message or null. */
+function validateService(user: User, input: ServiceUpdateInput, partial: boolean): string | null {
+  const lookups = lookupsFor(tenantOf(user))
   const has = (k: keyof ServiceInput) => !partial || input[k] !== undefined
   if (has('name') && !String(input.name ?? '').trim()) return 'Name is required.'
   if (input.name && input.name.trim().length > 120) return 'Keep the name under 120 characters.'
@@ -93,12 +110,12 @@ function validateService(input: ServiceUpdateInput, partial: boolean): string | 
 /** Every service (active and inactive), newest first by name order of the catalog. */
 export async function listServices(user: User): Promise<ServiceRow[]> {
   await guardView(user)
-  return delay(services.map(toRow))
+  return delay(scoped(services, user).map(toRow))
 }
 
 export async function getService(user: User, id: string): Promise<ServiceDetail> {
   await guardView(user)
-  const s = await serviceOr404(id)
+  const s = await serviceOr404(user, id)
   const owner = (uid: string) => users.find((u) => u.id === uid)?.name ?? 'Unassigned'
   const recommending = leads
     .filter((l) => l.recommendedServiceId === id)
@@ -133,14 +150,15 @@ export async function getService(user: User, id: string): Promise<ServiceDetail>
 
 export async function createService(user: User, input: ServiceInput): Promise<ServiceRow> {
   await guardEdit(user)
-  const error = validateService(input, false)
+  const error = validateService(user, input, false)
   if (error) return fail(error, 422)
-  if (services.some((s) => s.name.toLowerCase() === input.name.trim().toLowerCase())) {
+  // Names are unique within the company; another company may sell a service with the same name.
+  if (scoped(services, user).some((s) => s.name.toLowerCase() === input.name.trim().toLowerCase())) {
     return fail('A service with that name already exists.', 409)
   }
   const now = new Date().toISOString()
   const next = Math.max(...services.map((s) => Number(s.id.slice(2)) || 0)) + 1
-  const s: Service = {
+  const s = stamp<Service>({
     id: `S-${next}`,
     name: input.name.trim(),
     category: input.category,
@@ -148,12 +166,12 @@ export async function createService(user: User, input: ServiceInput): Promise<Se
     industries: [...new Set(input.industries ?? [])],
     pricingType: input.pricingType,
     price: Math.round(Number(input.price) * 100) / 100,
-    currency: input.currency || 'AED',
+    currency: input.currency || currencyOf(user),
     deliveryDays: Number(input.deliveryDays),
     active: input.active !== false,
     createdAt: now,
     updatedAt: now,
-  }
+  }, user)
   services.push(s)
   recordAudit(user, { action: 'create', entity: 'service', entityId: s.id, summary: `Created service “${s.name}” (${s.currency} ${s.price} ${s.pricingType.toLowerCase()})` })
   return delay(toRow(s))
@@ -161,14 +179,14 @@ export async function createService(user: User, input: ServiceInput): Promise<Se
 
 export async function updateService(user: User, id: string, input: ServiceUpdateInput): Promise<ServiceRow> {
   await guardEdit(user)
-  const s = await serviceOr404(id)
-  const error = validateService(input, true)
+  const s = await serviceOr404(user, id)
+  const error = validateService(user, input, true)
   if (error) return fail(error, 422)
-  if (input.name && services.some((x) => x.id !== id && x.name.toLowerCase() === input.name!.trim().toLowerCase())) {
+  if (input.name && scoped(services, user).some((x) => x.id !== id && x.name.toLowerCase() === input.name!.trim().toLowerCase())) {
     return fail('A service with that name already exists.', 409)
   }
   const before = { ...s }
-  const clean = Object.fromEntries(Object.entries(input).filter(([, v]) => v !== undefined)) as ServiceUpdateInput
+  const clean = writable(input, SERVICE_FIELDS) as ServiceUpdateInput
   Object.assign(s, clean, { updatedAt: new Date().toISOString() })
   if (clean.name) s.name = clean.name.trim()
   if (clean.industries) s.industries = [...new Set(clean.industries)]
@@ -190,7 +208,7 @@ export async function updateService(user: User, id: string, input: ServiceUpdate
 
 export async function setServiceActive(user: User, id: string, active: boolean): Promise<ServiceRow> {
   await guardEdit(user)
-  const s = await serviceOr404(id)
+  const s = await serviceOr404(user, id)
   if (s.active === active) return delay(toRow(s))
   s.active = active
   s.updatedAt = new Date().toISOString()
@@ -208,13 +226,13 @@ export async function setServiceActive(user: User, id: string, active: boolean):
 /** The delivery template for a service (empty when none). Used now by the editor and next by Won → project. */
 export async function getProjectTemplate(user: User, serviceId: string): Promise<ProjectTemplate> {
   await guardView(user)
-  await serviceOr404(serviceId)
+  await serviceOr404(user, serviceId)
   return delay(projectTemplateFor(serviceId))
 }
 
 export async function saveProjectTemplate(user: User, serviceId: string, input: ProjectTemplateInput): Promise<ProjectTemplate> {
   await guardEdit(user)
-  const s = await serviceOr404(serviceId)
+  const s = await serviceOr404(user, serviceId)
   if (!Array.isArray(input.tasks)) return fail('Send the full task list.', 422)
   if (input.tasks.length > 60) return fail('Keep templates to 60 tasks or fewer.', 422)
   const tasks = []
@@ -230,7 +248,7 @@ export async function saveProjectTemplate(user: User, serviceId: string, input: 
     tasks.push({ id: t.id && t.id.startsWith(`${serviceId}-`) ? t.id : `${serviceId}-T${Date.now().toString(36)}${i}`, title, role: t.role, dayOffset, hours: Math.round(hours * 10) / 10 })
   }
   const before = projectTemplateFor(serviceId)
-  const next: ProjectTemplate = { serviceId, tasks, updatedAt: new Date().toISOString(), updatedBy: user.name }
+  const next = stamp<ProjectTemplate>({ serviceId, tasks, updatedAt: new Date().toISOString(), updatedBy: user.name }, user)
   const idx = projectTemplates.findIndex((t) => t.serviceId === serviceId)
   if (idx >= 0) projectTemplates[idx] = next
   else projectTemplates.push(next)
@@ -275,7 +293,7 @@ function packageRow(p: ServicePackage): PackageRow {
   }
 }
 
-function validatePackage(input: PackageUpdateInput, partial: boolean): string | null {
+function validatePackage(user: User, input: PackageUpdateInput, partial: boolean): string | null {
   const has = (k: keyof PackageInput) => !partial || input[k] !== undefined
   if (has('name') && !String(input.name ?? '').trim()) return 'Name is required.'
   if (has('items')) {
@@ -283,7 +301,8 @@ function validatePackage(input: PackageUpdateInput, partial: boolean): string | 
     if (items.length < 2) return 'A package needs at least two services.'
     const ids = new Set<string>()
     for (const it of items) {
-      const s = services.find((x) => x.id === it.serviceId)
+      // Only the company's own services; another company's id is "unknown".
+      const s = findInTenant(services, user, (x) => x.id === it.serviceId)
       if (!s) return `Unknown service ${it.serviceId}.`
       if (!s.active) return `“${s.name}” is inactive; remove it or reactivate the service.`
       if (ids.has(it.serviceId)) return `“${s.name}” is listed twice.`
@@ -301,33 +320,33 @@ function validatePackage(input: PackageUpdateInput, partial: boolean): string | 
 
 export async function listPackages(user: User): Promise<PackageRow[]> {
   await guardView(user)
-  return delay(packages.map(packageRow))
+  return delay(scoped(packages, user).map(packageRow))
 }
 
 export async function getPackage(user: User, id: string): Promise<PackageRow> {
   await guardView(user)
-  const p = packages.find((x) => x.id === id)
+  const p = findInTenant(packages, user, (x) => x.id === id)
   if (!p) return fail('That package doesn’t exist.', 404)
   return delay(packageRow(p))
 }
 
 export async function createPackage(user: User, input: PackageInput): Promise<PackageRow> {
   await guardEdit(user)
-  const error = validatePackage(input, false)
+  const error = validatePackage(user, input, false)
   if (error) return fail(error, 422)
-  if (packages.some((p) => p.name.toLowerCase() === input.name.trim().toLowerCase())) return fail('A package with that name already exists.', 409)
+  if (scoped(packages, user).some((p) => p.name.toLowerCase() === input.name.trim().toLowerCase())) return fail('A package with that name already exists.', 409)
   const now = new Date().toISOString()
-  const p: ServicePackage = {
+  const p = stamp<ServicePackage>({
     id: `PK-${Math.max(0, ...packages.map((x) => Number(x.id.slice(3)) || 0)) + 1}`,
     name: input.name.trim(),
     description: (input.description ?? '').trim(),
     items: input.items.map((i) => ({ serviceId: i.serviceId, quantity: i.quantity })),
     packagePrice: Number(input.packagePrice),
-    currency: input.currency || 'AED',
+    currency: input.currency || currencyOf(user),
     active: input.active !== false,
     createdAt: now,
     updatedAt: now,
-  }
+  }, user)
   packages.push(p)
   recordAudit(user, { action: 'create', entity: 'service-package', entityId: p.id, summary: `Created package “${p.name}” at ${p.currency} ${p.packagePrice}` })
   return delay(packageRow(p))
@@ -335,14 +354,18 @@ export async function createPackage(user: User, input: PackageInput): Promise<Pa
 
 export async function updatePackage(user: User, id: string, input: PackageUpdateInput): Promise<PackageRow> {
   await guardEdit(user)
-  const p = packages.find((x) => x.id === id)
+  const p = findInTenant(packages, user, (x) => x.id === id)
   if (!p) return fail('That package doesn’t exist.', 404)
-  const error = validatePackage(input, true)
+  const error = validatePackage(user, input, true)
   if (error) return fail(error, 422)
+  if (input.name && scoped(packages, user).some((x) => x.id !== id && x.name.toLowerCase() === input.name!.trim().toLowerCase())) {
+    return fail('A package with that name already exists.', 409)
+  }
   const before = { ...p, items: p.items.map((i) => ({ ...i })) }
-  const clean = Object.fromEntries(Object.entries(input).filter(([, v]) => v !== undefined)) as PackageUpdateInput
+  const clean = writable(input, PACKAGE_FIELDS) as PackageUpdateInput
   Object.assign(p, clean, { updatedAt: new Date().toISOString() })
   if (clean.name) p.name = clean.name.trim()
+  if (clean.items) p.items = clean.items.map((i) => ({ serviceId: i.serviceId, quantity: i.quantity }))
   const changes = diff(before, p).filter((c) => c.field !== 'updatedAt')
   if (changes.length) {
     const priceChanged = changes.some((c) => c.field === 'packagePrice' || c.field === 'currency')
@@ -361,7 +384,7 @@ export async function updatePackage(user: User, id: string, input: PackageUpdate
 
 export async function setPackageActive(user: User, id: string, active: boolean): Promise<PackageRow> {
   await guardEdit(user)
-  const p = packages.find((x) => x.id === id)
+  const p = findInTenant(packages, user, (x) => x.id === id)
   if (!p) return fail('That package doesn’t exist.', 404)
   if (active) {
     const inactive = p.items.map((i) => services.find((s) => s.id === i.serviceId)).filter((s) => s && !s.active)

@@ -163,7 +163,7 @@ function DefaultsForm({ saved, canEdit }: { saved: TargetValues; canEdit: boolea
         </div>
         {canEdit && !isRecommended && (
           <div className="mt-5 flex justify-end">
-            <Button variant="ghost" size="sm" onClick={() => setDraft(toDraft(RECOMMENDED_TARGETS))}>
+            <Button write variant="ghost" size="sm" onClick={() => setDraft(toDraft(RECOMMENDED_TARGETS))}>
               <Sparkles />
               Use recommended defaults
             </Button>

@@ -9,7 +9,8 @@ import type { ContactRow } from '@/modules/crm/types'
 import { ContactDrawer } from '@/modules/crm/components/ContactDrawer'
 import { useCurrentUser } from '@/store/hooks'
 import { can, SCOPE_LABELS, scopeOf } from '@/shared/lib/permissions'
-import { formatUaeMobile } from '@/shared/lib/phone'
+import { formatMobile } from '@/shared/lib/phone'
+import { getRegion } from '@/shared/lib/region'
 import { Avatar } from '@/shared/components/ui/Avatar'
 import { Badge } from '@/shared/components/ui/Badge'
 import { Button } from '@/shared/components/ui/Button'
@@ -26,7 +27,7 @@ export default function ContactsPage() {
   if (scope === 'hidden') {
     return (
       <PageBody>
-        <EmptyState title="Contacts aren’t part of your role" body={`${user.role} has no access to Sales & CRM. Ask a System Admin if you need it.`} />
+        <EmptyState title="Contacts aren’t part of your role" body={`${user.role} has no access to Sales & CRM. Ask a Company Admin if you need it.`} />
       </PageBody>
     )
   }
@@ -84,7 +85,7 @@ function ContactsList({ scope, canEdit }: { scope: Scope; canEdit: boolean }) {
         }
         actions={
           canEdit && (
-            <Button size="sm" onClick={() => setDrawer({ contact: null })}>
+            <Button write size="sm" onClick={() => setDrawer({ contact: null })}>
               <Plus />
               Add contact
             </Button>
@@ -133,7 +134,7 @@ function ContactsList({ scope, canEdit }: { scope: Scope; canEdit: boolean }) {
               body={data.length === 0 ? 'People you add to leads and customers will show up here.' : 'Try another search or clear the filters.'}
               action={
                 data.length === 0 && canEdit ? (
-                  <Button size="sm" onClick={() => setDrawer({ contact: null })}>
+                  <Button write size="sm" onClick={() => setDrawer({ contact: null })}>
                     <Plus />
                     Add contact
                   </Button>
@@ -235,7 +236,7 @@ function buildColumns(canEdit: boolean) {
       cell: ({ getValue }) =>
         getValue() ? (
           <a href={`tel:${getValue().replace(/\s/g, '')}`} onClick={(e) => e.stopPropagation()} className="num whitespace-nowrap text-ink-2 hover:text-ink">
-            {formatUaeMobile(getValue())}
+            {formatMobile(getValue(), getRegion().country)}
           </a>
         ) : (
           <span className="text-muted">—</span>

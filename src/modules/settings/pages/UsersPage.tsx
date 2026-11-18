@@ -24,7 +24,8 @@ import { useDepartmentsQuery } from '@/modules/departments/hooks/useDepartments'
 import { ROLE_TONE, RoleBadge } from '@/modules/settings/users/RoleAccess'
 import { can } from '@/shared/lib/permissions'
 import { ROLES } from '@/shared/lib/constants'
-import { formatUaeMobile } from '@/shared/lib/phone'
+import { formatMobile } from '@/shared/lib/phone'
+import { getRegion } from '@/shared/lib/region'
 import { fmtDate } from '@/shared/lib/utils'
 import { useCurrentUser } from '@/store/hooks'
 import { Avatar } from '@/shared/components/ui/Avatar'
@@ -83,7 +84,7 @@ export default function UsersPage() {
           </p>
         </div>
         {canEdit && (
-          <Button onClick={() => setDrawer({ open: true, user: null })}>
+          <Button write onClick={() => setDrawer({ open: true, user: null })}>
             <UserPlus />
             Add user
           </Button>
@@ -163,7 +164,7 @@ function Kpis({ rows, loading }: { rows: SettingsUserRow[] | undefined; loading:
   }
   const active = rows.filter((r) => r.active)
   const deactivated = rows.length - active.length
-  const admins = active.filter((r) => r.role === 'System Admin').length
+  const admins = active.filter((r) => r.role === 'Company Admin').length
   const withTwoFactor = active.filter((r) => r.twoFactorEnabled).length
   const pct = active.length ? Math.round((withTwoFactor / active.length) * 100) : 0
 
@@ -172,7 +173,7 @@ function Kpis({ rows, loading }: { rows: SettingsUserRow[] | undefined; loading:
       <StatCard label="Active users" icon={<UserRoundCheck />} value={active.length} hint={`${rows.length} accounts in total`} />
       <StatCard label="Deactivated" icon={<UserX />} value={deactivated} hint={deactivated ? 'Kept for history; can’t sign in' : 'Everyone can sign in'} />
       <StatCard
-        label="System Admins"
+        label="Company Admins"
         icon={<ShieldAlert />}
         value={admins}
         alert={admins < 2}
@@ -301,7 +302,7 @@ function buildColumns({
     }),
     col.accessor('mobile', {
       header: 'Mobile',
-      cell: ({ getValue }) => <span className="num whitespace-nowrap text-ink-2">{formatUaeMobile(getValue())}</span>,
+      cell: ({ getValue }) => <span className="num whitespace-nowrap text-ink-2">{formatMobile(getValue(), getRegion().country)}</span>,
     }),
     col.accessor((r) => (r.active ? 'Active' : 'Deactivated'), {
       id: 'status',
@@ -353,7 +354,7 @@ function buildColumns({
           <div onClick={(e) => e.stopPropagation()} className="flex justify-end">
             <Menu
               trigger={(props) => (
-                <Button variant="ghost" size="xs" iconOnly aria-label={`Actions for ${u.name}`} {...props}>
+                <Button write variant="ghost" size="xs" iconOnly aria-label={`Actions for ${u.name}`} {...props}>
                   <MoreHorizontal />
                 </Button>
               )}

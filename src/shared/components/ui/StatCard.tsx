@@ -25,7 +25,7 @@ interface StatCardProps {
 }
 
 /** KPI card: label + icon tile, big value, change vs last period, optional sparkline. */
-export function StatCard({ label, value, hint, delta, deltaLabel = "vs last period", alert, icon, to, progress, spark, sparkColor = "#7c3aed" }: StatCardProps) {
+export function StatCard({ label, value, hint, delta, deltaLabel = "vs last period", alert, icon, to, progress, spark, sparkColor = "var(--color-brand-600)" }: StatCardProps) {
   const gradientId = useId().replace(/:/g, '')
   const body = (
     <>
@@ -54,7 +54,7 @@ export function StatCard({ label, value, hint, delta, deltaLabel = "vs last peri
           ) : null}
         </div>
         {spark && spark.length > 1 && (
-          <div className="h-12 w-28 shrink-0" aria-hidden>
+          <div dir="ltr" className="h-12 w-28 shrink-0" aria-hidden>
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={spark.map((v, i) => ({ i, v }))} margin={{ top: 2, right: 0, bottom: 0, left: 0 }}>
                 <defs>

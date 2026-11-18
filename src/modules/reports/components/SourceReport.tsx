@@ -47,7 +47,7 @@ export function SourceReport({ data }: { data: SalesReport }) {
         withLeads.length === 0 ? (
           <EmptyState title="No leads in this period" body="Pick a wider date range to compare sources." />
         ) : (
-          <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_300px]">
+          <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_18.75rem]">
             <div>
               <SubHeading>Leads, won and lost per source</SubHeading>
               <LegendRow className="mb-2">
@@ -55,7 +55,7 @@ export function SourceReport({ data }: { data: SalesReport }) {
                 <Legend color={C.green} label="Won" />
                 <Legend color={C.grey} label="Lost" />
               </LegendRow>
-              <div className="h-72">
+              <div dir="ltr" className="h-72">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={rows} margin={{ top: 8, right: 4, left: 0, bottom: 0 }} barGap={2}>
                     <CartesianGrid vertical={false} stroke="currentColor" strokeOpacity={0.08} strokeDasharray="4 4" />
@@ -98,7 +98,7 @@ export function SourceReport({ data }: { data: SalesReport }) {
           ) : (
             <ul className="divide-y divide-line">
               {selected.details.map((d) => (
-                <li key={d.detail} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 py-2.5 sm:grid-cols-[minmax(0,1fr)_160px_auto]">
+                <li key={d.detail} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 py-2.5 sm:grid-cols-[minmax(0,1fr)_10rem_auto]">
                   <span className="truncate text-[0.8125rem] font-medium">{d.detail}</span>
                   <Meter value={(d.leads / Math.max(1, selected.leads)) * 100} className="col-span-2 sm:col-span-1" />
                   <span className={cn('num row-start-1 text-end text-[0.8125rem] text-muted sm:row-auto', 'col-start-2 sm:col-start-auto')}>

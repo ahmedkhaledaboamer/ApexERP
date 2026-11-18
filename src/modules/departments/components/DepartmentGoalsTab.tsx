@@ -135,14 +135,14 @@ export function DepartmentGoalsTab({ dept, canEdit }: GoalsTabProps) {
         </div>
         {canEdit && (
           <div className="flex shrink-0 items-center gap-0.5 sm:opacity-0 sm:transition-opacity sm:group-focus-within:opacity-100 sm:group-hover:opacity-100">
-            <Button variant="ghost" size="xs" iconOnly aria-label={`Edit “${g.title}”`} onClick={() => {
+            <Button write variant="ghost" size="xs" iconOnly aria-label={`Edit “${g.title}”`} onClick={() => {
                 update.reset()
                 setEditingId(g.id)
               }}
             >
               <Pencil />
             </Button>
-            <Button variant="ghost" size="xs" iconOnly aria-label={`Remove “${g.title}”`} onClick={() => setDeleting(g)}>
+            <Button write variant="ghost" size="xs" iconOnly aria-label={`Remove “${g.title}”`} onClick={() => setDeleting(g)}>
               <Trash2 />
             </Button>
           </div>
@@ -159,7 +159,7 @@ export function DepartmentGoalsTab({ dept, canEdit }: GoalsTabProps) {
         action={
           canEdit &&
           !adding && (
-            <Button size="sm" variant="secondary" onClick={() => setAdding(true)}>
+            <Button write size="sm" variant="secondary" onClick={() => setAdding(true)}>
               <Plus />
               Add goal
             </Button>
@@ -173,7 +173,7 @@ export function DepartmentGoalsTab({ dept, canEdit }: GoalsTabProps) {
           body={canEdit ? 'Add what this team is working towards, with an owner and a due date.' : 'The head hasn’t set goals for this department yet.'}
           action={
             canEdit ? (
-              <Button size="sm" onClick={() => setAdding(true)}>
+              <Button write size="sm" onClick={() => setAdding(true)}>
                 <Plus />
                 Add goal
               </Button>
@@ -221,7 +221,7 @@ export function DepartmentGoalsTab({ dept, canEdit }: GoalsTabProps) {
                 <Button variant="secondary" onClick={() => setDeleting(null)}>
                   Keep it
                 </Button>
-                <Button variant="danger" loading={remove.isPending} onClick={confirmDelete}>
+                <Button write variant="danger" loading={remove.isPending} onClick={confirmDelete}>
                   Remove goal
                 </Button>
               </>
@@ -320,7 +320,7 @@ function GoalForm({ people, deptId, initial, pending, error, onCancel, onSubmit 
         <Button variant="secondary" size="sm" onClick={onCancel} disabled={pending}>
           Cancel
         </Button>
-        <Button type="submit" size="sm" loading={pending}>
+        <Button write type="submit" size="sm" loading={pending}>
           {initial ? 'Save goal' : 'Add goal'}
         </Button>
       </div>

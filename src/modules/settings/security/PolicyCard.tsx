@@ -27,7 +27,7 @@ function check(value: string, key: keyof typeof POLICY_LIMITS): string | undefin
   return undefined
 }
 
-/** Organisation-wide rules. System Admin edits; Management sees them read-only. */
+/** Organisation-wide rules. Company Admin edits; Management sees them read-only. */
 export function PolicyCard({ canEdit }: { canEdit: boolean }) {
   const query = usePolicyQuery()
   const save = useSavePolicy()
@@ -96,13 +96,13 @@ export function PolicyCard({ canEdit }: { canEdit: boolean }) {
             <div className="flex items-start justify-between gap-4 rounded-lg border border-line px-4 py-3">
               <div>
                 <p id="pol-2fa-label" className="text-[0.8125rem] font-medium text-ink">
-                  Require 2FA for System Admins
+                  Require 2FA for Company Admins
                 </p>
                 <p className="mt-0.5 text-xs text-muted">Admins can’t turn two-factor off while this is on.</p>
               </div>
               <Switch
                 id="pol-2fa"
-                label="Require 2FA for System Admins"
+                label="Require 2FA for Company Admins"
                 checked={draft.requireTwoFactorForAdmins}
                 disabled={!canEdit}
                 onChange={(v) => setDraft({ ...draft, requireTwoFactorForAdmins: v })}
@@ -151,7 +151,7 @@ export function PolicyCard({ canEdit }: { canEdit: boolean }) {
                 <Button variant="ghost" disabled={!dirty || save.isPending} onClick={() => query.data && setDraft(toDraft(query.data))}>
                   Discard
                 </Button>
-                <Button type="submit" loading={save.isPending} disabled={!dirty || !valid}>
+                <Button write type="submit" loading={save.isPending} disabled={!dirty || !valid}>
                   Save policy
                 </Button>
               </div>

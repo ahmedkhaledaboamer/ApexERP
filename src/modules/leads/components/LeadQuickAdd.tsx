@@ -16,6 +16,8 @@ import { Checkbox, Field, SelectInput, TextInput } from '@/shared/components/for
 import { StatusBadge } from '@/shared/components/ui/StatusBadge'
 import { quickAddSchema, type QuickAddValues } from '@/modules/leads/schemas'
 import { useCreateLead, useDuplicateCheck } from '@/modules/leads/hooks/useLeads'
+import { useRegion } from '@/modules/tenancy/hooks'
+import { mobileExample, mobileSample } from '@/shared/lib/phone'
 
 const DEFAULTS: QuickAddValues = {
   company: '',
@@ -27,6 +29,7 @@ const DEFAULTS: QuickAddValues = {
 }
 
 export function LeadQuickAdd({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const region = useRegion()
   const navigate = useNavigate()
   const create = useCreateLead()
   const user = useCurrentUser()
@@ -115,7 +118,7 @@ export function LeadQuickAdd({ open, onClose }: { open: boolean; onClose: () => 
             className="inline-flex items-center gap-1 text-xs font-medium text-muted hover:text-ink"
           >
             Open full form
-            <ArrowUpRight className="size-3.5" aria-hidden />
+            <ArrowUpRight className="size-3.5 rtl:-scale-x-100" aria-hidden />
           </Link>
         </div>
         <Field id="qa-company" label="Company" required error={errors.company?.message}>
@@ -167,13 +170,13 @@ export function LeadQuickAdd({ open, onClose }: { open: boolean; onClose: () => 
           <Field id="qa-contact" label="Contact name" error={errors.contactName?.message}>
             <TextInput id="qa-contact" autoComplete="name" invalid={!!errors.contactName} {...register('contactName')} />
           </Field>
-          <Field id="qa-mobile" label="Mobile" error={errors.mobile?.message} hint="+971 5X XXX XXXX">
+          <Field id="qa-mobile" label="Mobile" error={errors.mobile?.message} hint={mobileExample(region.country)}>
             <TextInput
               id="qa-mobile"
               type="tel"
               inputMode="tel"
               autoComplete="tel"
-              placeholder="+971 50 123 4567"
+              placeholder={mobileSample(region.country)}
               invalid={!!errors.mobile}
               aria-describedby={errors.mobile ? 'qa-mobile-error' : 'qa-mobile-hint'}
               {...register('mobile')}
@@ -186,7 +189,7 @@ export function LeadQuickAdd({ open, onClose }: { open: boolean; onClose: () => 
             id="qa-email"
             type="email"
             autoComplete="email"
-            placeholder="name@company.ae"
+            placeholder="name@company.com"
             invalid={!!errors.email}
             aria-describedby={errors.email ? 'qa-email-error' : undefined}
             {...register('email')}

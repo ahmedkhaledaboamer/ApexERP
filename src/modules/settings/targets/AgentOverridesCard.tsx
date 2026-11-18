@@ -80,7 +80,7 @@ export function AgentOverridesCard({ canEdit: canEditSettings }: { canEdit: bool
         <div className={cn('overflow-x-auto border-t border-line transition-opacity', query.isPlaceholderData && 'opacity-60')} aria-busy={query.isFetching || undefined}>
           <table className="w-full min-w-[62rem] border-collapse text-[0.8125rem]">
             <thead>
-              <tr className="border-b border-line bg-sunken/50 text-left text-xs font-medium text-muted">
+              <tr className="border-b border-line bg-sunken/50 text-start text-xs font-medium text-muted">
                 <th scope="col" className="sticky start-0 z-10 w-[13rem] bg-sunken px-5 py-2.5 font-medium">
                   Agent
                 </th>
@@ -107,7 +107,7 @@ export function AgentOverridesCard({ canEdit: canEditSettings }: { canEdit: bool
             <tbody className="divide-y divide-line">
               {data!.rows.map((row) => (
                 <tr key={row.userId} className="group transition-colors hover:bg-hover/50">
-                  <th scope="row" className="sticky start-0 z-10 bg-surface px-5 py-2.5 text-left font-normal group-hover:bg-hover">
+                  <th scope="row" className="sticky start-0 z-10 bg-surface px-5 py-2.5 text-start font-normal group-hover:bg-hover">
                     <span className="flex min-w-0 items-center gap-2.5">
                       <Avatar name={row.name} size="sm" />
                       <span className="min-w-0">
@@ -125,10 +125,10 @@ export function AgentOverridesCard({ canEdit: canEditSettings }: { canEdit: bool
                   {canEdit && (
                     <td className="px-3 py-2.5">
                       <span className="flex justify-end gap-0.5">
-                        <Button variant="ghost" size="sm" iconOnly aria-label={`Edit targets for ${row.name}`} title="Edit targets" onClick={() => setEditing(row.userId)}>
+                        <Button write variant="ghost" size="sm" iconOnly aria-label={`Edit targets for ${row.name}`} title="Edit targets" onClick={() => setEditing(row.userId)}>
                           <Pencil />
                         </Button>
-                        <Button
+                        <Button write
                           variant="ghost"
                           size="sm"
                           iconOnly
@@ -159,7 +159,7 @@ export function AgentOverridesCard({ canEdit: canEditSettings }: { canEdit: bool
           className="inline-flex items-center gap-1 font-medium text-brand-700 hover:underline dark:text-brand-300"
         >
           Progress in Sales › Sales targets
-          <ArrowUpRight className="size-3.5" aria-hidden />
+          <ArrowUpRight className="size-3.5 rtl:-scale-x-100" aria-hidden />
         </Link>
       </div>
 
@@ -185,7 +185,7 @@ export function AgentOverridesCard({ canEdit: canEditSettings }: { canEdit: bool
             <Button variant="secondary" onClick={() => setResetting(null)}>
               Cancel
             </Button>
-            <Button onClick={confirmReset} loading={reset.isPending}>
+            <Button write onClick={confirmReset} loading={reset.isPending}>
               Reset to defaults
             </Button>
           </>

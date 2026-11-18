@@ -173,7 +173,7 @@ function TemplateRow({ s, categoryLabel, canEdit }: { s: ServiceRow; categoryLab
         )}
         <span className="ms-auto flex items-center gap-1 text-xs font-medium text-muted group-hover:text-ink">
           {has ? (canEdit ? 'Edit' : 'View') : canEdit ? 'Set up' : 'View'}
-          <ChevronRight className="size-3.5" aria-hidden />
+          <ChevronRight className="size-3.5 rtl:-scale-x-100" aria-hidden />
         </span>
       </Link>
     </li>

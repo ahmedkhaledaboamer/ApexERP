@@ -38,7 +38,7 @@ export function ComingSoonPage() {
           </p>
           <Link to={PATHS.dashboard} className="mt-6">
             <Button variant="secondary" tabIndex={-1}>
-              <ArrowLeft />
+              <ArrowLeft className="rtl:-scale-x-100" />
               Back to dashboard
             </Button>
           </Link>

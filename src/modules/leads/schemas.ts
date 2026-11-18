@@ -1,5 +1,6 @@
 import { z } from 'zod'
-import { isUaeMobile } from '@/shared/lib/phone'
+import { isMobile, mobileError } from '@/shared/lib/phone'
+import { getRegion } from '@/shared/lib/region'
 import type { LookupsApi } from '@/shared/hooks/useLookups'
 import type { Lead } from '@/shared/types'
 
@@ -33,7 +34,7 @@ export const quickAddSchema = (lookups: LookupsApi) =>
   mobile: z
     .string()
     .trim()
-    .refine((v) => v === '' || isUaeMobile(v), 'Use the UAE format +971 5X XXX XXXX.'),
+    .refine((v) => v === '' || isMobile(v, getRegion().country), () => ({ message: mobileError(getRegion().country) })),
   email: z
     .string()
     .trim()
@@ -52,13 +53,13 @@ export function isEmail(v: string): boolean {
   return z.string().email().safeParse(v.trim()).success
 }
 
-/** Accepts "acme.ae", "www.acme.ae", "https://acme.ae/path". */
+/** Accepts "acme.com", "www.acme.ae", "https://acme.sa/path". */
 const WEBSITE_RE = /^(https?:\/\/)?([a-z0-9-]+\.)+[a-z]{2,}(\/\S*)?$/i
 
 const optionalMobile = z
   .string()
   .trim()
-  .refine((v) => v === '' || isUaeMobile(v), 'Use the UAE format +971 5X XXX XXXX.')
+  .refine((v) => v === '' || isMobile(v, getRegion().country), () => ({ message: mobileError(getRegion().country) }))
 const optionalEmail = z
   .string()
   .trim()
@@ -84,7 +85,7 @@ export const leadFormSchema = (lookups: LookupsApi, original?: Original, activeS
     website: z
       .string()
       .trim()
-      .refine((v) => v === '' || WEBSITE_RE.test(v), 'Enter a domain like company.ae.'),
+      .refine((v) => v === '' || WEBSITE_RE.test(v), 'Enter a domain like company.com.'),
     /** Lookup key; kept separate from the free-text source detail. */
     sourceType: sourceField(lookups, original),
     sourceDetail: z.string().trim().max(200, 'Keep it under 200 characters.'),
@@ -100,7 +101,7 @@ export const leadFormSchema = (lookups: LookupsApi, original?: Original, activeS
     value: z
       .string()
       .trim()
-      .refine((v) => v === '' || (/^\d+(\.\d+)?$/.test(v.replace(/,/g, '')) && Number(v.replace(/,/g, '')) >= 0), 'Enter an amount in AED.'),
+      .refine((v) => v === '' || (/^\d+(\.\d+)?$/.test(v.replace(/,/g, '')) && Number(v.replace(/,/g, '')) >= 0), 'Enter an amount.'),
     nextFollowUpDate: z.string(),
     nextStep: z.string().trim().max(200, 'Keep it under 200 characters.'),
     companyServices: z.array(z.string().trim().min(1)).max(20, 'Keep it to 20 tags.'),

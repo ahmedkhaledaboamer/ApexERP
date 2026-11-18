@@ -58,7 +58,7 @@ export function useServiceActivation() {
           <Button variant="secondary" onClick={() => setConfirming(null)}>
             Keep active
           </Button>
-          <Button variant="danger" loading={mutation.isPending} onClick={() => s && run(s, false)}>
+          <Button write variant="danger" loading={mutation.isPending} onClick={() => s && run(s, false)}>
             Deactivate
           </Button>
         </>

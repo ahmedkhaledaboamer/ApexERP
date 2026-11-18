@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { userStorage } from '@/shared/lib/storage'
 
 /**
  * Idle tracking shared by every tab of the app. The last activity time is kept in a ref and
- * mirrored (throttled) to localStorage, so activity in one tab keeps the others alive and
+ * mirrored (throttled) to tenant-scoped localStorage, so activity in one tab keeps the others alive and
  * "Stay signed in" in one tab closes the warning in all of them.
  */
 
-export const ACTIVITY_STORAGE_KEY = 'apex-aora.last-activity'
+/** Per-user data key (see shared/lib/storage.ts): wiped on sign-out and tenant switch. */
+export const ACTIVITY_STORAGE_KEY = 'last-activity'
 const WRITE_THROTTLE_MS = 5_000
 const TICK_MS = 1_000
 const EVENTS = ['mousemove', 'keydown', 'pointerdown', 'scroll', 'wheel', 'touchstart'] as const
@@ -19,7 +21,7 @@ interface Stored {
 
 function readStored(sid: string): number | null {
   try {
-    const raw = window.localStorage.getItem(ACTIVITY_STORAGE_KEY)
+    const raw = userStorage.data.get(ACTIVITY_STORAGE_KEY)
     if (!raw) return null
     const v = JSON.parse(raw) as Partial<Stored>
     return v.sid === sid && typeof v.at === 'number' ? v.at : null
@@ -29,19 +31,12 @@ function readStored(sid: string): number | null {
 }
 
 function writeStored(sid: string, at: number) {
-  try {
-    window.localStorage.setItem(ACTIVITY_STORAGE_KEY, JSON.stringify({ sid, at } satisfies Stored))
-  } catch {
-    // Storage unavailable: tabs then time out independently.
-  }
+  // Storage unavailable: tabs then time out independently.
+  userStorage.data.set(ACTIVITY_STORAGE_KEY, JSON.stringify({ sid, at } satisfies Stored))
 }
 
 export function clearStoredActivity() {
-  try {
-    window.localStorage.removeItem(ACTIVITY_STORAGE_KEY)
-  } catch {
-    // Nothing to clear.
-  }
+  userStorage.data.remove(ACTIVITY_STORAGE_KEY)
 }
 
 interface Options {
@@ -126,7 +121,7 @@ export function useIdleTimeout({ sid, timeoutMs, warningMs, enforce, onTimeout }
       onActivity()
     }
     const onStorage = (e: StorageEvent) => {
-      if (e.key === ACTIVITY_STORAGE_KEY) tick()
+      if (userStorage.data.matches(e.key, ACTIVITY_STORAGE_KEY)) tick()
     }
     for (const ev of EVENTS) window.addEventListener(ev, onActivity, { passive: true, capture: true })
     document.addEventListener('visibilitychange', onVisibility)

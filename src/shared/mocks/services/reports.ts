@@ -33,10 +33,14 @@ import {
   statusLabelOf,
   subIndustryLabelOf,
 } from '@/shared/mocks/lookupChecks'
-import { departmentSubtree, inScope, scopeOf, teamIdsFor } from '@/shared/lib/permissions'
+import { departmentSubtree, inScope, scopeOf } from '@/shared/lib/permissions'
 import { departments } from '@/shared/mocks/data/departments'
+import { companyDayOf, companyTeamIds } from '@/shared/mocks/selectors/company'
+import { findInTenant, scoped, stamp, tenantOf, type Tenant } from '@/shared/mocks/tenant'
 import { buildTree, walk } from '@/modules/departments/lib/tree'
-import { activities, leads, tasks, users } from '@/shared/mocks/db'
+import { activities, leads, users } from '@/shared/mocks/db'
+import { overdueTasks, toTaskView } from '@/shared/mocks/selectors/tasks'
+import { daysBetweenIso } from '@/shared/lib/companyDay'
 import { delay, fail, ownerName } from '@/shared/mocks/server'
 import { TARGET_KEYS, TARGET_LABELS, targetsFor, type TargetKey } from '@/shared/mocks/data/targets'
 import { isTracked } from '@/modules/targets/lib'
@@ -68,7 +72,8 @@ import type {
 
 /* ------------------------------------------------------------------------------------------
  * Scope: a report shows data according to the viewer's permissions (spec: Reports).
- * The narrower of the role's Reports scope and its Sales scope wins.
+ * The narrower of the role's Reports scope and its Sales scope wins. Every figure is computed
+ * over the caller's company only (leads, people, departments, tasks, lookups, schedules).
  * ---------------------------------------------------------------------------------------- */
 
 async function reportScopeOf(user: User): Promise<ReportScope> {
@@ -82,10 +87,11 @@ async function reportScopeOf(user: User): Promise<ReportScope> {
 
 function ownersFor(user: User, scope: ReportScope): ReportOwner[] {
   if (scope === 'own') return []
+  const co = tenantOf(user)
   const ids =
     scope === 'team'
-      ? teamIdsFor(user, users, departments)
-      : [...new Set([...leads.map((l) => l.ownerId), ...users.filter((u) => u.role === 'Sales Agent').map((u) => u.id)])]
+      ? companyTeamIds(user)
+      : [...new Set([...scoped(leads, user).map((l) => l.ownerId), ...users.filter((u) => u.companyId === co && u.role === 'Sales Agent').map((u) => u.id)])]
   return ids
     .map((id) => ({ id, name: ownerName(id) }))
     .sort((a, b) => a.name.localeCompare(b.name))
@@ -97,14 +103,15 @@ function ownersFor(user: User, scope: ReportScope): ReportOwner[] {
  */
 function departmentsFor(user: User, scope: ReportScope): ReportDepartment[] {
   if (scope === 'own') return []
+  const mine = scoped(departments, user)
   const ids =
     scope === 'full'
-      ? new Set(departments.map((d) => d.id))
-      : new Set(departments.filter((d) => d.active && d.headId === user.id).flatMap((d) => departmentSubtree(d.id, departments)))
+      ? new Set(mine.map((d) => d.id))
+      : new Set(mine.filter((d) => d.active && d.headId === user.id).flatMap((d) => departmentSubtree(d.id, mine)))
   const out: ReportDepartment[] = []
   walk(
     buildTree(
-      departments.filter((d) => ids.has(d.id)),
+      mine.filter((d) => ids.has(d.id)),
       (a, b) => a.name.localeCompare(b.name),
     ),
     (t) => out.push({ id: t.node.id, name: t.node.name, depth: t.depth, active: t.node.active }),
@@ -114,12 +121,14 @@ function departmentsFor(user: User, scope: ReportScope): ReportDepartment[] {
 
 interface Ctx {
   user: User
+  /** The caller's company. */
+  co: string
   scope: ReportScope
   owners: ReportOwner[]
   departments: ReportDepartment[]
   /** Owner ids the report covers after the owner filter. */
   ownerIds: Set<string>
-  leads: Lead[]
+  leads: Tenant<Lead>[]
   from: Date
   to: Date
 }
@@ -132,29 +141,37 @@ async function contextFor(user: User, q: Partial<SalesReportQuery>): Promise<Ctx
   if (isAfter(from, to)) return fail('The start date must be on or before the end date.', 400)
   if (differenceInCalendarDays(to, from) > 366 * 3) return fail('Reports cover at most three years at a time.', 400)
 
-  const team = teamIdsFor(user, users, departments)
+  const co = tenantOf(user)
+  const team = companyTeamIds(user)
   const allowedDepts = departmentsFor(user, scope)
   let owners = ownersFor(user, scope)
-  let scoped = leads.filter((l) => inScope(scope, user, l.ownerId, team))
+  let list = scoped(leads, user).filter((l) => inScope(scope, user, l.ownerId, team))
   if (q.departmentId) {
     if (scope === 'own') return fail('Your role sees only your own records, so it can’t filter by department.', 403)
-    if (!departments.some((d) => d.id === q.departmentId)) return fail('That department doesn’t exist.', 404)
+    // Another company's department is "doesn't exist", like a missing one.
+    if (!findInTenant(departments, user, (d) => d.id === q.departmentId)) return fail('That department doesn’t exist.', 404)
     if (!allowedDepts.some((d) => d.id === q.departmentId)) return fail('That department is outside your team.', 403)
     // Membership is the owner's department; a department includes its sub-departments.
-    const deptIds = new Set(departmentSubtree(q.departmentId, departments))
-    const members = new Set(users.filter((u) => u.departmentId && deptIds.has(u.departmentId)).map((u) => u.id))
+    const members = departmentMembers(user, q.departmentId)
     owners = owners.filter((o) => members.has(o.id))
-    scoped = scoped.filter((l) => members.has(l.ownerId))
+    list = list.filter((l) => members.has(l.ownerId))
     if (q.ownerId && !members.has(q.ownerId)) return fail('That owner isn’t in the selected department.', 422)
   }
   let ownerIds = new Set(scope === 'own' ? [user.id] : owners.map((o) => o.id))
   if (q.ownerId) {
     const allowed = scope === 'own' ? q.ownerId === user.id : owners.some((o) => o.id === q.ownerId)
     if (!allowed) return fail('That owner is outside your access.', 403)
-    scoped = scoped.filter((l) => l.ownerId === q.ownerId)
+    list = list.filter((l) => l.ownerId === q.ownerId)
     ownerIds = new Set([q.ownerId])
   }
-  return { user, scope, owners, departments: allowedDepts, ownerIds, leads: scoped, from, to }
+  return { user, co, scope, owners, departments: allowedDepts, ownerIds, leads: list, from, to }
+}
+
+/** People of the caller's company in a department or any of its sub-departments. */
+function departmentMembers(user: User, departmentId: string): Set<string> {
+  const co = tenantOf(user)
+  const deptIds = new Set(departmentSubtree(departmentId, scoped(departments, user)))
+  return new Set(users.filter((u) => u.companyId === co && u.departmentId && deptIds.has(u.departmentId)).map((u) => u.id))
 }
 
 /* ------------------------------------------------------------------------------------------
@@ -162,11 +179,12 @@ async function contextFor(user: User, q: Partial<SalesReportQuery>): Promise<Ctx
  * ---------------------------------------------------------------------------------------- */
 
 const pct = (part: number, whole: number) => (whole ? Math.round((part / whole) * 1000) / 10 : 0)
+type LeadRow = Tenant<Lead>
 const sum = (list: Lead[]) => list.reduce((s, l) => s + l.value, 0)
-/** Decided deals (won or lost kinds); parked Cold leads are neither open nor decided. */
-const isClosed = (l: Lead) => isWonStatus(l.status) || isLostStatus(l.status)
-const isLost = (l: Lead) => isLostStatus(l.status)
-const isWon = (l: Lead) => isWonStatus(l.status)
+/** Decided deals (won or lost kinds); parked Cold leads are neither open nor decided. Status kinds come from the lead's company. */
+const isClosed = (l: LeadRow) => isWonStatus(l.companyId, l.status) || isLostStatus(l.companyId, l.status)
+const isLost = (l: LeadRow) => isLostStatus(l.companyId, l.status)
+const isWon = (l: LeadRow) => isWonStatus(l.companyId, l.status)
 /** Lookup keys first (configured order), then any key only found on old records. */
 const keysWithRecords = (listed: { key: string; active: boolean }[], used: string[]) => [
   ...new Set([...listed.filter((i) => i.active || used.includes(i.key)).map((i) => i.key), ...used.filter(Boolean)]),
@@ -210,10 +228,10 @@ function kpis(ctx: Ctx): ReportKpis {
 
 function byStatus(ctx: Ctx): StatusRow[] {
   const cohort = createdIn(ctx)
-  const keys = keysWithRecords(orderedStatuses(), cohort.map((l) => l.status))
+  const keys = keysWithRecords(orderedStatuses(ctx.co), cohort.map((l) => l.status))
   return keys.map((status) => {
     const list = cohort.filter((l) => l.status === status)
-    return { status, label: statusLabelOf(status), count: list.length, share: pct(list.length, cohort.length), value: sum(list) }
+    return { status, label: statusLabelOf(ctx.co, status), count: list.length, share: pct(list.length, cohort.length), value: sum(list) }
   })
 }
 
@@ -227,8 +245,8 @@ const FUNNEL_PATH = [
   SYSTEM_STATUS.won,
 ]
 
-function funnelStages(): string[] {
-  return FUNNEL_PATH.filter((k) => statusOf(k)?.active)
+function funnelStages(co: string): string[] {
+  return FUNNEL_PATH.filter((k) => statusOf(co, k)?.active)
 }
 
 /**
@@ -236,10 +254,10 @@ function funnelStages(): string[] {
  * statuses by their configured order; won = the end; parked = contacted; lost = Lost after
  * interest, any other lost status after contact.
  */
-function reachOf(status: string, stages: string[]): number {
+function reachOf(co: string, status: string, stages: string[]): number {
   const at = stages.indexOf(status)
   if (at >= 0) return at
-  const s = statusOf(status)
+  const s = statusOf(co, status)
   if (!s) return 0
   if (s.kind === 'won') return stages.length - 1
   const contacted = Math.max(0, stages.indexOf(SYSTEM_STATUS.contacted))
@@ -247,7 +265,7 @@ function reachOf(status: string, stages: string[]): number {
   if (s.kind === 'lost') return status === SYSTEM_STATUS.lost ? Math.max(contacted, stages.indexOf(SYSTEM_STATUS.interested)) : contacted
   let reach = 0
   stages.forEach((k, i) => {
-    const o = statusOf(k)
+    const o = statusOf(co, k)
     if (o && o.kind === 'open' && o.order < s.order) reach = i
   })
   return reach
@@ -255,11 +273,11 @@ function reachOf(status: string, stages: string[]): number {
 
 function funnel(ctx: Ctx): FunnelStep[] {
   const cohort = createdIn(ctx)
-  const stages = funnelStages()
-  const counts = stages.map((_, i) => (i === 0 ? cohort.length : cohort.filter((l) => reachOf(l.status, stages) >= i).length))
+  const stages = funnelStages(ctx.co)
+  const counts = stages.map((_, i) => (i === 0 ? cohort.length : cohort.filter((l) => reachOf(ctx.co, l.status, stages) >= i).length))
   return stages.map((stage, i) => ({
     stage,
-    label: statusLabelOf(stage),
+    label: statusLabelOf(ctx.co, stage),
     reached: counts[i],
     fromPrevious: i === 0 ? 100 : pct(counts[i], counts[i - 1]),
     fromStart: pct(counts[i], counts[0]),
@@ -268,7 +286,7 @@ function funnel(ctx: Ctx): FunnelStep[] {
 
 function byIndustry(ctx: Ctx): IndustryRow[] {
   const cohort = createdIn(ctx)
-  const listed = orderedIndustries()
+  const listed = orderedIndustries(ctx.co)
   const names = keysWithRecords(listed, cohort.map((l) => l.industry))
   return names
     .map((industry) => {
@@ -278,7 +296,7 @@ function byIndustry(ctx: Ctx): IndustryRow[] {
       const subs = keysWithRecords(listedSubs, list.map((l) => l.subIndustry))
       return {
         industry,
-        label: industryLabelOf(industry),
+        label: industryLabelOf(ctx.co, industry),
         leads: list.length,
         value: sum(list),
         won: won.length,
@@ -288,7 +306,7 @@ function byIndustry(ctx: Ctx): IndustryRow[] {
           .map((subIndustry) => {
             const sl = list.filter((l) => l.subIndustry === subIndustry)
             const sw = sl.filter(isWon).length
-            return { subIndustry, label: subIndustryLabelOf(industry, subIndustry), leads: sl.length, value: sum(sl), won: sw, winRate: pct(sw, sl.filter(isClosed).length) }
+            return { subIndustry, label: subIndustryLabelOf(ctx.co, industry, subIndustry), leads: sl.length, value: sum(sl), won: sw, winRate: pct(sw, sl.filter(isClosed).length) }
           })
           .sort((a, b) => b.leads - a.leads || b.value - a.value),
       }
@@ -299,7 +317,7 @@ function byIndustry(ctx: Ctx): IndustryRow[] {
 
 function bySource(ctx: Ctx): SourceRow[] {
   const cohort = createdIn(ctx)
-  return keysWithRecords(orderedSources(), cohort.map((l) => l.sourceType)).map((source) => {
+  return keysWithRecords(orderedSources(ctx.co), cohort.map((l) => l.sourceType)).map((source) => {
     const list = cohort.filter((l) => l.sourceType === source)
     const won = list.filter(isWon)
     const lost = list.filter(isLost)
@@ -309,7 +327,7 @@ function bySource(ctx: Ctx): SourceRow[] {
     })
     return {
       source,
-      label: sourceLabelOf(source),
+      label: sourceLabelOf(ctx.co, source),
       leads: list.length,
       won: won.length,
       lost: lost.length,
@@ -403,10 +421,10 @@ function agentRows(ctx: Ctx): AgentRow[] {
 }
 
 /** Reached the proposal stage or beyond: open statuses ordered at/after Proposal, or won. */
-function reachedProposal(l: Lead): boolean {
-  if (isWonStatus(l.status)) return true
-  const s = statusOf(l.status)
-  const proposal = statusOf(SYSTEM_STATUS.proposal)
+function reachedProposal(l: LeadRow): boolean {
+  if (isWonStatus(l.companyId, l.status)) return true
+  const s = statusOf(l.companyId, l.status)
+  const proposal = statusOf(l.companyId, SYSTEM_STATUS.proposal)
   return !!s && !!proposal && s.kind === 'open' && s.order >= proposal.order
 }
 
@@ -434,7 +452,7 @@ function targetReport(ctx: Ctx): TargetReport {
 
   const rows: TargetRow[] = agentIds.map((userId, agentIndex) => {
     const goals = targetsFor(userId, key)
-    const mineLeads = leads.filter((l) => l.ownerId === userId)
+    const mineLeads = scoped(leads, ctx.user).filter((l) => l.ownerId === userId)
     const mineActs = activities.filter((a) => a.userId === userId && inMonth(a.at))
     const cells = TARGET_KEYS.map((k, keyIndex) => {
       const real = NOT_TRACKED.includes(k)
@@ -460,10 +478,10 @@ function targetReport(ctx: Ctx): TargetReport {
   return { month: key, monthLabel: format(month, 'MMMM yyyy'), elapsed: Math.round(elapsed), rows: rows.sort((a, b) => b.overall - a.overall) }
 }
 
-function overdue(ctx: Ctx): { followUps: OverdueFollowUp[]; tasks: OverdueTask[] } {
+function overdue(ctx: Ctx, q: Partial<SalesReportQuery>): { followUps: OverdueFollowUp[]; tasks: OverdueTask[] } {
   const today = startOfDay(new Date())
   const followUps = ctx.leads
-    .filter((l) => !isClosedStatus(l.status) && l.nextFollowUpDate && isBefore(new Date(l.nextFollowUpDate), today))
+    .filter((l) => !isClosedStatus(l.companyId, l.status) && l.nextFollowUpDate && isBefore(new Date(l.nextFollowUpDate), today))
     .map((l) => ({
       leadId: l.id,
       company: l.company,
@@ -475,28 +493,54 @@ function overdue(ctx: Ctx): { followUps: OverdueFollowUp[]; tasks: OverdueTask[]
       nextStep: l.nextStep,
     }))
     .sort((a, b) => b.daysOverdue - a.daysOverdue)
-  const byId = new Map(ctx.leads.map((l) => [l.id, l]))
-  const overdueTasks = tasks
-    .filter((t) => t.status !== 'Done' && byId.has(t.leadId) && ctx.ownerIds.has(t.ownerId) && isBefore(new Date(t.dueDate), today))
+  return { followUps, tasks: overdueTaskRows(ctx, q) }
+}
+
+/**
+ * Overdue tasks: the shared overdueTasks selector (the viewer's tasks scope — the same numbers as
+ * the dashboard and the bell), narrowed by the report's scope and its department / owner filters.
+ * Covers every kind of task (project delivery, lead follow-up, customer, personal).
+ */
+function overdueTaskRows(ctx: Ctx, q: Partial<SalesReportQuery>): OverdueTask[] {
+  // The company's today (regional timezone, mock clock), as the overdueTasks selector uses.
+  const day = companyDayOf(ctx.user.companyId)
+  let members: Set<string> | null = null
+  if (q.departmentId) {
+    // contextFor already validated the department against the viewer's access.
+    members = departmentMembers(ctx.user, q.departmentId)
+  }
+  const team = ctx.scope === 'team' ? new Set(companyTeamIds(ctx.user)) : null
+  return scoped(overdueTasks(ctx.user, day), ctx.user)
+    .filter(
+      (t) =>
+        (ctx.scope !== 'own' || t.ownerId === ctx.user.id) &&
+        (!team || team.has(t.ownerId) || t.followerIds.includes(ctx.user.id)) &&
+        (!members || members.has(t.ownerId)) &&
+        (!q.ownerId || t.ownerId === q.ownerId),
+    )
+    .map((t) => toTaskView(t, ctx.user))
     .map((t) => ({
       taskId: t.id,
       title: t.title,
-      leadId: t.leadId,
-      company: byId.get(t.leadId)?.company ?? '',
+      linkType: t.linkView?.type ?? null,
+      linkId: t.linkView?.id ?? null,
+      linkLabel: t.linkView?.label ?? null,
+      linkAvailable: t.linkView?.available ?? false,
+      projectId: t.projectId,
+      projectName: t.projectName,
       ownerId: t.ownerId,
-      ownerName: ownerName(t.ownerId),
-      dueDate: t.dueDate,
-      daysOverdue: differenceInCalendarDays(today, new Date(t.dueDate)),
+      ownerName: t.ownerName,
+      dueDate: t.dueDate as string,
+      daysOverdue: daysBetweenIso(t.dueDate as string, day.today),
       priority: t.priority,
       status: t.status,
     }))
     .sort((a, b) => b.daysOverdue - a.daysOverdue)
-  return { followUps, tasks: overdueTasks }
 }
 
 export async function getSalesReport(user: User, q: Partial<SalesReportQuery>): Promise<SalesReport> {
   const ctx = await contextFor(user, q)
-  const late = overdue(ctx)
+  const late = overdue(ctx, q)
   return delay({
     query: {
       from: q.from as string,
@@ -536,27 +580,27 @@ export async function runCustomReport(user: User, input: Partial<CustomReportInp
   const cohort = createdIn(ctx)
   const won = wonIn(ctx)
 
-  type Group = { key: string; label: string; match: (l: Lead, date: string) => boolean }
+  type Group = { key: string; label: string; match: (l: LeadRow, date: string) => boolean }
   let groups: Group[]
   switch (dimension) {
     case 'status':
-      groups = keysWithRecords(orderedStatuses(), ctx.leads.map((l) => l.status)).map((s) => ({
+      groups = keysWithRecords(orderedStatuses(ctx.co), ctx.leads.map((l) => l.status)).map((s) => ({
         key: s,
-        label: statusOf(s)?.label ?? s,
+        label: statusOf(ctx.co, s)?.label ?? s,
         match: (l) => l.status === s,
       }))
       break
     case 'industry':
-      groups = keysWithRecords(orderedIndustries(), ctx.leads.map((l) => l.industry)).map((i) => ({
+      groups = keysWithRecords(orderedIndustries(ctx.co), ctx.leads.map((l) => l.industry)).map((i) => ({
         key: i,
-        label: industryLabelOf(i),
+        label: industryLabelOf(ctx.co, i),
         match: (l) => l.industry === i,
       }))
       break
     case 'source':
-      groups = keysWithRecords(orderedSources(), ctx.leads.map((l) => l.sourceType)).map((s) => ({
+      groups = keysWithRecords(orderedSources(ctx.co), ctx.leads.map((l) => l.sourceType)).map((s) => ({
         key: s,
-        label: sourceLabelOf(s),
+        label: sourceLabelOf(ctx.co, s),
         match: (l) => l.sourceType === s,
       }))
       break
@@ -592,7 +636,11 @@ export async function runCustomReport(user: User, input: Partial<CustomReportInp
           ? sum(won)
           : pct(cohort.filter(isWon).length, cohort.filter(isClosed).length)
 
-  return delay({ input: { ...input, dimension, measure } as CustomReportInput, rows: sorted, total })
+  // Echo only the known query fields (never unknown body keys such as a spoofed companyId).
+  const echo: CustomReportInput = { from: input.from!, to: input.to!, dimension, measure }
+  if (input.ownerId) echo.ownerId = input.ownerId
+  if (input.departmentId) echo.departmentId = input.departmentId
+  return delay({ input: echo, rows: sorted, total })
 }
 
 /* ------------------------------------------------------------------------------------------
@@ -619,13 +667,15 @@ function nextRun(s: Pick<ReportSchedule, 'frequency' | 'day' | 'time'>, now = ne
   return d.toISOString()
 }
 
-function withNextRun(s: ReportSchedule): ReportSchedule {
+/** Client shape: next run filled in, companyId left out. */
+function withNextRun(row: Tenant<ReportSchedule>): ReportSchedule {
+  const { companyId: _co, ...s } = row
   return { ...s, nextRunAt: nextRun(s) }
 }
 
 export async function getSchedules(user: User): Promise<ReportSchedule[]> {
   const scope = await reportScopeOf(user)
-  const list = reportSchedules
+  const list = scoped(reportSchedules, user)
     .filter((s) => scope === 'full' || s.createdBy === user.id)
     .map(withNextRun)
     .sort((a, b) => a.nextRunAt.localeCompare(b.nextRunAt))
@@ -648,7 +698,7 @@ export async function createSchedule(user: User, input: Partial<ScheduleInput>):
   const bad = recipients.find((r) => !EMAIL.test(r))
   if (bad) return fail(`“${bad}” isn’t a valid e-mail address.`, 422)
 
-  const schedule: ReportSchedule = {
+  const schedule = stamp<ReportSchedule>({
     id: nextScheduleId(),
     report,
     frequency: input.frequency,
@@ -660,14 +710,16 @@ export async function createSchedule(user: User, input: Partial<ScheduleInput>):
     createdByName: user.name,
     createdAt: new Date().toISOString(),
     nextRunAt: '',
-  }
+  }, user)
   reportSchedules.push(schedule)
   return delay(withNextRun(schedule))
 }
 
 export async function deleteSchedule(user: User, id: string): Promise<{ id: string }> {
   const scope = await reportScopeOf(user)
-  const index = reportSchedules.findIndex((s) => s.id === id)
+  // Another company's schedule answers exactly like a missing one.
+  const co = tenantOf(user)
+  const index = reportSchedules.findIndex((s) => s.id === id && s.companyId === co)
   if (index < 0) return fail('That schedule no longer exists.', 404)
   if (scope !== 'full' && reportSchedules[index].createdBy !== user.id) return fail('Only its creator can remove this schedule.', 403)
   reportSchedules.splice(index, 1)

@@ -79,7 +79,7 @@ export function AgentsReport({ data }: { data: SalesReport }) {
         ) : (
           <>
             <SubHeading hint="Deals won in the period">Won value per agent</SubHeading>
-            <div style={{ height: Math.max(160, rows.length * 40 + 30) }}>
+            <div dir="ltr" style={{ height: Math.max(160, rows.length * 40 + 30) }}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={rows} layout="vertical" margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
                   <CartesianGrid horizontal={false} stroke="currentColor" strokeOpacity={0.08} strokeDasharray="4 4" />

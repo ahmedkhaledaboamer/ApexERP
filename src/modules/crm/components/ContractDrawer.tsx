@@ -18,6 +18,7 @@ import { Drawer } from '@/shared/components/ui/Drawer'
 import { Skeleton } from '@/shared/components/ui/Feedback'
 import { useToast } from '@/shared/components/ui/Toast'
 import { Checkbox, Field, SelectInput, TextInput } from '@/shared/components/form/Field'
+import { useRegion } from '@/modules/tenancy/hooks'
 
 interface ContractDrawerProps {
   open: boolean
@@ -48,6 +49,7 @@ function catalogTotal(picked: Service[], billing: ContractBilling): number {
 
 /** New or edited contract: customer, catalog services, value, billing and renewal date. */
 export function ContractDrawer({ open, onClose, contract, customer }: ContractDrawerProps) {
+  const region = useRegion()
   const { rules } = useAutomationRules()
   const editing = !!contract
   const create = useCreateContract()
@@ -148,7 +150,7 @@ export function ContractDrawer({ open, onClose, contract, customer }: ContractDr
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" form="contract-form" loading={pending}>
+          <Button write type="submit" form="contract-form" loading={pending}>
             {editing ? 'Save contract' : 'Create contract'}
           </Button>
         </>
@@ -245,7 +247,7 @@ export function ContractDrawer({ open, onClose, contract, customer }: ContractDr
           </Field>
           <Field
             id="co-value"
-            label={billing === 'Monthly' ? 'Value per month (AED)' : billing === 'Annual' ? 'Value per year (AED)' : 'Value (AED)'}
+            label={`${billing === 'Monthly' ? 'Value per month' : billing === 'Annual' ? 'Value per year' : 'Value'} (${region.currency})`}
             required
             error={errors.value?.message}
           >

@@ -98,7 +98,7 @@ export default function ListsPage() {
 
   return (
     <div className="space-y-5">
-      {readOnly && <ReadOnlyNote>You can view the fixed lists. Only a System Admin can change them.</ReadOnlyNote>}
+      {readOnly && <ReadOnlyNote>You can view the fixed lists. Only a Company Admin can change them.</ReadOnlyNote>}
 
       <Card>
         <div className="overflow-x-auto px-5">

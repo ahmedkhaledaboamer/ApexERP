@@ -5,6 +5,8 @@ import type { LeadRow, MoveLeadInput } from '@/modules/leads/types'
 import type { StatusOption, StatusRequirement } from '@/modules/settings/types'
 import { useLookups } from '@/shared/hooks/useLookups'
 import { composeLossReason } from '@/modules/leads/lossReason'
+import { useOpenWonDialog } from '@/modules/won/hooks'
+import { moveActionFor } from '@/modules/leads/lib/transitions'
 import { Button } from '@/shared/components/ui/Button'
 import { Modal } from '@/shared/components/ui/Modal'
 import { Field, SelectInput, TextArea, TextInput } from '@/shared/components/form/Field'
@@ -38,6 +40,15 @@ export function StageChangeModal({ pending, onCancel, onConfirm }: StageChangeMo
   const [nextStep, setNextStep] = useState('')
   const [date, setDate] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const openWon = useOpenWonDialog()
+  // Won (the 'convert' requirement) is never a plain stage move: hand over to the Won dialog.
+  const isWonMove = !!pending && moveActionFor(lookups.status(pending.to)) === 'won'
+
+  useEffect(() => {
+    if (!pending || !isWonMove) return
+    onCancel()
+    openWon(pending.lead.id)
+  }, [pending, isWonMove, onCancel, openWon])
 
   // Each new pending move starts from a clean form.
   useEffect(() => {
@@ -49,7 +60,7 @@ export function StageChangeModal({ pending, onCancel, onConfirm }: StageChangeMo
     setErrors({})
   }, [pending])
 
-  if (!pending) return null
+  if (!pending || isWonMove) return null
   const { lead, to: target } = pending
   const to = lookups.statusLabel(target)
 
@@ -88,7 +99,7 @@ export function StageChangeModal({ pending, onCancel, onConfirm }: StageChangeMo
           <Button variant="secondary" onClick={onCancel}>
             Cancel
           </Button>
-          <Button type="submit" form="stage-change-form">
+          <Button write type="submit" form="stage-change-form">
             {copy.confirm(to)}
           </Button>
         </>
@@ -130,14 +141,6 @@ export function StageChangeModal({ pending, onCancel, onConfirm }: StageChangeMo
           </>
         )}
 
-        {requirement === 'convert' && (
-          <ul className="space-y-2 text-sm">
-            <li>
-              <span className="font-medium">{lead.company}</span> becomes a customer in CRM, keeping its contacts and history.
-            </li>
-            <li className="text-muted">Follow-ups on this lead stop. {lead.ownerName} stays the account owner.</li>
-          </ul>
-        )}
       </form>
     </Modal>
   )

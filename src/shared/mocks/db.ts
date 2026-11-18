@@ -14,6 +14,9 @@ import type {
 } from '@/shared/types'
 import { services as catalog } from '@/shared/mocks/data/services'
 import { matchServiceText } from '@/modules/services/match'
+import type { CountryCode } from '@/modules/tenancy/types'
+import type { Tenant } from '@/shared/mocks/tenant'
+import { registerArray } from '@/shared/mocks/persist/registry'
 
 /**
  * In-memory data the service functions read from. Dates are relative to the moment the
@@ -22,69 +25,127 @@ import { matchServiceText } from '@/modules/services/match'
 
 export const users: User[] = [
   {
-    id: 'u1', name: 'Omar Haddad', email: 'omar@apexaora.ae', role: 'System Admin', title: 'IT & Systems Lead', managerId: null,
+    id: 'u1', companyId: 'co_apex', name: 'Omar Haddad', email: 'omar@apexaora.ae', role: 'Company Admin', title: 'IT & Systems Lead', managerId: null,
     mobile: '+971 50 412 7781', departmentId: 'd-it', active: true, twoFactorEnabled: true,
     lastLoginAt: new Date(Date.now() - 2 * 3_600_000).toISOString(), createdAt: subDays(new Date(), 720).toISOString(),
   },
   {
-    id: 'u2', name: 'Layla Mansour', email: 'layla@apexaora.ae', role: 'Management', title: 'Managing Director', managerId: null,
+    id: 'u2', companyId: 'co_apex', name: 'Layla Mansour', email: 'layla@apexaora.ae', role: 'Management', title: 'Managing Director', managerId: null,
     mobile: '+971 50 118 2204', departmentId: 'd-management', active: true, twoFactorEnabled: true,
     lastLoginAt: new Date(Date.now() - 5 * 3_600_000).toISOString(), createdAt: subDays(new Date(), 720).toISOString(),
   },
   {
-    id: 'u3', name: 'Karim Nasser', email: 'karim@apexaora.ae', role: 'Sales Manager', title: 'Head of Sales', managerId: 'u2',
+    id: 'u3', companyId: 'co_apex', name: 'Karim Nasser', email: 'karim@apexaora.ae', role: 'Sales Manager', title: 'Head of Sales', managerId: 'u2',
     mobile: '+971 55 734 9012', departmentId: 'd-sales', active: true, twoFactorEnabled: false,
     lastLoginAt: new Date(Date.now() - 1 * 3_600_000).toISOString(), createdAt: subDays(new Date(), 610).toISOString(),
   },
   {
-    id: 'u4', name: 'Bincy Thomas', email: 'bincy@apexaora.ae', role: 'Sales Agent', title: 'Account Executive', managerId: 'u3',
+    id: 'u4', companyId: 'co_apex', name: 'Bincy Thomas', email: 'bincy@apexaora.ae', role: 'Sales Agent', title: 'Account Executive', managerId: 'u3',
     mobile: '+971 52 268 4410', departmentId: 'd-sales', active: true, twoFactorEnabled: false,
     lastLoginAt: new Date(Date.now() - 3 * 3_600_000).toISOString(), createdAt: subDays(new Date(), 420).toISOString(),
   },
   {
-    id: 'u5', name: 'Ahmed Al Falasi', email: 'ahmed@apexaora.ae', role: 'Sales Agent', title: 'Account Executive', managerId: 'u3',
+    id: 'u5', companyId: 'co_apex', name: 'Ahmed Al Falasi', email: 'ahmed@apexaora.ae', role: 'Sales Agent', title: 'Account Executive', managerId: 'u3',
     mobile: '+971 50 991 3307', departmentId: 'd-sales', active: true, twoFactorEnabled: true,
     lastLoginAt: new Date(Date.now() - 26 * 3_600_000).toISOString(), createdAt: subDays(new Date(), 390).toISOString(),
   },
   {
-    id: 'u6', name: 'Priya Raman', email: 'priya@apexaora.ae', role: 'Sales Agent', title: 'Business Development Rep', managerId: 'u3',
+    id: 'u6', companyId: 'co_apex', name: 'Priya Raman', email: 'priya@apexaora.ae', role: 'Sales Agent', title: 'Business Development Rep', managerId: 'u3',
     mobile: '+971 56 402 7718', departmentId: 'd-sales', active: true, twoFactorEnabled: false,
     lastLoginAt: new Date(Date.now() - 6 * 3_600_000).toISOString(), createdAt: subDays(new Date(), 210).toISOString(),
   },
   {
-    id: 'u7', name: 'Sara Khoury', email: 'sara@apexaora.ae', role: 'Marketing Manager', title: 'Marketing Manager', managerId: 'u2',
+    id: 'u7', companyId: 'co_apex', name: 'Sara Khoury', email: 'sara@apexaora.ae', role: 'Marketing Manager', title: 'Marketing Manager', managerId: 'u2',
     mobile: '+971 54 337 0925', departmentId: 'd-marketing', active: true, twoFactorEnabled: false,
     lastLoginAt: new Date(Date.now() - 48 * 3_600_000).toISOString(), createdAt: subDays(new Date(), 540).toISOString(),
   },
   {
-    id: 'u8', name: 'Rashid Iqbal', email: 'rashid@apexaora.ae', role: 'Accountant', title: 'Senior Accountant', managerId: 'u2',
+    id: 'u8', companyId: 'co_apex', name: 'Rashid Iqbal', email: 'rashid@apexaora.ae', role: 'Accountant', title: 'Senior Accountant', managerId: 'u2',
     mobile: '+971 50 625 1183', departmentId: 'd-finance', active: true, twoFactorEnabled: true,
     lastLoginAt: new Date(Date.now() - 20 * 3_600_000).toISOString(), createdAt: subDays(new Date(), 480).toISOString(),
   },
   {
-    id: 'u9', name: 'Mariam Saeed', email: 'mariam@apexaora.ae', role: 'HR Manager', title: 'HR Manager', managerId: 'u2',
+    id: 'u9', companyId: 'co_apex', name: 'Mariam Saeed', email: 'mariam@apexaora.ae', role: 'HR Manager', title: 'HR Manager', managerId: 'u2',
     mobile: '+971 58 214 6650', departmentId: 'd-hr', active: true, twoFactorEnabled: false,
     lastLoginAt: new Date(Date.now() - 72 * 3_600_000).toISOString(), createdAt: subDays(new Date(), 455).toISOString(),
   },
   {
-    id: 'u10', name: 'Daniel Ortiz', email: 'daniel@apexaora.ae', role: 'Department Head', title: 'Head of Delivery', managerId: 'u2',
+    id: 'u10', companyId: 'co_apex', name: 'Daniel Ortiz', email: 'daniel@apexaora.ae', role: 'Department Head', title: 'Head of Delivery', managerId: 'u2',
     mobile: '+971 55 870 4436', departmentId: 'd-delivery', active: true, twoFactorEnabled: false,
     lastLoginAt: new Date(Date.now() - 9 * 3_600_000).toISOString(), createdAt: subDays(new Date(), 330).toISOString(),
   },
   {
-    id: 'u11', name: 'Noura Al Ketbi', email: 'noura@apexaora.ae', role: 'Employee', title: 'Solutions Consultant', managerId: 'u10',
+    id: 'u11', companyId: 'co_apex', name: 'Noura Al Ketbi', email: 'noura@apexaora.ae', role: 'Employee', title: 'Solutions Consultant', managerId: 'u10',
     mobile: '+971 56 155 2290', departmentId: 'd-delivery', active: true, twoFactorEnabled: false,
     lastLoginAt: new Date(Date.now() - 30 * 3_600_000).toISOString(), createdAt: subDays(new Date(), 160).toISOString(),
   },
   {
-    id: 'u12', name: 'Hassan Qureshi', email: 'hassan@apexaora.ae', role: 'Sales Agent', title: 'Partner Sales Rep', managerId: 'u10',
+    id: 'u12', companyId: 'co_apex', name: 'Hassan Qureshi', email: 'hassan@apexaora.ae', role: 'Sales Agent', title: 'Partner Sales Rep', managerId: 'u10',
     mobile: '+971 52 640 8871', departmentId: 'd-sales', active: true, twoFactorEnabled: false,
     lastLoginAt: new Date(Date.now() - 52 * 3_600_000).toISOString(), createdAt: subDays(new Date(), 140).toISOString(),
   },
   {
-    id: 'u13', name: 'Fatima Zahra', email: 'fatima@apexaora.ae', role: 'Sales Agent', title: 'Account Executive', managerId: 'u3',
+    id: 'u13', companyId: 'co_apex', name: 'Fatima Zahra', email: 'fatima@apexaora.ae', role: 'Sales Agent', title: 'Account Executive', managerId: 'u3',
     mobile: '+971 50 377 5164', departmentId: 'd-sales', active: false, twoFactorEnabled: false,
     lastLoginAt: subDays(new Date(), 64).toISOString(), createdAt: subDays(new Date(), 300).toISOString(),
+  },
+  // Delivery team (synthetic): project template roles resolve to these people in the Won flow.
+  {
+    id: 'u14', companyId: 'co_apex', name: 'Yusuf Rahman', email: 'yusuf@apexaora.ae', role: 'Employee', title: 'Developer', managerId: 'u10',
+    mobile: '+971 55 210 4471', departmentId: 'd-delivery', active: true, twoFactorEnabled: false,
+    lastLoginAt: subDays(new Date(), 1).toISOString(), createdAt: subDays(new Date(), 260).toISOString(),
+  },
+  {
+    id: 'u15', companyId: 'co_apex', name: 'Leena Joseph', email: 'leena@apexaora.ae', role: 'Employee', title: 'QA Engineer', managerId: 'u10',
+    mobile: '+971 52 118 9034', departmentId: 'd-delivery', active: true, twoFactorEnabled: false,
+    lastLoginAt: subDays(new Date(), 2).toISOString(), createdAt: subDays(new Date(), 240).toISOString(),
+  },
+  {
+    id: 'u16', companyId: 'co_apex', name: 'Omar Siddiqui', email: 'omar.s@apexaora.ae', role: 'Employee', title: 'AI Engineer', managerId: 'u10',
+    mobile: '+971 50 663 2207', departmentId: 'd-delivery', active: true, twoFactorEnabled: false,
+    lastLoginAt: subDays(new Date(), 1).toISOString(), createdAt: subDays(new Date(), 200).toISOString(),
+  },
+  {
+    id: 'u17', companyId: 'co_apex', name: 'Hind Al Mansoori', email: 'hind@apexaora.ae', role: 'Employee', title: 'UI Designer', managerId: 'u10',
+    mobile: '+971 56 774 1902', departmentId: 'd-delivery', active: true, twoFactorEnabled: false,
+    lastLoginAt: subDays(new Date(), 4).toISOString(), createdAt: subDays(new Date(), 180).toISOString(),
+  },
+
+  // ---- Second tenant (synthetic): Crest Logistics, Riyadh. Ids u101+ so ids never collide across tenants.
+  {
+    id: 'u101', companyId: 'co_crest', name: 'Faisal Al Harbi', email: 'faisal@crestlogistics.sa', role: 'Company Admin', title: 'IT Manager', managerId: null,
+    mobile: '+966 55 120 4471', departmentId: 'c2-it', active: true, twoFactorEnabled: false,
+    lastLoginAt: new Date(Date.now() - 4 * 3_600_000).toISOString(), createdAt: subDays(new Date(), 400).toISOString(),
+  },
+  {
+    id: 'u102', companyId: 'co_crest', name: 'Noura Al Qahtani', email: 'noura@crestlogistics.sa', role: 'Management', title: 'General Manager', managerId: null,
+    mobile: '+966 50 338 9102', departmentId: 'c2-management', active: true, twoFactorEnabled: false,
+    lastLoginAt: new Date(Date.now() - 8 * 3_600_000).toISOString(), createdAt: subDays(new Date(), 400).toISOString(),
+  },
+  {
+    id: 'u103', companyId: 'co_crest', name: 'Majed Al Dossari', email: 'majed@crestlogistics.sa', role: 'Sales Manager', title: 'Sales Director', managerId: 'u102',
+    mobile: '+966 54 771 2036', departmentId: 'c2-sales', active: true, twoFactorEnabled: false,
+    lastLoginAt: new Date(Date.now() - 2 * 3_600_000).toISOString(), createdAt: subDays(new Date(), 380).toISOString(),
+  },
+  {
+    id: 'u104', companyId: 'co_crest', name: 'Reem Al Shammari', email: 'reem@crestlogistics.sa', role: 'Sales Agent', title: 'Account Manager', managerId: 'u103',
+    mobile: '+966 56 402 1189', departmentId: 'c2-sales', active: true, twoFactorEnabled: false,
+    lastLoginAt: new Date(Date.now() - 5 * 3_600_000).toISOString(), createdAt: subDays(new Date(), 300).toISOString(),
+  },
+  {
+    id: 'u105', companyId: 'co_crest', name: 'Tariq Al Mutairi', email: 'tariq@crestlogistics.sa', role: 'Sales Agent', title: 'Account Manager', managerId: 'u103',
+    mobile: '+966 53 915 6620', departmentId: 'c2-sales', active: true, twoFactorEnabled: false,
+    lastLoginAt: new Date(Date.now() - 30 * 3_600_000).toISOString(), createdAt: subDays(new Date(), 260).toISOString(),
+  },
+  {
+    id: 'u106', companyId: 'co_crest', name: 'Sultan Al Ghamdi', email: 'sultan@crestlogistics.sa', role: 'Department Head', title: 'Head of Operations', managerId: 'u102',
+    mobile: '+966 55 604 3318', departmentId: 'c2-ops', active: true, twoFactorEnabled: false,
+    lastLoginAt: new Date(Date.now() - 12 * 3_600_000).toISOString(), createdAt: subDays(new Date(), 350).toISOString(),
+  },
+  {
+    id: 'u107', companyId: 'co_crest', name: 'Huda Al Zahrani', email: 'huda@crestlogistics.sa', role: 'Employee', title: 'Operations Coordinator', managerId: 'u106',
+    mobile: '+966 59 227 8045', departmentId: 'c2-ops', active: true, twoFactorEnabled: false,
+    lastLoginAt: subDays(new Date(), 1).toISOString(), createdAt: subDays(new Date(), 200).toISOString(),
   },
 ]
 
@@ -140,6 +201,10 @@ const SEED: Seed[] = [
 
 const NOW = new Date()
 
+/** Company ids of the seeded tenants (kept local: db.ts can't import data/tenancy, which imports users from here). */
+const APEX = 'co_apex'
+const CREST = 'co_crest'
+
 function mobileFor(index: number): string {
   const n = String(1000000 + index * 73291).slice(-7)
   return `+971 5${index % 10} ${n.slice(0, 3)} ${n.slice(3)}`
@@ -179,8 +244,11 @@ const LEGACY_FREE_TEXT: Record<number, string> = {
   19: 'Arabic voice IVR upgrade',
 }
 
+/** Apex Aora's own catalog (the services store also holds other tenants' services). */
+const apexCatalog = () => catalog.filter((s) => (s as { companyId?: string }).companyId !== CREST)
+
 function firstServiceOf(category: ServiceCategory): string | null {
-  return catalog.find((s) => s.active && s.category === category)?.id ?? null
+  return apexCatalog().find((s) => s.active && s.category === category)?.id ?? null
 }
 
 function migrateServices(categories: ServiceCategory[], i: number) {
@@ -189,7 +257,7 @@ function migrateServices(categories: ServiceCategory[], i: number) {
     .map(firstServiceOf)
     .filter((id): id is string => !!id)
   const legacy = LEGACY_FREE_TEXT[i] ?? categories[0]
-  const match = matchServiceText(legacy, catalog)
+  const match = matchServiceText(legacy, apexCatalog())
   return {
     serviceIds,
     recommendedServiceId: match?.id ?? null,
@@ -228,8 +296,9 @@ const SCORE_BASE: Record<LeadStatus, number> = {
   New: 30, Contacted: 42, 'No response': 18, 'Call later': 35, Interested: 62, Meeting: 72, Proposal: 82, Cold: 10, Won: 95, Lost: 12, 'Not interested': 8,
 }
 
-export const leads: Lead[] = SEED.map(
+const apexLeads: Tenant<Lead>[] = SEED.map(
   ([company, contact, domain, industry, subIndustry, source, status, ownerId, value, createdDaysAgo, followUpInDays, dnc], i) => ({
+    companyId: APEX,
     id: `L-${String(1001 + i)}`,
     company,
     contactName: contact,
@@ -255,6 +324,118 @@ export const leads: Lead[] = SEED.map(
   }),
 )
 
+/* ---------------- Crest Logistics (second tenant, fully synthetic Saudi companies) ---------------- */
+
+/** Crest seed ids live in their own block (L-5001+, C-5xxx, CT-L-5xxx…) so they never collide with Apex. */
+export const CREST_SEED_LEAD_BASE = 5001
+
+type CrestSeed = [...Seed, lossReason?: string]
+
+const CREST_SEED: CrestSeed[] = [
+  ['Najd Cold Chain Co.', 'Abdullah Al Otaibi', 'najdcoldchain.sa', 'Logistics', 'Cold Chain', 'Website', 'New', 'u104', 85000, 1, 0],
+  ['Red Sea Builders', 'Eng. Saad Al Ghamdi', 'redseabuilders.sa', 'Construction', 'Contracting', 'Tender Portal', 'Proposal', 'u103', 420000, 26, 2],
+  ['Eastern Gulf Drilling Services', 'Khalid Al Shehri', 'egdrilling.sa', 'Oil & Gas Services', 'Upstream Services', 'Trade Show', 'Won', 'u105', 650000, 120, null],
+  ['Al Waha Medical Supplies', 'Dr. Lama Al Harthi', 'alwahamedical.sa', 'Healthcare', 'Medical Supply', 'Referral', 'Interested', 'u104', 140000, 9, -1],
+  ['Dammam Packaging Industries', 'Hisham Bakr', 'dammampack.sa', 'Manufacturing', 'Packaging', 'LinkedIn', 'Meeting', 'u105', 210000, 18, 3],
+  ['Qassim Fresh Markets', 'Yazeed Al Rasheed', 'qassimfresh.sa', 'Retail & FMCG', 'Supermarkets', 'Cold Outreach', 'Contacted', 'u104', 95000, 4, 1],
+  ['Jeddah Port Traders', 'Omar Al Jahdali', 'jeddahporttraders.sa', 'Logistics', 'Freight Forwarding', 'Website', 'Won', 'u104', 310000, 90, null],
+  ['Salwa Infrastructure Partners', 'Faris Al Mutlaq', 'salwainfra.sa', 'Construction', 'Infrastructure', 'Tender Portal', 'Lost', 'u103', 520000, 140, null, false, 'Lost the tender'],
+  ['Hijaz Hospital Group', 'Dr. Mansour Al Zahrani', 'hijazhospitals.sa', 'Healthcare', 'Hospitals', 'Trade Show', 'Proposal', 'u105', 260000, 33, 1],
+  ['Tabuk Agro Processing', 'Nawaf Al Balawi', 'tabukagro.sa', 'Manufacturing', 'Food Processing', 'Referral', 'Won', 'u105', 180000, 150, null],
+  ['Khobar Plastics Factory', 'Rakan Al Anazi', 'khobarplastics.sa', 'Manufacturing', 'Plastics', 'LinkedIn', 'No response', 'u104', 70000, 12, -2, true],
+  ['Desert Line Distribution', 'Bandar Al Qahtani', 'desertlinedist.sa', 'Retail & FMCG', 'Distribution', 'Cold Outreach', 'Call later', 'u105', 120000, 15, 6],
+  ['Jubail Equipment Rentals', 'Saleh Al Hajri', 'jubailrentals.sa', 'Oil & Gas Services', 'Equipment Rental', 'Website', 'Not interested', 'u104', 90000, 100, null, false, 'Project postponed'],
+  ['Asir Last Mile Express', 'Mohammed Al Asiri', 'asirexpress.sa', 'Logistics', 'Last Mile', 'Website', 'Interested', 'u105', 60000, 7, 0],
+  ['Al Kharj Warehousing Hub', 'Turki Al Subaie', 'kharjhub.sa', 'Logistics', 'Warehousing', 'Referral', 'Meeting', 'u103', 380000, 21, 2],
+  ['Yanbu Downstream Services', 'Ali Al Juhani', 'yanbuds.sa', 'Oil & Gas Services', 'Downstream', 'Tender Portal', 'Contacted', 'u105', 230000, 5, 1],
+  ['Madinah Care Hospital', 'Dr. Reem Al Harbi', 'madinahcare.sa', 'Healthcare', 'Hospitals', 'LinkedIn', 'Cold', 'u104', 150000, 40, null],
+  ['Riyadh Gate Supermarkets', 'Waleed Al Shammari', 'riyadhgatemarkets.sa', 'Retail & FMCG', 'Supermarkets', 'Trade Show', 'Won', 'u102', 275000, 70, null],
+  ['Sahm MEP Contracting', 'Ibrahim Al Malki', 'sahmmep.sa', 'Construction', 'MEP', 'Cold Outreach', 'Lost', 'u105', 110000, 120, null, false, 'Price too high'],
+  ['Al Ahsa Dates Factory', 'Hamad Al Mulhim', 'ahsadates.sa', 'Manufacturing', 'Food Processing', 'Website', 'New', 'u104', 55000, 0, 1],
+  ['Gulf Coast Freight Lines', 'Sami Al Ghamdi', 'gulfcoastfreight.sa', 'Logistics', 'Freight Forwarding', 'LinkedIn', 'Proposal', 'u105', 190000, 28, -1],
+  ['Unaizah Building Materials', 'Fahad Al Muqbil', 'unaizahbm.sa', 'Construction', 'Contracting', 'Referral', 'New', 'u103', 75000, 2, 2],
+]
+
+/** Saudi mobiles, +966 5X XXX XXXX. */
+function crestMobileFor(index: number): string {
+  const n = String(2000000 + index * 61813).slice(-7)
+  return `+966 5${(index * 3) % 10} ${n.slice(0, 3)} ${n.slice(3)}`
+}
+
+function crestEmailFor(contact: string, domain: string): string {
+  const first = contact.replace(/^(Dr|Eng)\.\s/, '').split(' ')[0].toLowerCase()
+  return `${first}@${domain}`
+}
+
+const CREST_NEXT_STEPS: Partial<Record<LeadStatus, string>> = {
+  Interested: 'Survey their current warehouse and fleet set-up',
+  Meeting: 'Present the logistics solution to the operations team',
+  Proposal: 'Review the rate card and confirm the go-live date',
+}
+
+const CREST_SOURCE_DETAIL: Record<SourceType, string[]> = {
+  Website: ['crestlogistics.sa quote request', 'Website live chat'],
+  Referral: ['Referred by Jeddah Port Traders', 'Referred by an existing shipper'],
+  'Tender Portal': ['Government tender portal', 'Private procurement portal'],
+  LinkedIn: ['LinkedIn Sales Navigator', 'LinkedIn post reply'],
+  'Trade Show': ['Saudi Logistics Expo 2026', 'Riyadh Supply Chain Forum 2026'],
+  'Cold Outreach': ['Q3 cold-call list', 'Outbound email sequence'],
+}
+
+/** Crest catalog services (seeded by data/services.ts): S-901 Freight Forwarding … S-905 Supply Chain Assessment. */
+const CREST_INDUSTRY_SERVICES: Record<string, string[]> = {
+  Logistics: ['S-901', 'S-902', 'S-904'],
+  Construction: ['S-901', 'S-903', 'S-904'],
+  'Oil & Gas Services': ['S-903', 'S-901', 'S-902'],
+  Healthcare: ['S-902', 'S-904', 'S-905'],
+  'Retail & FMCG': ['S-902', 'S-904', 'S-905'],
+  Manufacturing: ['S-903', 'S-902', 'S-905'],
+}
+
+const CREST_COMPANY_SERVICES: Record<string, string[]> = {
+  Logistics: ['Freight', 'Cold storage', 'Distribution'],
+  Construction: ['Civil works', 'Contracting', 'MEP'],
+  'Oil & Gas Services': ['Drilling support', 'Equipment rental', 'Field services'],
+  Healthcare: ['Inpatient care', 'Medical supplies', 'Pharmacy'],
+  'Retail & FMCG': ['Supermarkets', 'Wholesale', 'Home delivery'],
+  Manufacturing: ['Production', 'Packaging', 'Exports'],
+}
+
+const crestLeads: Tenant<Lead>[] = CREST_SEED.map(
+  ([company, contact, domain, industry, subIndustry, source, status, ownerId, value, createdDaysAgo, followUpInDays, dnc, lossReason], i) => {
+    const serviceIds = (CREST_INDUSTRY_SERVICES[industry] ?? []).slice(0, (i % 3) + 1)
+    return {
+      companyId: CREST,
+      id: `L-${CREST_SEED_LEAD_BASE + i}`,
+      company,
+      contactName: contact,
+      contactEmail: crestEmailFor(contact, domain),
+      mobile: crestMobileFor(i),
+      industry,
+      subIndustry,
+      sourceType: source,
+      sourceDetail: CREST_SOURCE_DETAIL[source]?.[i % 2] ?? '',
+      status,
+      stageChangedAt: subDays(NOW, Math.min(createdDaysAgo, ((i * 5) % 17) + 1)).toISOString(),
+      ownerId,
+      value,
+      nextFollowUpDate: followUpInDays === null ? null : addDays(NOW, followUpInDays).toISOString(),
+      createdAt: subDays(NOW, createdDaysAgo).toISOString(),
+      doNotContact: dnc ?? false,
+      nextStep: CREST_NEXT_STEPS[status] ?? '',
+      lossReason: lossReason ?? '',
+      customerId: status === 'Won' ? `C-${CREST_SEED_LEAD_BASE + i}` : null,
+      companyServices: CREST_COMPANY_SERVICES[industry] ?? [subIndustry],
+      serviceIds,
+      recommendedServiceId: serviceIds[0] ?? null,
+      recommendedServiceText: null,
+      score: Math.min(99, SCORE_BASE[status] + ((i * 29) % 17)),
+    }
+  },
+)
+
+export const leads: Tenant<Lead>[] = [...apexLeads, ...crestLeads]
+
 /* ---------------- Customers (CRM) ---------------- */
 
 const FREE_MAIL = ['gmail.com', 'hotmail.com', 'outlook.com', 'yahoo.com', 'icloud.com', 'live.com']
@@ -277,9 +458,17 @@ function emirateFromLead(lead: Lead): Customer['emirate'] {
   return 'Dubai'
 }
 
-/** Builds a customer from a Won lead, carrying its data over so nobody retypes it. */
-export function customerFromLead(lead: Lead, opts: { id: string; wonAt: string; address?: string; status?: Customer['status'] }): Customer {
+/**
+ * Builds a customer from a Won lead, carrying its data over so nobody retypes it. The customer
+ * belongs to the lead's company. `country` is the company's regional country: the emirate is only
+ * guessed for UAE companies (callers pass `companyById(lead.companyId).regional.country`).
+ */
+export function customerFromLead(
+  lead: Tenant<Lead>,
+  opts: { id: string; wonAt: string; address?: string; status?: Customer['status']; country?: CountryCode },
+): Tenant<Customer> {
   return {
+    companyId: lead.companyId,
     id: opts.id,
     name: lead.company,
     industry: lead.industry,
@@ -289,7 +478,7 @@ export function customerFromLead(lead: Lead, opts: { id: string; wonAt: string; 
     createdAt: opts.wonAt,
     website: websiteFromLead(lead),
     address: opts.address ?? '',
-    emirate: emirateFromLead(lead),
+    emirate: (opts.country ?? 'AE') === 'AE' ? emirateFromLead(lead) : '',
     status: opts.status ?? 'Active',
     wonValue: lead.value,
     wonAt: opts.wonAt,
@@ -306,25 +495,45 @@ const SEED_ADDRESSES: Record<string, string> = {
   'Sahara Rent A Car': 'Office 214, Al Garhoud Business Centre',
   'Khaleej Consulting Partners': 'Level 12, Gate Village 5, DIFC',
   'Pearl Accounting Firm': 'Office 905, Business Bay Executive Tower B',
+  // Crest Logistics customers
+  'Eastern Gulf Drilling Services': 'King Saud Street, 2nd Industrial City, Dammam',
+  'Jeddah Port Traders': 'Office 310, Al Andalus District, Jeddah',
+  'Tabuk Agro Processing': 'Industrial Area, Tabuk',
+  'Riyadh Gate Supermarkets': 'King Fahd Road, Al Olaya, Riyadh',
 }
 
-export const customers: Customer[] = leads
-  .filter((l) => l.customerId)
-  .map((l) =>
-    customerFromLead(l, {
-      id: l.customerId as string,
-      wonAt: l.stageChangedAt,
-      address: SEED_ADDRESSES[l.company] ?? '',
-      status: l.value >= 140000 ? 'VIP' : l.company === 'Sahara Rent A Car' ? 'Paused' : 'Active',
-    }),
-  )
+export const customers: Tenant<Customer>[] = [
+  ...apexLeads
+    .filter((l) => l.customerId)
+    .map((l) =>
+      customerFromLead(l, {
+        id: l.customerId as string,
+        wonAt: l.stageChangedAt,
+        address: SEED_ADDRESSES[l.company] ?? '',
+        status: l.value >= 140000 ? 'VIP' : l.company === 'Sahara Rent A Car' ? 'Paused' : 'Active',
+        country: 'AE',
+      }),
+    ),
+  ...crestLeads
+    .filter((l) => l.customerId)
+    .map((l) =>
+      customerFromLead(l, {
+        id: l.customerId as string,
+        wonAt: l.stageChangedAt,
+        address: SEED_ADDRESSES[l.company] ?? '',
+        status: l.value >= 500000 ? 'VIP' : 'Active',
+        country: 'SA',
+      }),
+    ),
+]
 
 const TITLES = ['General Manager', 'Operations Director', 'IT Manager', 'Practice Manager', 'Head of Marketing', 'Finance Director']
 const SECOND_CONTACTS = ['Ravi Kumar', 'Lina Aziz', 'Hamad Al Blooshi', 'Joanna Kim', 'Samir Toufic', 'Amna Al Shehhi', 'Peter Novak', 'Dina Saleh', 'Zaid Obeid', 'Maria Santos']
 
-export const contacts: Contact[] = leads.flatMap((l, i) => {
+const apexContacts: Tenant<Contact>[] = apexLeads.flatMap((l, i) => {
   const domain = l.contactEmail.split('@')[1]
-  const primary: Contact = {
+  const primary: Tenant<Contact> = {
+    companyId: l.companyId,
     id: `CT-${i}-1`,
     leadId: l.id,
     name: l.contactName,
@@ -338,6 +547,7 @@ export const contacts: Contact[] = leads.flatMap((l, i) => {
   return [
     primary,
     {
+      companyId: l.companyId,
       id: `CT-${i}-2`,
       leadId: l.id,
       name,
@@ -348,6 +558,40 @@ export const contacts: Contact[] = leads.flatMap((l, i) => {
     },
   ]
 })
+
+const CREST_TITLES = ['Supply Chain Manager', 'Operations Director', 'Procurement Manager', 'Warehouse Manager', 'General Manager', 'Finance Director']
+const CREST_SECOND_CONTACTS = ['Nasser Al Yami', 'Maha Al Dosari', 'Ziyad Al Saleh', 'Hanan Al Omari', 'Mazen Al Faraj', 'Rania Al Turki', 'Badr Al Shehri', 'Lujain Al Amri']
+
+const crestContacts: Tenant<Contact>[] = crestLeads.flatMap((l, i) => {
+  const domain = l.contactEmail.split('@')[1]
+  const primary: Tenant<Contact> = {
+    companyId: l.companyId,
+    id: `CT-${l.id}-1`,
+    leadId: l.id,
+    name: l.contactName,
+    title: CREST_TITLES[i % CREST_TITLES.length],
+    mobile: l.mobile,
+    email: l.contactEmail,
+    isDecisionMaker: i % 2 === 0,
+  }
+  if (i % 3 !== 0) return [primary]
+  const name = CREST_SECOND_CONTACTS[(i / 3) % CREST_SECOND_CONTACTS.length]
+  return [
+    primary,
+    {
+      companyId: l.companyId,
+      id: `CT-${l.id}-2`,
+      leadId: l.id,
+      name,
+      title: CREST_TITLES[(i + 3) % CREST_TITLES.length],
+      mobile: crestMobileFor(i + 40),
+      email: `${name.split(' ')[0].toLowerCase()}@${domain}`,
+      isDecisionMaker: i % 2 !== 0,
+    },
+  ]
+})
+
+export const contacts: Tenant<Contact>[] = [...apexContacts, ...crestContacts]
 
 /** How far along each stage usually is, which decides how much history a lead has. */
 const STAGE_DEPTH: Record<LeadStatus, number> = {
@@ -368,7 +612,7 @@ const STAGE_DEPTH: Record<LeadStatus, number> = {
 const ACTIVITY_SEQUENCE: ActivityType[] = ['call', 'email', 'whatsapp', 'call', 'meeting', 'visit', 'email']
 
 function activitySummary(type: ActivityType, lead: Lead): string {
-  const first = lead.contactName.replace(/^Dr\.\s|^Chef\s/, '').split(' ')[0]
+  const first = lead.contactName.replace(/^Dr\.\s|^Chef\s|^Eng\.\s/, '').split(' ')[0]
   switch (type) {
     case 'call':
       return `Called ${first} to walk through how ${lead.company} handles enquiries today.`
@@ -380,16 +624,19 @@ function activitySummary(type: ActivityType, lead: Lead): string {
       return `Meeting with ${first} and team — mapped their current process and pain points.`
     case 'visit':
       return `Site visit at ${lead.company}; met the operations team.`
+    case 'system':
+      return `Updated by the system for ${lead.company}.`
   }
 }
 
-export const activities: Activity[] = leads.flatMap((l) => {
+export const activities: Tenant<Activity>[] = leads.flatMap((l) => {
   const depth = STAGE_DEPTH[l.status]
   const created = new Date(l.createdAt).getTime()
   const span = Math.max(1, NOW.getTime() - created)
   return Array.from({ length: depth }, (_, k) => {
     const type = ACTIVITY_SEQUENCE[k % ACTIVITY_SEQUENCE.length]
     return {
+      companyId: l.companyId,
       id: `A-${l.id}-${k}`,
       leadId: l.id,
       type,
@@ -407,43 +654,73 @@ const NOTE_BODIES = [
   'Mentioned a competitor quote; price is a factor but turnaround matters more.',
 ]
 
-export const notes: Note[] = leads.flatMap((l, i) => {
-  const depth = STAGE_DEPTH[l.status]
-  if (depth < 2) return []
-  const count = depth >= 4 ? 2 : 1
-  return Array.from({ length: count }, (_, k) => ({
-    id: `N-${l.id}-${k}`,
-    leadId: l.id,
-    body: NOTE_BODIES[(i + k) % NOTE_BODIES.length],
-    authorId: k === 1 ? 'u3' : l.ownerId,
-    createdAt: subDays(NOW, Math.max(0, 6 - k * 3 - (i % 3))).toISOString(),
-  }))
-})
+const CREST_NOTE_BODIES = [
+  'Prefers a call after Asr; WhatsApp for quick confirmations.',
+  'Ships mostly through Jeddah Islamic Port; wants weekly consolidation to Riyadh.',
+  'Procurement runs everything through their tender portal — register before quoting.',
+  'Current provider misses cold-chain SLAs in summer; reliability matters more than price.',
+]
 
-export const tasks: LeadTask[] = leads.flatMap((l, i) => {
-  const depth = STAGE_DEPTH[l.status]
-  if (depth < 3 || l.status === 'Lost' || l.status === 'Not interested' || l.status === 'Cold') return []
-  const list: LeadTask[] = [
-    {
-      id: `T-${l.id}-1`,
+/** Second author on a lead's history: the company's sales manager. */
+const NOTE_MANAGER: Record<string, string> = { [APEX]: 'u3', [CREST]: 'u103' }
+
+function notesFor(list: Tenant<Lead>[], bodies: string[]): Tenant<Note>[] {
+  return list.flatMap((l, i) => {
+    const depth = STAGE_DEPTH[l.status]
+    if (depth < 2) return []
+    const count = depth >= 4 ? 2 : 1
+    return Array.from({ length: count }, (_, k) => ({
+      companyId: l.companyId,
+      id: `N-${l.id}-${k}`,
       leadId: l.id,
-      title: l.status === 'Won' ? 'Hand over to delivery' : 'Prepare discovery questions',
-      ownerId: l.ownerId,
-      dueDate: addDays(NOW, (i % 5) - 1).toISOString(),
-      status: l.status === 'Won' ? 'Done' : 'In progress',
-      priority: 'Medium',
-    },
-  ]
-  if (depth >= 5) {
-    list.push({
-      id: `T-${l.id}-2`,
-      leadId: l.id,
-      title: l.status === 'Won' ? 'Schedule kickoff call' : 'Send quotation for review',
-      ownerId: l.ownerId,
-      dueDate: addDays(NOW, (i % 4) + 1).toISOString(),
-      status: 'To do',
-      priority: 'High',
-    })
-  }
-  return list
-})
+      body: bodies[(i + k) % bodies.length],
+      authorId: k === 1 ? NOTE_MANAGER[l.companyId] : l.ownerId,
+      createdAt: subDays(NOW, Math.max(0, 6 - k * 3 - (i % 3))).toISOString(),
+    }))
+  })
+}
+
+export const notes: Tenant<Note>[] = [...notesFor(apexLeads, NOTE_BODIES), ...notesFor(crestLeads, CREST_NOTE_BODIES)]
+
+function leadTasksFor(list: Tenant<Lead>[]): Tenant<LeadTask>[] {
+  return list.flatMap((l, i) => {
+    const depth = STAGE_DEPTH[l.status]
+    if (depth < 3 || l.status === 'Lost' || l.status === 'Not interested' || l.status === 'Cold') return []
+    const out: Tenant<LeadTask>[] = [
+      {
+        companyId: l.companyId,
+        id: `T-${l.id}-1`,
+        leadId: l.id,
+        title: l.status === 'Won' ? 'Hand over to delivery' : 'Prepare discovery questions',
+        ownerId: l.ownerId,
+        dueDate: addDays(NOW, (i % 5) - 1).toISOString(),
+        status: l.status === 'Won' ? 'Done' : 'In progress',
+        priority: 'Medium',
+      },
+    ]
+    if (depth >= 5) {
+      out.push({
+        companyId: l.companyId,
+        id: `T-${l.id}-2`,
+        leadId: l.id,
+        title: l.status === 'Won' ? 'Schedule kickoff call' : 'Send quotation for review',
+        ownerId: l.ownerId,
+        dueDate: addDays(NOW, (i % 4) + 1).toISOString(),
+        status: 'To do',
+        priority: 'High',
+      })
+    }
+    return out
+  })
+}
+
+/** Mutable stores of this module, for the dev persistence registry (leadTaskSeed below is seed-only). */
+registerArray('users', users)
+registerArray('leads', leads)
+registerArray('customers', customers)
+registerArray('contacts', contacts)
+registerArray('activities', activities)
+registerArray('notes', notes)
+
+/** Seed for lead follow-up tasks; converted into the unified task store (shared/mocks/data/tasks.ts). */
+export const leadTaskSeed: Tenant<LeadTask>[] = [...leadTasksFor(apexLeads), ...leadTasksFor(crestLeads)]

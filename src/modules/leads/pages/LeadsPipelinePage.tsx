@@ -7,7 +7,9 @@ import type { LeadStatus } from '@/shared/types'
 import type { LeadRow, MoveLeadInput } from '@/modules/leads/types'
 import { leadPath } from '@/app/paths'
 import { useLeadsQuery, useMoveLeadStage } from '@/modules/leads/hooks/useLeads'
-import { requirementFor, StageChangeModal, type PendingMove } from '@/modules/leads/components/StageChangeModal'
+import { StageChangeModal, type PendingMove } from '@/modules/leads/components/StageChangeModal'
+import { moveActionFor } from '@/modules/leads/lib/transitions'
+import { useOpenWonDialog } from '@/modules/won/hooks'
 import { useCatalog } from '@/modules/services/hooks/useServices'
 import { categoryMeta } from '@/modules/services/categoryMeta'
 import type { Service } from '@/modules/services/types'
@@ -29,6 +31,9 @@ import { useToast } from '@/shared/components/ui/Toast'
 import { SearchInput, SelectInput } from '@/shared/components/form/Field'
 import { PageBody, PageHeader } from '@/shared/components/layout/PageHeader'
 import { KanbanBoard, KanbanCard, type KanbanColumn } from '@/shared/components/kanban'
+import { useRegion } from '@/modules/tenancy/hooks'
+import { useReadOnly, useReadOnlyHint } from '@/shared/lib/readOnly'
+import { getRegion } from '@/shared/lib/region'
 
 /**
  * Columns = the active statuses in their configured order (Cold shows as a parked column), plus
@@ -49,6 +54,7 @@ function columnsFor(lookups: LookupsApi, leads: LeadRow[]): KanbanColumn<LeadSta
 
 export default function LeadsPipelinePage() {
   const user = useCurrentUser()
+  const readOnly = useReadOnly()
   if (!user) return null
   const scope = scopeOf(user.role, 'sales')
   if (scope === 'hidden') {
@@ -56,15 +62,24 @@ export default function LeadsPipelinePage() {
       <PageBody>
         <EmptyState
           title="The pipeline isn’t part of your role"
-          body={`${user.role} has no access to Sales & CRM. Ask a System Admin if you need it.`}
+          body={`${user.role} has no access to Sales & CRM. Ask a Company Admin if you need it.`}
         />
       </PageBody>
     )
   }
-  return <Pipeline canMove={can(user.role, 'sales', 'edit')} canCreate={can(user.role, 'sales', 'create')} />
+  const readOnlyHint = useReadOnlyHint()
+  // Why leads can't be moved right now (null = they can). Shown as the hint and when a drop is refused.
+  const blockedReason = !can(user.role, 'sales', 'edit')
+    ? `Your role (${user.role}) can view the pipeline but not move leads. Ask a manager or your Company Admin.`
+    : readOnly
+      ? readOnlyHint
+      : null
+  return <Pipeline blockedReason={blockedReason} canCreate={can(user.role, 'sales', 'create')} />
 }
 
-function Pipeline({ canMove, canCreate }: { canMove: boolean; canCreate: boolean }) {
+function Pipeline({ blockedReason, canCreate }: { blockedReason: string | null; canCreate: boolean }) {
+  const canMove = blockedReason === null
+  const region = useRegion()
   const dispatch = useAppDispatch()
   const query = useLeadsQuery()
   const move = useMoveLeadStage()
@@ -73,6 +88,7 @@ function Pipeline({ canMove, canCreate }: { canMove: boolean; canCreate: boolean
   const catalog = useCatalog()
   const leadAlerts = useLeadAlerts()
   const [pending, setPending] = useState<PendingMove | null>(null)
+  const openWon = useOpenWonDialog()
   const [search, setSearch] = useState('')
   const [owner, setOwner] = useState('')
   const [department, setDepartment] = useState('')
@@ -119,7 +135,10 @@ function Pipeline({ canMove, canCreate }: { canMove: boolean; canCreate: boolean
   }
 
   function onMove(lead: LeadRow, to: LeadStatus) {
-    if (requirementFor(lookups.status(to)) === 'none') runMove({ id: lead.id, status: to }, lead.company)
+    const action = moveActionFor(lookups.status(to))
+    // Won never moves the stage directly: the card stays put and the Won dialog takes over.
+    if (action === 'won') openWon(lead.id)
+    else if (action === 'direct') runMove({ id: lead.id, status: to }, lead.company)
     else setPending({ lead, to })
   }
 
@@ -127,10 +146,10 @@ function Pipeline({ canMove, canCreate }: { canMove: boolean; canCreate: boolean
     <div className="flex h-full min-h-0 flex-col">
       <PageHeader
         title="Sales pipeline"
-        description="Drag leads across stages. Values are in AED."
+        description={`Drag leads across stages. Values are in ${region.currency}.`}
         actions={
           canCreate && (
-            <Button size="lg" onClick={() => dispatch(quickAddLeadSet(true))}>
+            <Button write size="lg" onClick={() => dispatch(quickAddLeadSet(true))}>
               <Plus />
               New lead
             </Button>
@@ -179,12 +198,12 @@ function Pipeline({ canMove, canCreate }: { canMove: boolean; canCreate: boolean
               ))}
             </SelectInput>
           </div>
-          <p className="ms-auto hidden text-[0.8125rem] text-muted lg:block">
+          <p id="pipeline-hint" data-can-move={canMove} className="ms-auto hidden text-[0.8125rem] text-muted lg:block">
             {canMove ? (
               'Tip: drag with the mouse, or focus a card and use Space + arrow keys'
             ) : (
               <span className="inline-flex items-center gap-1.5">
-                <Lock className="size-3.5" aria-hidden /> View only: moving leads needs edit access
+                <Lock className="size-3.5" aria-hidden /> View only: {blockedReason}
               </span>
             )}
           </p>
@@ -206,6 +225,7 @@ function Pipeline({ canMove, canCreate }: { canMove: boolean; canCreate: boolean
             getColumn={(l) => l.status}
             onMove={onMove}
             canMove={canMove}
+            onBlockedMove={(lead) => toast.error(`${lead.company} wasn’t moved`, blockedReason ?? undefined)}
             emptyLabel={canMove ? 'Drop a lead here' : 'No leads'}
             summarize={(stageItems, status) => {
               const total = stageItems.reduce((s, l) => s + l.value, 0)
@@ -353,7 +373,7 @@ function LeadCard({
       </div>
 
       <div className="mt-3 flex items-center gap-2 border-t border-line pt-3">
-        <span className="num flex-1 text-[0.9375rem] font-bold">{lead.value ? fmtCompactMoney(lead.value) : 'AED —'}</span>
+        <span className="num flex-1 text-[0.9375rem] font-bold">{lead.value ? fmtCompactMoney(lead.value) : `${getRegion().currency} —`}</span>
         <span className="num flex items-center gap-1 text-xs text-muted" title="Days in this stage">
           <Clock className="size-3.5" aria-hidden />
           {days}d
