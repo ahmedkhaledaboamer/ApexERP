@@ -17,7 +17,11 @@ import type {
   PublicEventInfo,
   PublicRegistrationInput,
   PublicRegistrationResult,
+  QuestionType,
+  RegistrationQuestion,
   RegistrationResult,
+  AttendeeStatus,
+  CancelRegistrationResult,
 } from '@/modules/events/types'
 import { EVENT_STATUSES, EVENT_TYPES, EVENT_STATUS_LABEL, EVENT_TYPE_LABEL } from '@/modules/events/types'
 import { ApiError } from '@/shared/lib/apiError'
@@ -25,24 +29,36 @@ import { scopeOf } from '@/shared/lib/permissions'
 import { isMobile, normalizeMobile } from '@/shared/lib/phone'
 import { HH_MM, isRealIsoDate, zonedParts, zonedToUtc } from '@/shared/lib/zonedTime'
 import { activities, contacts, leads, users } from '@/shared/mocks/db'
-import { lookupsFor, isWonStatus, isClosedStatus } from '@/shared/mocks/data/lookups'
+import { automationRulesFor, lookupsFor, isWonStatus, isClosedStatus } from '@/shared/mocks/data/lookups'
+import { DEFAULT_AUTOMATION_RULES, type AutomationRules } from '@/modules/settings/types'
+import { campaigns } from '@/shared/mocks/data/marketing'
+import { pushNotification } from '@/shared/mocks/data/tasks'
+import { companyDayOf } from '@/shared/mocks/selectors/company'
 import { companyById } from '@/shared/mocks/data/tenancy'
 import { subscriptionOf } from '@/shared/mocks/data/subscriptions'
 import {
   eventAttendees,
+  eventBudgetLines,
+  eventEmails,
   eventHistory,
   events,
   eventTeam,
+  eventTicketTypes,
   newRegistrationToken,
+  newSurveyToken,
+  newTicketCode,
   registrationHits,
   type AttendeeRecord,
+  type EventEmailKind,
   type EventRecord,
+  type TicketTypeRecord,
 } from '@/shared/mocks/data/events'
 import {
   canCreateEvents,
   canEditEvent,
   canManageEvent,
   canSeeEvent,
+  eventActualCost,
   eventsEnabledIn,
   eventsVisibleTo,
   teamIdsOf,
@@ -50,9 +66,14 @@ import {
 import { nowIso, nowMs } from '@/shared/mocks/clock'
 import { delay, fail, ownerName } from '@/shared/mocks/server'
 import { CodedApiError, findInTenant, stamp, tenantOf, type Tenant } from '@/shared/mocks/tenant'
-import { assertCapacity, assertModule, isReadOnly, LimitReachedError, noteUsage } from '@/shared/mocks/services/billing'
+import { assertCapacity, assertModule, isReadOnly, LimitReachedError, noteUsage, recordUsage, remainingCapacity } from '@/shared/mocks/services/billing'
 import { insertLead, mobileHint, visibleLeads } from '@/shared/mocks/services/leads'
 import { hitRateLimit as sharedRateLimit } from '@/shared/mocks/services/rateLimit'
+import { publicAgendaOf } from '@/shared/mocks/services/eventAgenda'
+import { venueOf, venuePickProblem } from '@/shared/mocks/services/eventLibraryCore'
+import { eventVenues } from '@/shared/mocks/data/eventLibrary'
+import { venueCapacityWarning, venueLocation } from '@/modules/events/lib/library'
+import { sponsorshipIncomeOf } from '@/shared/mocks/data/eventSponsors'
 
 /**
  * Events module (Phase 2, plan module `events`; docs/API.md › Events). Exhibitions, conferences,
@@ -71,8 +92,8 @@ export const MAX_IMPORT_ROWS = 1000
 export const PUBLIC_REGISTER_LIMIT = 5
 export const PUBLIC_REGISTER_WINDOW_MINUTES = 10
 
-const tzOf = (companyId: string) => companyById(companyId)?.regional.timezone ?? 'Asia/Dubai'
-const currencyOf = (companyId: string) => companyById(companyId)?.regional.currency ?? 'AED'
+export const tzOf = (companyId: string) => companyById(companyId)?.regional.timezone ?? 'Asia/Dubai'
+export const currencyOf = (companyId: string) => companyById(companyId)?.regional.currency ?? 'AED'
 const userName = (id: string | null | undefined) => (id ? ownerName(id) : '')
 
 let seq = 0
@@ -88,13 +109,13 @@ function nextAttendeeId(): string {
   return `EA-${nextSeq()}`
 }
 
-function log(e: Tenant<EventRecord>, actor: User | null, summary: string): void {
+export function log(e: Tenant<EventRecord>, actor: User | null, summary: string): void {
   eventHistory.push({ companyId: e.companyId, id: `EH-${nextSeq()}`, eventId: e.id, at: nowIso(), userId: actor?.id ?? null, summary })
 }
 
 /* ---------------- Views ---------------- */
 
-function localOf(e: Tenant<EventRecord>) {
+export function localOf(e: Tenant<EventRecord>) {
   const tz = tzOf(e.companyId)
   const start = zonedParts(e.startsAt, tz)
   const end = e.endsAt ? zonedParts(e.endsAt, tz) : start
@@ -106,13 +127,52 @@ function localOf(e: Tenant<EventRecord>) {
   }
 }
 
-function attendeesOf(e: Pick<Tenant<EventRecord>, 'id' | 'companyId'>): Tenant<AttendeeRecord>[] {
+export function attendeesOf(e: Pick<Tenant<EventRecord>, 'id' | 'companyId'>): Tenant<AttendeeRecord>[] {
   return eventAttendees.filter((a) => a.eventId === e.id && a.companyId === e.companyId)
+}
+
+/** Attendees with a seat (not waitlisted, not cancelled). */
+export const seated = (e: Pick<Tenant<EventRecord>, 'id' | 'companyId'>) => attendeesOf(e).filter((a) => a.status === 'registered')
+
+export function ticketTypesOf(e: Pick<Tenant<EventRecord>, 'id' | 'companyId'>): Tenant<TicketTypeRecord>[] {
+  return eventTicketTypes.filter((t) => t.eventId === e.id && t.companyId === e.companyId).sort((a, b) => a.sortOrder - b.sortOrder || a.id.localeCompare(b.id))
+}
+
+/** Seats left overall (null = unlimited). */
+export function remainingSeats(e: Tenant<EventRecord>): number | null {
+  return e.capacity === null ? null : Math.max(0, e.capacity - seated(e).length)
+}
+
+/** Seats left for a ticket type, also bounded by the event's capacity (null = unlimited). */
+export function remainingFor(e: Tenant<EventRecord>, t: TicketTypeRecord | null): number | null {
+  const overall = remainingSeats(e)
+  const own = t && t.capacity !== null ? Math.max(0, t.capacity - seated(e).filter((a) => a.ticketTypeId === t.id).length) : null
+  if (overall === null) return own
+  if (own === null) return overall
+  return Math.min(overall, own)
+}
+
+/** A ticket type is on sale between its sales dates (company calendar, inclusive). */
+export function onSale(t: TicketTypeRecord, companyId: string): boolean {
+  const today = companyDayOf(companyId).today
+  return (!t.salesOpen || today >= t.salesOpen) && (!t.salesClose || today <= t.salesClose)
+}
+
+/** 1-based place on the event's waitlist (first come, first served). */
+export function waitlistPositionOf(a: Tenant<AttendeeRecord>): number | null {
+  if (a.status !== 'waitlisted') return null
+  const queue = eventAttendees
+    .filter((x) => x.eventId === a.eventId && x.companyId === a.companyId && x.status === 'waitlisted')
+    .sort((x, y) => (x.waitlistedAt ?? '').localeCompare(y.waitlistedAt ?? '') || x.id.localeCompare(y.id))
+  return queue.findIndex((x) => x.id === a.id) + 1
 }
 
 function toRow(e: Tenant<EventRecord>, viewer: User): EventRow {
   const atts = attendeesOf(e)
+  const seats = atts.filter((a) => a.status === 'registered')
   const canEdit = canEditEvent(viewer, e)
+  const campaign = e.campaignId ? campaigns.find((c) => c.id === e.campaignId && c.companyId === e.companyId) : undefined
+  const venue = e.venueId ? venueOf(e.companyId, e.venueId) : undefined
   return {
     id: e.id,
     name: e.name,
@@ -123,6 +183,10 @@ function toRow(e: Tenant<EventRecord>, viewer: User): EventRow {
     endsAt: e.endsAt,
     ...localOf(e),
     location: e.location,
+    venueId: venue?.id ?? null,
+    venueName: venue?.name ?? null,
+    venueCapacity: venue?.capacity ?? null,
+    venueWarning: venue ? venueCapacityWarning(e.capacity, venue.capacity, seats.length) : null,
     onlineUrl: e.onlineUrl,
     budget: e.budget,
     actualCost: e.actualCost,
@@ -136,9 +200,17 @@ function toRow(e: Tenant<EventRecord>, viewer: User): EventRow {
     }),
     registrationOpen: e.registrationOpen,
     registrationToken: canEdit ? e.registrationToken : null,
-    attendeeCount: atts.length,
-    checkedInCount: atts.filter((a) => a.checkedInAt).length,
+    attendeeCount: seats.length,
+    waitlistCount: atts.filter((a) => a.status === 'waitlisted').length,
+    checkedInCount: seats.filter((a) => a.checkedInAt).length,
     leadsCreated: atts.filter((a) => a.leadOutcome === 'created').length,
+    capacity: e.capacity,
+    remainingSeats: remainingSeats(e),
+    questions: e.questions.map((q) => ({ ...q, options: [...q.options] })),
+    reminderHours: e.reminderHours,
+    followUpDays: e.followUpDays,
+    campaignId: campaign ? campaign.id : null,
+    campaignName: campaign ? campaign.name : null,
     createdBy: e.createdBy,
     createdByName: userName(e.createdBy),
     createdAt: e.createdAt,
@@ -148,7 +220,7 @@ function toRow(e: Tenant<EventRecord>, viewer: User): EventRow {
   }
 }
 
-function toDetail(e: Tenant<EventRecord>, viewer: User): EventDetail {
+export function toDetail(e: Tenant<EventRecord>, viewer: User): EventDetail {
   const history = eventHistory
     .filter((h) => h.eventId === e.id && h.companyId === e.companyId)
     .sort((a, b) => b.at.localeCompare(a.at))
@@ -156,9 +228,10 @@ function toDetail(e: Tenant<EventRecord>, viewer: User): EventDetail {
   return { ...toRow(e, viewer), history }
 }
 
-function toAttendee(a: Tenant<AttendeeRecord>, viewer: User): Attendee {
+export function toAttendee(a: Tenant<AttendeeRecord>, viewer: User): Attendee {
   const lead = a.leadId ? leads.find((l) => l.id === a.leadId && l.companyId === a.companyId) : undefined
   const canOpen = !!lead && scopeOf(viewer.role, 'sales') !== 'hidden' && visibleLeads(viewer).some((l) => l.id === lead.id)
+  const event = events.find((x) => x.id === a.eventId && x.companyId === a.companyId)
   return {
     id: a.id,
     eventId: a.eventId,
@@ -176,13 +249,21 @@ function toAttendee(a: Tenant<AttendeeRecord>, viewer: User): Attendee {
     sourceDetail: a.sourceDetail,
     registeredAt: a.registeredAt,
     checkedInAt: a.checkedInAt,
+    checkedInByName: a.checkedInBy ? userName(a.checkedInBy) : '',
+    status: a.status,
+    waitlistPosition: waitlistPositionOf(a),
+    ticketTypeId: a.ticketTypeId,
+    ticketTypeName: a.ticketTypeId ? (eventTicketTypes.find((t) => t.id === a.ticketTypeId && t.companyId === a.companyId)?.name ?? '') : '',
+    answers: structuredClone(a.answers ?? {}),
+    ticketCode: event && canEditEvent(viewer, event) ? a.ticketCode : null,
+    surveyToken: event && canEditEvent(viewer, event) ? a.surveyToken : null,
   }
 }
 
 /* ---------------- Access ---------------- */
 
 /** The event if the user may see it. Another company's event (or a missing one) → 404; out of reach in the own company → 403. */
-async function eventFor(user: User, id: string, need: 'view' | 'edit' | 'manage' = 'view'): Promise<Tenant<EventRecord>> {
+export async function eventFor(user: User, id: string, need: 'view' | 'edit' | 'manage' = 'view'): Promise<Tenant<EventRecord>> {
   assertModule(tenantOf(user), 'events')
   const e = findInTenant(events, user, (x) => x.id === id)
   if (!e) return fail(EVENT_NOT_FOUND, 404)
@@ -219,15 +300,55 @@ interface Clean {
   endsAt: string | null
   allDay: boolean
   location: string
+  venueId: string | null
   onlineUrl: string
   budget: number | null
   actualCost: number | null
   description: string
   registrationOpen: boolean
+  capacity: number | null
+  questions: RegistrationQuestion[]
+  reminderHours: number
+  followUpDays: number
+}
+
+/** A new event's reminder / follow-up settings: the company's Settings › Automation defaults. */
+export function eventDefaultsOf(companyId: string): { reminderHours: number; followUpDays: number } {
+  const r = automationRulesFor(companyId) as Partial<AutomationRules>
+  return { reminderHours: r.eventReminderHours ?? DEFAULT_AUTOMATION_RULES.eventReminderHours, followUpDays: r.eventFollowUpDays ?? DEFAULT_AUTOMATION_RULES.eventFollowUpDays }
+}
+
+const QUESTION_TYPES: QuestionType[] = ['text', 'single', 'multi']
+export const MAX_QUESTIONS = 20
+
+/** Custom registration questions: ids kept (answers are keyed by them), new ones get an id. */
+function cleanQuestions(raw: unknown, existing: RegistrationQuestion[]): RegistrationQuestion[] | string {
+  if (raw === undefined || raw === null) return existing
+  if (!Array.isArray(raw)) return 'Questions must be a list.'
+  if (raw.length > MAX_QUESTIONS) return `Keep registration questions under ${MAX_QUESTIONS}.`
+  const out: RegistrationQuestion[] = []
+  for (const [i, q] of raw.entries()) {
+    const v = (q ?? {}) as Partial<RegistrationQuestion>
+    const label = str(v.label)
+    if (label.length < 2 || label.length > 255) return `Question ${i + 1}: write the question (2–255 characters).`
+    const type = (v.type ?? 'text') as QuestionType
+    if (!QUESTION_TYPES.includes(type)) return `Question ${i + 1}: type is text, single or multi.`
+    const options = Array.isArray(v.options) ? [...new Set(v.options.map((o) => str(o)).filter(Boolean))] : []
+    if (type !== 'text' && (options.length < 2 || options.length > 20)) return `Question ${i + 1}: give 2–20 choices.`
+    if (options.some((o) => o.length > 120)) return `Question ${i + 1}: keep choices under 120 characters.`
+    const keep = typeof v.id === 'string' && /^q-[a-z0-9]{1,24}$/.test(v.id) && !out.some((x) => x.id === v.id) ? v.id : null
+    out.push({ id: keep ?? `q-${nextSeq()}`, label, type, options: type === 'text' ? [] : options, required: !!v.required })
+  }
+  return out
+}
+
+function wholeIn(v: unknown, min: number, max: number): number | null {
+  const n = Number(v)
+  return Number.isInteger(n) && n >= min && n <= max ? n : null
 }
 
 /** Validates a full set of event fields (create, or the current event merged with a PATCH). */
-function cleanEvent(companyId: string, v: Record<string, unknown>): Clean | string {
+function cleanEvent(companyId: string, v: Record<string, unknown>, currentVenueId: string | null = null): Clean | string {
   const name = str(v.name)
   if (name.length < 2 || name.length > 255) return 'Give the event a name (2–255 characters).'
   const type = v.type as EventRecord['type']
@@ -254,11 +375,33 @@ function cleanEvent(companyId: string, v: Record<string, unknown>): Clean | stri
   if (typeof budget === 'string') return budget
   const actualCost = money(v.actualCost, 'Actual cost')
   if (typeof actualCost === 'string') return actualCost
-  const location = str(v.location)
+  // Venue (venue library, optional): the company's active venue; an empty location is filled from it.
+  const venueId = v.venueId === null || v.venueId === undefined || v.venueId === '' ? null : String(v.venueId)
+  if (venueId) {
+    const problem = venuePickProblem(companyId, venueId, currentVenueId)
+    if (problem) return problem
+  }
+  const venue = venueId ? venueOf(companyId, venueId) : undefined
+  const location = str(v.location) || (venue ? venueLocation(venue) : '')
   if (location.length > 255) return 'Keep the location under 255 characters.'
   const description = str(v.description)
   if (description.length > 5000) return 'Keep the description under 5,000 characters.'
+  let capacity: number | null = null
+  if (v.capacity !== null && v.capacity !== undefined && v.capacity !== '') {
+    capacity = wholeIn(v.capacity, 1, 1_000_000)
+    if (capacity === null) return 'Capacity is a whole number of seats (1 or more), or empty for unlimited.'
+  }
+  const questions = cleanQuestions(v.questions, [])
+  if (typeof questions === 'string') return questions
+  const reminderHours = v.reminderHours === undefined || v.reminderHours === null ? eventDefaultsOf(companyId).reminderHours : wholeIn(v.reminderHours, 0, 336)
+  if (reminderHours === null) return 'Send the reminder 0–336 hours before the start (0 = no reminder).'
+  const followUpDays = v.followUpDays === undefined || v.followUpDays === null ? eventDefaultsOf(companyId).followUpDays : wholeIn(v.followUpDays, 0, 60)
+  if (followUpDays === null) return 'Follow-up tasks are due 0–60 days after the event.'
   return {
+    capacity,
+    questions,
+    reminderHours,
+    followUpDays,
     name,
     type,
     status,
@@ -267,6 +410,7 @@ function cleanEvent(companyId: string, v: Record<string, unknown>): Clean | stri
     endsAt,
     allDay,
     location,
+    venueId,
     onlineUrl,
     budget,
     actualCost,
@@ -325,6 +469,8 @@ export async function createEvent(user: User, input: EventInput): Promise<EventD
       ...clean,
       ownerId,
       registrationToken: newRegistrationToken(),
+      campaignId: null,
+      followUpTasksAt: null,
       createdBy: user.id,
       createdAt: now,
       updatedAt: now,
@@ -343,11 +489,15 @@ const FIELD_LABEL: Partial<Record<keyof Clean | 'ownerId', string>> = {
   status: 'Status',
   isOrganizer: 'Organizer',
   location: 'Location',
+  venueId: 'Venue',
   onlineUrl: 'Online link',
   budget: 'Budget',
   actualCost: 'Actual cost',
   description: 'Description',
   registrationOpen: 'Registration',
+  capacity: 'Capacity',
+  reminderHours: 'Reminder (hours before)',
+  followUpDays: 'Follow-up tasks (days after)',
   ownerId: 'Owner',
 }
 
@@ -358,6 +508,7 @@ function show(key: string, v: unknown): string {
   if (key === 'registrationOpen') return v ? 'open' : 'closed'
   if (key === 'isOrganizer') return v ? 'we organize' : 'we attend'
   if (key === 'ownerId') return userName(String(v))
+  if (key === 'venueId') return eventVenues.find((x) => x.id === v)?.name ?? String(v)
   if (key === 'description') return 'updated'
   return String(v)
 }
@@ -377,14 +528,23 @@ export async function updateEvent(user: User, id: string, input: EventUpdateInpu
     startTime: local.startTime,
     endTime: local.endTime,
     location: e.location,
+    venueId: e.venueId ?? null,
     onlineUrl: e.onlineUrl,
     budget: e.budget,
     actualCost: e.actualCost,
     description: e.description,
     registrationOpen: e.registrationOpen,
+    capacity: e.capacity,
+    questions: e.questions,
+    reminderHours: e.reminderHours,
+    followUpDays: e.followUpDays,
   }
   for (const k of Object.keys(merged)) if (k in body) merged[k] = body[k]
-  const clean = cleanEvent(e.companyId, merged)
+  // Question ids are kept when the client sends them back (answers are keyed by them).
+  if (Array.isArray(body.questions)) {
+    merged.questions = (body.questions as Partial<RegistrationQuestion>[]).map((q) => ({ ...q, id: e.questions.some((x) => x.id === q?.id) ? q.id : undefined }))
+  }
+  const clean = cleanEvent(e.companyId, merged, e.venueId ?? null)
   if (typeof clean === 'string') return fail(clean, 422)
   if (clean.status !== e.status && (clean.status === 'cancelled' || e.status === 'cancelled') && !canManageEvent(user, e)) {
     return fail('Only the event owner or a marketing manager can cancel or reopen an event.', 403)
@@ -404,12 +564,24 @@ export async function updateEvent(user: User, id: string, input: EventUpdateInpu
     if (before !== after) changes.push(`${FIELD_LABEL[k]}: ${show(k, before)} → ${show(k, after)}`)
   }
   if (clean.startsAt !== e.startsAt || clean.endsAt !== e.endsAt || clean.allDay !== e.allDay) changes.push('Dates changed')
+  if (JSON.stringify(clean.questions) !== JSON.stringify(e.questions)) changes.push('Registration questions updated')
+  const wasCompleted = e.status === 'completed'
   Object.assign(e, clean, { ownerId, updatedAt: nowIso() })
   if (ownerId && !eventTeam.some((t) => t.eventId === e.id && t.companyId === e.companyId && t.userId === ownerId)) {
     eventTeam.push({ companyId: e.companyId, eventId: e.id, userId: ownerId, createdAt: nowIso() })
   }
   if (changes.length) log(e, user, changes.join(' · '))
+  // More seats (capacity raised) → the waitlist moves up.
+  promoteWaitlist(e, user)
+  // Completed → the post-event automation runs once (follow-up tasks; services/eventFollowUp.ts).
+  if (!wasCompleted && e.status === 'completed') for (const hook of completedHooks) hook(e, user)
   return delay(toDetail(e, user))
+}
+
+/** Called when an event becomes completed (registered by services/eventFollowUp.ts; avoids an import cycle). */
+const completedHooks: ((e: Tenant<EventRecord>, actor: User) => void)[] = []
+export function onEventCompleted(hook: (e: Tenant<EventRecord>, actor: User) => void): void {
+  if (!completedHooks.includes(hook)) completedHooks.push(hook)
 }
 
 /** DELETE /events/:id — soft delete: the event is cancelled (kept with its attendees and leads). */
@@ -472,7 +644,7 @@ function leadByEmail(companyId: string, email: string): string | null {
 }
 
 /** People who can own leads: active, with a Sales & CRM scope that owns records (not view / hidden). */
-const canOwnLeads = (u: User) => u.active !== false && ['full', 'team', 'own'].includes(scopeOf(u.role, 'sales'))
+export const canOwnLeads = (u: User) => u.active !== false && ['full', 'team', 'own'].includes(scopeOf(u.role, 'sales'))
 
 /**
  * Owner of a lead from an event: the event owner and team members in turn (round-robin by the
@@ -494,7 +666,7 @@ function eventLeadOwner(e: Tenant<EventRecord>): User {
   return fallback
 }
 
-interface CleanAttendee {
+export interface CleanAttendee {
   name: string
   companyName: string
   email: string
@@ -502,7 +674,7 @@ interface CleanAttendee {
   title: string
 }
 
-function cleanAttendee(companyId: string, input: Partial<AttendeeInput> | null | undefined, requireEmail = false): CleanAttendee | string {
+export function cleanAttendee(companyId: string, input: Partial<AttendeeInput> | null | undefined, requireEmail = false): CleanAttendee | string {
   const v = input ?? {}
   const name = str(v.name)
   if (name.length < 2 || name.length > 255) return 'Enter the attendee’s name (2–255 characters).'
@@ -529,24 +701,92 @@ interface Registered {
   limitReached: LeadLimitInfo | null
 }
 
+export interface SeatRequest {
+  ticketTypeId?: unknown
+  answers?: unknown
+}
+
+interface RegisterOptions {
+  /** Public page: a ticket must be picked (when the event has ticket types), on sale, and required questions answered. */
+  strict?: boolean
+  /** Booth capture: no seat check (the person is at the stand), checked in at once. */
+  capture?: boolean
+  /** Owner of a new lead (booth capture: the capturer when they can own leads). */
+  leadOwner?: User | null
+  note?: string
+}
+
+interface Seat {
+  ticket: Tenant<TicketTypeRecord> | null
+  answers: Record<string, string | string[]>
+}
+
+/**
+ * The ticket type and answers of a registration. Strict (public page): a ticket must be picked when
+ * the event has ticket types and be on sale (409 `ticket_not_on_sale`); required questions answered.
+ * Team adds / imports: the ticket defaults to the first type, the sales window and required answers
+ * aren't enforced (the team may not know them). Choice answers must be one of the options; unknown
+ * question ids are dropped.
+ */
+function seatOf(e: Tenant<EventRecord>, req: SeatRequest, strict: boolean): Seat {
+  const types = ticketTypesOf(e)
+  let ticket: Tenant<TicketTypeRecord> | null = null
+  const wanted = typeof req.ticketTypeId === 'string' ? req.ticketTypeId.trim() : ''
+  if (wanted) {
+    ticket = types.find((t) => t.id === wanted) ?? null
+    if (!ticket) throw new CodedApiError('That ticket type doesn’t exist for this event.', 422, 'invalid_ticket')
+  } else if (types.length) {
+    if (strict) throw new CodedApiError('Pick a ticket.', 422, 'invalid_registration')
+    ticket = types[0]
+  }
+  if (strict && ticket && !onSale(ticket, e.companyId)) throw new CodedApiError(`${ticket.name} tickets aren’t on sale right now.`, 409, 'ticket_not_on_sale')
+  const raw = req.answers && typeof req.answers === 'object' && !Array.isArray(req.answers) ? (req.answers as Record<string, unknown>) : {}
+  const answers: Record<string, string | string[]> = {}
+  for (const q of e.questions) {
+    const v = raw[q.id]
+    if (q.type === 'multi') {
+      const list = Array.isArray(v) ? [...new Set(v.map((x) => str(x)).filter(Boolean))] : str(v) ? [str(v)] : []
+      if (list.some((x) => !q.options.includes(x))) throw new CodedApiError(`“${q.label}”: pick from the listed choices.`, 422, 'invalid_registration')
+      if (list.length) answers[q.id] = list
+    } else {
+      const text = str(v)
+      if (text.length > 1000) throw new CodedApiError(`“${q.label}”: keep the answer under 1,000 characters.`, 422, 'invalid_registration')
+      if (q.type === 'single' && text && !q.options.includes(text)) throw new CodedApiError(`“${q.label}”: pick one of the listed choices.`, 422, 'invalid_registration')
+      if (text) answers[q.id] = text
+    }
+    if (strict && q.required && !answers[q.id]) throw new CodedApiError(`Answer “${q.label}”.`, 422, 'invalid_registration')
+  }
+  return { ticket, answers }
+}
+
+/** Is there a seat for this ticket type now (event capacity and the ticket's own)? */
+function hasSeat(e: Tenant<EventRecord>, ticket: TicketTypeRecord | null): boolean {
+  const left = remainingFor(e, ticket)
+  return left === null || left > 0
+}
+
 /**
  * Saves an attendee and applies the lead rule:
  *  - an existing lead of the company with the same email → linked (no duplicate), an activity is logged on it;
  *  - otherwise a new lead: source = the company's Event source, source detail = event name, event_id,
  *    owner = event owner / team round-robin;
  *  - the plan's leads + contacts limit (402 LIMIT_REACHED) → the attendee is still saved, without a lead.
+ * Seats: the event's capacity and the ticket type's; full → the attendee joins the WAITLIST (still a lead).
+ * Each attendee gets an unguessable ticket code and survey token; a confirmation (or waitlist) email is logged.
  * `actor` is the team member who added it (null for the public page).
  */
-function register(e: Tenant<EventRecord>, a: CleanAttendee, actor: User | null, source: AttendeeSource, sourceDetail: string): Registered {
+export function register(e: Tenant<EventRecord>, a: CleanAttendee, actor: User | null, source: AttendeeSource, sourceDetail: string, req: SeatRequest = {}, opts: RegisterOptions = {}): Registered {
   const co = e.companyId
-  if (a.email && attendeesOf(e).some((x) => x.email === a.email)) {
+  if (a.email && attendeesOf(e).some((x) => x.status !== 'cancelled' && x.email === a.email)) {
     throw new CodedApiError(`${a.email} is already registered for ${e.name}.`, 409, 'already_registered')
   }
+  const seat = opts.capture ? { ticket: null, answers: {} } : seatOf(e, req, !!opts.strict)
+  const status: AttendeeStatus = opts.capture || hasSeat(e, seat.ticket) ? 'registered' : 'waitlisted'
   const now = nowIso()
   let leadId = leadByEmail(co, a.email)
   let outcome: LeadOutcome = leadId ? 'linked' : 'created'
   let limitReached: LeadLimitInfo | null = null
-  const owner = leadId ? null : eventLeadOwner(e)
+  const owner = leadId ? null : (opts.leadOwner ?? eventLeadOwner(e))
   if (!leadId) {
     const sourceKey = eventSourceKey(co)
     if (!sourceKey) throw new CodedApiError(EVENT_SOURCE_MISSING, 422, 'event_source_missing')
@@ -561,7 +801,7 @@ function register(e: Tenant<EventRecord>, a: CleanAttendee, actor: User | null, 
         contacts: [{ name: a.name, title: a.title, mobile: a.mobile, email: a.email, isDecisionMaker: false }],
         ownerId: owner!.id,
         nextFollowUpDate: null,
-        note: `Registered at ${e.name}${source === 'public' ? ' (public registration page)' : ''}.`,
+        note: opts.note ?? `Registered at ${e.name}${source === 'public' ? ' (public registration page)' : ''}.`,
       })
       ;(lead as { eventId?: string | null }).eventId = e.id
       leadId = lead.id
@@ -579,7 +819,7 @@ function register(e: Tenant<EventRecord>, a: CleanAttendee, actor: User | null, 
       id: `A-EV-${nextSeq()}`,
       leadId: lead.id,
       type: 'system',
-      summary: `${a.name} registered at ${e.name} (${EVENT_TYPE_LABEL[e.type].toLowerCase()}).`,
+      summary: opts.capture ? `${a.name} was captured at the ${e.name} booth.` : `${a.name} registered at ${e.name} (${EVENT_TYPE_LABEL[e.type].toLowerCase()}).`,
       userId: actor?.id ?? e.ownerId ?? lead.ownerId,
       at: now,
     }
@@ -595,24 +835,79 @@ function register(e: Tenant<EventRecord>, a: CleanAttendee, actor: User | null, 
     source,
     sourceDetail,
     registeredAt: now,
-    checkedInAt: null,
+    checkedInAt: opts.capture ? now : null,
+    checkedInBy: opts.capture ? (actor?.id ?? null) : null,
     createdBy: actor?.id ?? null,
+    status,
+    ticketTypeId: seat.ticket?.id ?? null,
+    answers: seat.answers,
+    waitlistedAt: status === 'waitlisted' ? now : null,
+    cancelledAt: null,
+    ticketCode: newTicketCode(),
+    surveyToken: newSurveyToken(),
+    reminderSentAt: null,
   }
   eventAttendees.push(attendee)
+  if (!opts.capture) {
+    sendEventEmail(
+      e,
+      attendee,
+      status === 'waitlisted' ? 'waitlisted' : 'confirmation',
+      status === 'waitlisted' ? `You’re on the waitlist for ${e.name} (#${waitlistPositionOf(attendee)})` : `Your ticket for ${e.name}`,
+    )
+  }
   return { attendee, outcome, limitReached }
 }
 
+/**
+ * Logs a transactional email of the Events module (the mock sends nothing). It counts against the
+ * plan's emailsPerMonth like any send; no address or no allowance left → logged as skipped.
+ */
+export function sendEventEmail(e: Tenant<EventRecord>, a: Tenant<AttendeeRecord>, kind: EventEmailKind, subject: string): 'sent' | 'skipped' {
+  const co = e.companyId
+  const skipReason = !a.email ? 'no_email' : remainingCapacity(co, 'emailsPerMonth') <= 0 ? 'limit' : null
+  if (!skipReason) recordUsage(co, 'emailsPerMonth')
+  eventEmails.push({ companyId: co, id: `EEM-${nextSeq()}`, eventId: e.id, attendeeId: a.id, kind, to: a.email, subject, status: skipReason ? 'skipped' : 'sent', skipReason, at: nowIso() })
+  return skipReason ? 'skipped' : 'sent'
+}
+
+/**
+ * Moves waitlisted people up while there are seats (first come, first served; a person whose ticket type
+ * is still full waits while others with room move up). Each promotion: an email to the attendee and a
+ * notification to the event owner. Returns the promoted attendees.
+ */
+export function promoteWaitlist(e: Tenant<EventRecord>, actor: User | null): Tenant<AttendeeRecord>[] {
+  if (e.status === 'cancelled' || e.status === 'completed') return []
+  const promoted: Tenant<AttendeeRecord>[] = []
+  const queue = attendeesOf(e)
+    .filter((a) => a.status === 'waitlisted')
+    .sort((x, y) => (x.waitlistedAt ?? '').localeCompare(y.waitlistedAt ?? '') || x.id.localeCompare(y.id))
+  for (const a of queue) {
+    const ticket = a.ticketTypeId ? (ticketTypesOf(e).find((t) => t.id === a.ticketTypeId) ?? null) : null
+    if (!hasSeat(e, ticket)) continue
+    a.status = 'registered'
+    promoted.push(a)
+    sendEventEmail(e, a, 'promoted', `A seat opened up: you’re registered for ${e.name}`)
+    if (e.ownerId) {
+      pushNotification({ companyId: e.companyId, userId: e.ownerId, type: 'assignment', title: `${a.name} moved off the waitlist`, body: e.name, link: `/events/${encodeURIComponent(e.id)}?tab=attendees` })
+    }
+    log(e, actor, `${a.name} moved from the waitlist to registered`)
+  }
+  return promoted
+}
+
 function outcomeMessage(r: Registered, e: Tenant<EventRecord>): string {
-  if (r.outcome === 'created') return `${r.attendee.name} is registered for ${e.name} and added as a new lead (source Event).`
-  if (r.outcome === 'linked') return `${r.attendee.name} is registered for ${e.name} and linked to the existing lead with the same email.`
-  return `${r.attendee.name} is registered for ${e.name}, but no lead was created: your plan’s leads and contacts limit is reached.`
+  const where = r.attendee.status === 'waitlisted' ? `is on the waitlist for ${e.name} (#${waitlistPositionOf(r.attendee)})` : `is registered for ${e.name}`
+  if (r.outcome === 'created') return `${r.attendee.name} ${where} and added as a new lead (source Event).`
+  if (r.outcome === 'linked') return `${r.attendee.name} ${where} and linked to the existing lead with the same email.`
+  return `${r.attendee.name} ${where}, but no lead was created: your plan’s leads and contacts limit is reached.`
 }
 
 function registrationResult(r: Registered, e: Tenant<EventRecord>, viewer: User): RegistrationResult {
-  return { attendee: toAttendee(r.attendee, viewer), outcome: r.outcome, leadId: r.attendee.leadId, limitReached: r.limitReached, message: outcomeMessage(r, e) }
+  return { attendee: toAttendee(r.attendee, viewer), status: r.attendee.status, outcome: r.outcome, leadId: r.attendee.leadId, limitReached: r.limitReached, message: outcomeMessage(r, e) }
 }
 
-function assertOpenForAttendees(e: Tenant<EventRecord>): void {
+export function assertOpenForAttendees(e: Tenant<EventRecord>): void {
   if (e.status === 'cancelled') throw new CodedApiError('This event is cancelled; reopen it to add attendees.', 409, 'event_cancelled')
 }
 
@@ -623,38 +918,63 @@ export async function listAttendees(user: User, id: string): Promise<Attendee[]>
   return delay(attendeesOf(e).sort((a, b) => b.registeredAt.localeCompare(a.registeredAt)).map((a) => toAttendee(a, user)))
 }
 
-/** POST /events/:id/attendees — a team member registers someone. */
+/** POST /events/:id/attendees — a team member registers someone (full → waitlist). */
 export async function addAttendee(user: User, id: string, input: AttendeeInput): Promise<RegistrationResult> {
   const e = await eventFor(user, id, 'edit')
   assertOpenForAttendees(e)
   const a = cleanAttendee(e.companyId, input)
   if (typeof a === 'string') return fail(a, 422)
-  const r = register(e, a, user, 'manual', `Added by ${user.name}`)
-  log(e, user, `Registered ${a.name}${r.outcome === 'created' ? ' (new lead)' : r.outcome === 'linked' ? ' (existing lead)' : ' (no lead: plan limit)'}`)
+  const r = register(e, a, user, 'manual', `Added by ${user.name}`, input ?? {})
+  log(e, user, `Registered ${a.name}${r.attendee.status === 'waitlisted' ? ' on the waitlist' : ''}${r.outcome === 'created' ? ' (new lead)' : r.outcome === 'linked' ? ' (existing lead)' : ' (no lead: plan limit)'}`)
   return delay(registrationResult(r, e, user))
 }
 
-/** PATCH /events/:id/attendees/:attendeeId — details only (the lead keeps its own data). */
+/** PATCH /events/:id/attendees/:attendeeId — details and answers (the lead keeps its own data; the ticket type is fixed). */
 export async function updateAttendee(user: User, id: string, attendeeId: string, input: Partial<AttendeeInput>): Promise<Attendee> {
   const e = await eventFor(user, id, 'edit')
   const a = await attendeeFor(user, e, attendeeId)
   const merged = { name: a.name, companyName: a.companyName, email: a.email, mobile: a.mobile, title: a.title, ...(input ?? {}) }
   const clean = cleanAttendee(e.companyId, merged)
   if (typeof clean === 'string') return fail(clean, 422)
-  if (clean.email && clean.email !== a.email && attendeesOf(e).some((x) => x.id !== a.id && x.email === clean.email)) {
+  if (clean.email && clean.email !== a.email && attendeesOf(e).some((x) => x.id !== a.id && x.status !== 'cancelled' && x.email === clean.email)) {
     return fail(`${clean.email} is already registered for ${e.name}.`, 409)
   }
-  Object.assign(a, clean)
+  const answers = input?.answers !== undefined ? seatOf(e, { ticketTypeId: a.ticketTypeId, answers: input.answers }, false).answers : a.answers
+  Object.assign(a, clean, { answers })
   return delay(toAttendee(a, user))
 }
 
-/** DELETE /events/:id/attendees/:attendeeId — removes the registration; a lead it created stays. */
+/** DELETE /events/:id/attendees/:attendeeId — removes the registration (a lead it created stays); a freed seat goes to the waitlist. */
 export async function removeAttendee(user: User, id: string, attendeeId: string): Promise<{ removed: true }> {
   const e = await eventFor(user, id, 'edit')
   const a = await attendeeFor(user, e, attendeeId)
   eventAttendees.splice(eventAttendees.indexOf(a), 1)
   log(e, user, `Removed ${a.name} from the attendees${a.leadId ? ' (the lead stays)' : ''}`)
+  if (a.status === 'registered') promoteWaitlist(e, user)
   return delay({ removed: true as const })
+}
+
+/**
+ * POST /events/:id/attendees/:attendeeId/cancel — cancels a registration (kept, status cancelled, the lead
+ * stays). A freed seat promotes the first waitlisted person automatically (email + owner notification).
+ */
+export async function cancelRegistration(user: User, id: string, attendeeId: string): Promise<CancelRegistrationResult> {
+  const e = await eventFor(user, id, 'edit')
+  const a = await attendeeFor(user, e, attendeeId)
+  if (a.status === 'cancelled') return fail(`${a.name}’s registration is already cancelled.`, 409)
+  const hadSeat = a.status === 'registered'
+  a.status = 'cancelled'
+  a.cancelledAt = nowIso()
+  a.checkedInAt = null
+  a.checkedInBy = null
+  log(e, user, `Cancelled ${a.name}’s registration`)
+  const promoted = hadSeat ? promoteWaitlist(e, user) : []
+  return delay({ attendee: toAttendee(a, user), promoted: promoted.map((p) => toAttendee(p, user)) })
+}
+
+export function assertSeated(a: Tenant<AttendeeRecord>): void {
+  if (a.status === 'waitlisted') throw new CodedApiError(`${a.name} is on the waitlist, not registered yet.`, 409, 'not_registered')
+  if (a.status === 'cancelled') throw new CodedApiError(`${a.name}’s registration was cancelled.`, 409, 'not_registered')
 }
 
 /** POST /events/:id/attendees/:attendeeId/check-in { undo? } */
@@ -665,8 +985,11 @@ export async function checkIn(user: User, id: string, attendeeId: string, input:
   if (input?.undo) {
     if (a.checkedInAt) log(e, user, `Undid the check-in of ${a.name}`)
     a.checkedInAt = null
+    a.checkedInBy = null
   } else if (!a.checkedInAt) {
+    assertSeated(a)
     a.checkedInAt = nowIso()
+    a.checkedInBy = user.id
     log(e, user, `Checked in ${a.name}`)
   }
   return delay(toAttendee(a, user))
@@ -712,7 +1035,11 @@ export async function importAttendees(user: User, id: string, input: { rows?: At
 
 /* ---------------- Stats ---------------- */
 
-/** GET /events/:id/stats — attendees, leads created / linked, deals won and their value, cost per lead. */
+/**
+ * GET /events/:id/stats — attendees, leads created / linked, deals won and their value, cost per lead.
+ * THE event stats / ROI function: ROI = (won value + sponsorship income − actual cost) / actual cost, where
+ * sponsorship income (signed + paid sponsor deals) only exists for events the company organizes.
+ */
 export function statsOf(e: Tenant<EventRecord>): EventStats {
   const co = e.companyId
   const atts = attendeesOf(e)
@@ -720,19 +1047,31 @@ export function statsOf(e: Tenant<EventRecord>): EventStats {
   const eventLeads = leadIds.map((id) => leads.find((l) => l.id === id && l.companyId === co)).filter((l) => !!l)
   const won = eventLeads.filter((l) => isWonStatus(co, l.status))
   const leadsCreated = atts.filter((a) => a.leadOutcome === 'created').length
+  const actual = eventActualCost(e)
+  const hasLines = eventBudgetLines.some((l) => l.eventId === e.id && l.companyId === co)
+  const wonValue = won.reduce((s, l) => s + l.value, 0)
+  // Organized events: signed + paid sponsor deals are income next to the won deals (attended events: none).
+  const sponsorshipIncome = e.isOrganizer ? sponsorshipIncomeOf(e).total : null
+  const cplCost = actual ?? e.budget
   return {
-    attendees: atts.length,
-    checkedIn: atts.filter((a) => a.checkedInAt).length,
+    attendees: atts.filter((a) => a.status === 'registered').length,
+    checkedIn: atts.filter((a) => a.status === 'registered' && a.checkedInAt).length,
     leadsCreated,
     leadsLinked: atts.filter((a) => a.leadOutcome === 'linked').length,
     leads: leadIds.length,
     dealsWon: won.length,
-    wonValue: won.reduce((s, l) => s + l.value, 0),
+    wonValue,
     pipelineValue: eventLeads.filter((l) => !isClosedStatus(co, l.status)).reduce((s, l) => s + l.value, 0),
     budget: e.budget,
-    actualCost: e.actualCost,
-    costPerLead: e.budget !== null && leadsCreated > 0 ? Math.round((e.budget / leadsCreated) * 100) / 100 : null,
+    actualCost: actual,
+    // Same cost as ROI and cost per won deal: the actual cost once known, else the planned budget.
+    costPerLead: cplCost !== null && leadsCreated > 0 ? Math.round((cplCost / leadsCreated) * 100) / 100 : null,
+    costPerLeadBasis: cplCost === null ? null : actual !== null ? 'actual' : 'budget',
     currency: currencyOf(co),
+    actualCostSource: hasLines ? 'budget_lines' : 'event',
+    sponsorshipIncome,
+    roi: actual ? Math.round(((wonValue + (sponsorshipIncome ?? 0) - actual) / actual) * 1000) / 1000 : null,
+    costPerWonDeal: actual !== null && won.length ? Math.round((actual / won.length) * 100) / 100 : null,
   }
 }
 
@@ -747,7 +1086,7 @@ export async function getEventStats(user: User, id: string): Promise<EventStats>
  * The event behind a public token. Unknown token, a company without the Events module (plan or
  * platform override) or a deleted workspace → 404, the same answer, so tokens can't be probed.
  */
-function publicEvent(token: string): Tenant<EventRecord> {
+export function publicEventByToken(token: string): Tenant<EventRecord> {
   const e = token ? events.find((x) => x.registrationToken === token) : undefined
   const sub = e ? subscriptionOf(e.companyId) : undefined
   if (!e || !eventsEnabledIn(e.companyId) || !sub || sub.status === 'deleted' || companyById(e.companyId)?.status === 'suspended') {
@@ -766,12 +1105,14 @@ function closedReason(e: Tenant<EventRecord>): string | null {
 }
 
 export async function getPublicEvent(token: string): Promise<PublicEventInfo> {
-  const e = publicEvent(token)
+  const e = publicEventByToken(token)
   const reason = closedReason(e)
   const c = companyById(e.companyId)
   return delay({
     name: e.name,
     type: e.type,
+    startsAt: e.startsAt,
+    endsAt: e.endsAt,
     ...localOf(e),
     timezone: tzOf(e.companyId),
     location: e.location,
@@ -781,6 +1122,10 @@ export async function getPublicEvent(token: string): Promise<PublicEventInfo> {
     registrationOpen: reason === null,
     closedReason: reason,
     country: c?.regional.country ?? 'AE',
+    agenda: publicAgendaOf(e),
+    remainingSeats: remainingSeats(e),
+    tickets: ticketTypesOf(e).map((t) => ({ id: t.id, name: t.name, price: t.price, currency: currencyOf(e.companyId), remaining: remainingFor(e, t), onSale: onSale(t, e.companyId) })),
+    questions: e.questions.map((q) => ({ ...q, options: [...q.options] })),
   })
 }
 
@@ -790,6 +1135,9 @@ function hitRateLimit(keys: string[]): void {
 }
 
 const PUBLIC_DONE = 'You’re registered. See you there!'
+const PUBLIC_WAITLIST = 'The event is full, so you’re on the waitlist. We’ll email you if a seat opens up.'
+/** Honeypot and already-registered emails get this answer (it never reveals who is registered). */
+const GENERIC: PublicRegistrationResult = { registered: true, message: PUBLIC_DONE + ' Your confirmation is on its way by email.', status: null, waitlistPosition: null, ticketCode: null }
 
 /**
  * POST /public/events/:token/register — the public page. Honeypot (`website` filled) → a fake success,
@@ -799,8 +1147,8 @@ const PUBLIC_DONE = 'You’re registered. See you there!'
 export async function publicRegister(token: string, input: PublicRegistrationInput | null, clientKey = 'anonymous'): Promise<PublicRegistrationResult> {
   await delay(null)
   const body = input ?? ({} as PublicRegistrationInput)
-  const e = publicEvent(token)
-  if (str(body.website)) return { registered: true, message: PUBLIC_DONE }
+  const e = publicEventByToken(token)
+  if (str(body.website)) return { ...GENERIC }
   const email = str(body.email).toLowerCase()
   hitRateLimit([`client:${e.id}:${clientKey || 'anonymous'}`, ...(EMAIL_RE.test(email) ? [`email:${e.id}:${email}`] : [])])
   const reason = closedReason(e)
@@ -808,10 +1156,11 @@ export async function publicRegister(token: string, input: PublicRegistrationInp
   const a = cleanAttendee(e.companyId, body, true)
   if (typeof a === 'string') throw new CodedApiError(a, 422, 'invalid_registration')
   // Already registered: the same success answer (the page never reveals who is registered).
-  if (attendeesOf(e).some((x) => x.email === a.email)) return { registered: true, message: PUBLIC_DONE }
-  const r = register(e, a, null, 'public', 'Public registration page')
-  log(e, null, `${a.name} registered on the public page${r.outcome === 'none' ? ' (no lead: plan limit)' : ''}`)
-  return { registered: true, message: PUBLIC_DONE }
+  if (attendeesOf(e).some((x) => x.status !== 'cancelled' && x.email === a.email)) return { ...GENERIC }
+  const r = register(e, a, null, 'public', 'Public registration page', { ticketTypeId: body.ticketTypeId, answers: body.answers }, { strict: true })
+  const waitlisted = r.attendee.status === 'waitlisted'
+  log(e, null, `${a.name} registered on the public page${waitlisted ? ' (waitlist)' : ''}${r.outcome === 'none' ? ' (no lead: plan limit)' : ''}`)
+  return { registered: true, message: waitlisted ? PUBLIC_WAITLIST : PUBLIC_DONE, status: r.attendee.status, waitlistPosition: waitlistPositionOf(r.attendee), ticketCode: r.attendee.ticketCode }
 }
 
 /** Tests: the event behind an id, regardless of access. */

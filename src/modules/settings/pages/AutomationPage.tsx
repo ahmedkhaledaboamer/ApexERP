@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { Controller, useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Bot, CalendarClock, ListTodo, RotateCcw, Users } from 'lucide-react'
+import { Bot, CalendarClock, ListTodo, RotateCcw, Ticket, Users } from 'lucide-react'
 import { DEFAULT_AUTOMATION_RULES, type AutomationRules } from '@/modules/settings/types'
 import { useAutomationRules, useResetAutomationRules, useSaveAutomationRules } from '@/shared/hooks/useAutomationRules'
 import { useLookups } from '@/shared/hooks/useLookups'
@@ -21,6 +21,7 @@ const GROUP_ICON: Record<RuleGroup['id'], ReactNode> = {
   journey: <CalendarClock />,
   customers: <Users />,
   tasks: <ListTodo />,
+  events: <Ticket />,
 }
 
 /** Settings > Automation: every number the lead-journey automation uses. Edits are audited by the server. */

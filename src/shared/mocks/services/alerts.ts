@@ -15,6 +15,7 @@ import { findInTenant, scoped, tenantOf, type Tenant } from '@/shared/mocks/tena
 import { isOverdue, myTasks, overdueTasks, subjectOf } from '@/shared/mocks/selectors/tasks'
 import { runTaskReminders } from '@/shared/mocks/services/taskReminders'
 import { runCreativeReminders } from '@/shared/mocks/services/creativeReminders'
+import { runBoothFollowUps } from '@/shared/mocks/services/eventSections'
 import { delay, fail, ownerName } from '@/shared/mocks/server'
 import { visibleLeads } from '@/shared/mocks/services/leads'
 import { statusLabelOf } from '@/shared/mocks/lookupChecks'
@@ -207,6 +208,8 @@ const STORED_TYPE: Record<StoredNotification['type'], AlertType> = {
   'marketing-due': 'marketing',
   'marketing-overdue': 'marketing',
   marketing: 'marketing',
+  // Overdue booth follow-up (services/eventSections.ts runBoothFollowUps), once per capture.
+  'event-follow-up': 'follow-up',
 }
 const STORED_SEVERITY: Record<StoredNotification['type'], AlertSeverity> = {
   won: 'info',
@@ -219,6 +222,7 @@ const STORED_SEVERITY: Record<StoredNotification['type'], AlertSeverity> = {
   'marketing-due': 'warning',
   'marketing-overdue': 'danger',
   marketing: 'info',
+  'event-follow-up': 'warning',
 }
 
 function toAlert(n: StoredNotification): Alert {
@@ -246,6 +250,7 @@ const storedFor = (user: User) => scoped(notifications, user).filter((n) => n.us
 export function alertsFor(user: User, now: Date = clockNow()): Alert[] {
   runTaskReminders(tenantOf(user), now)
   runCreativeReminders(tenantOf(user), now)
+  runBoothFollowUps(tenantOf(user), now)
   return [...salesAlerts(user, now), ...taskAlerts(user, now), ...storedFor(user).map(toAlert)].sort((a, b) => b.at.localeCompare(a.at))
 }
 

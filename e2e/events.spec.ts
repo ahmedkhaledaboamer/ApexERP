@@ -79,7 +79,7 @@ test('event lifecycle: create, team, public registration → lead, check-in, sta
   const results = page.getByRole('region', { name: 'Event results' })
   await expect(results.getByText('1 checked in')).toBeVisible()
   await expect(results.getByText('1 new · 0 existing linked')).toBeVisible()
-  await expect(results.getByText(/Budget .*20,000 ÷ 1 new leads/)).toBeVisible()
+  await expect(results.getByText(/Budget .*20,000 ÷ 1 new lead$/)).toBeVisible()
 
   // A task linked to the event.
   await page.getByRole('tab', { name: 'Tasks' }).click()

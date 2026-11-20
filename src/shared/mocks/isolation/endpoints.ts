@@ -17,6 +17,10 @@ import { APEX, ADMIN, api, adminToken, other, platformToken, userById, type Co }
 import { contactInputMapper, importRowMapper, leadInputMapper } from '@/shared/api/mappers'
 import { CREATIVE_ENDPOINTS } from './creativeEndpoints'
 import { GROWTH_ENDPOINTS } from './growthEndpoints'
+import { EVENTS_ADVANCED_ENDPOINTS } from './eventsEndpoints'
+import { EVENT_SECTIONS_ENDPOINTS } from './eventSectionsEndpoints'
+import { SPONSORS_LOGISTICS_ENDPOINTS } from './sponsorsLogisticsEndpoints'
+import { EVENT_LIBRARY_ENDPOINTS } from './eventLibraryEndpoints'
 
 /**
  * THE COVERAGE TABLE of the isolation suite: one entry per registered MSW handler (method + path as
@@ -537,6 +541,13 @@ export const ENDPOINTS: Endpoint[] = [
   { method: 'PATCH', path: '/events/:id/attendees/:attendeeId', kind: 'company-item', module: 'events', sample: (co) => ({ params: { id: attendee(co).eventId, attendeeId: attendee(co).id }, body: { title: 'Isolation title' } }) },
   { method: 'DELETE', path: '/events/:id/attendees/:attendeeId', kind: 'company-item', module: 'events', sample: (co) => ({ params: { id: attendee(co).eventId, attendeeId: attendee(co).id } }) },
   { method: 'POST', path: '/events/:id/attendees/:attendeeId/check-in', kind: 'company-item', module: 'events', sample: (co) => ({ params: { id: attendee(co).eventId, attendeeId: attendee(co).id }, body: { undo: true } }) },
+  /* ---- events › advanced features (isolation/eventsEndpoints.ts) ---- */
+  ...EVENTS_ADVANCED_ENDPOINTS,
+  /* ---- events › cross-event sections (isolation/eventSectionsEndpoints.ts) ---- */
+  ...EVENT_SECTIONS_ENDPOINTS,
+  ...SPONSORS_LOGISTICS_ENDPOINTS,
+  /* ---- events › speakers directory, venues, vendors (isolation/eventLibraryEndpoints.ts) ---- */
+  ...EVENT_LIBRARY_ENDPOINTS,
   { method: 'GET', path: '/public/events/:token', kind: 'public', module: 'events', reason: PUBLIC_EVENT },
   { method: 'POST', path: '/public/events/:token/register', kind: 'public', module: 'events', reason: PUBLIC_EVENT + ' Rate-limited per client and email, honeypot; the attendee and its lead land in the event’s company only.' },
 

@@ -131,8 +131,11 @@ export const asAdmin = (co: Co, method: string, path: string, opts?: ApiOptions)
 
 /* ---------------- Secrets guard (§8) ---------------- */
 
-/** Keys that must never appear in a response. `token` is allowed only in a session payload (auth responses). */
-const SECRET_KEY = /^(password|passwordHash|hash|salt|secret|clientSecret|apiSecret|privateKey|accessToken|refreshToken|apiKey|cvc|cvv|cardNumber|pan|otpSecret|totpSecret|recoveryCodes?)$/i
+/**
+ * Keys that must never appear in a response. `token` is allowed only in a session payload (auth responses).
+ * Identity document numbers (visa / passport) are served masked only, under another key (`visa_number_masked`).
+ */
+const SECRET_KEY = /^(password|passwordHash|hash|salt|secret|clientSecret|apiSecret|privateKey|accessToken|refreshToken|apiKey|cvc|cvv|cardNumber|pan|otpSecret|totpSecret|recoveryCodes?|visaNumber|passportNumber|documentNumber)$/i
 /** The key without underscores, so snake_case keys (password_hash, recovery_codes, two_factor_secret…) are checked too. */
 const bare = (k: string) => k.replace(/_/g, '')
 const SESSION_TOKEN_KEY = /^token$/i

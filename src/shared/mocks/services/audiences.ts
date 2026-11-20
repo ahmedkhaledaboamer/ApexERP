@@ -12,7 +12,7 @@ import type {
   AudienceUpdateInput,
   StatusType,
 } from '@/modules/marketing/growth/types'
-import { EMPTY_RULES, STATUS_TYPES } from '@/modules/marketing/growth/types'
+import { EMPTY_RULES, EVENT_PRESENCE, STATUS_TYPES, type EventPresence } from '@/modules/marketing/growth/types'
 import { isRealIsoDate, zonedParts } from '@/shared/lib/zonedTime'
 import { activities, contacts, leads, users } from '@/shared/mocks/db'
 import { campaigns } from '@/shared/mocks/data/marketing'
@@ -73,6 +73,9 @@ export function rulesOf(co: string, raw: Partial<AudienceRules> | undefined): Au
   if (Object.values(dates).some((d) => d === false)) return 'Dates use the format YYYY-MM-DD.'
   if (dates.createdFrom && dates.createdTo && dates.createdTo < dates.createdFrom) return '“Created to” must be on or after “created from”.'
   if (r.hasEmail !== undefined && typeof r.hasEmail !== 'boolean') return 'hasEmail is true or false.'
+  const eventPresence = (r.eventPresence ?? 'any') as EventPresence
+  if (!EVENT_PRESENCE.includes(eventPresence)) return 'Event presence is any, attended or no_show.'
+  if (eventPresence !== 'any' && !lists.eventIds!.length) return 'Pick the event(s) for attended / no-show.'
   return {
     ...EMPTY_RULES,
     ...(lists as Record<string, string[]>),
@@ -82,6 +85,7 @@ export function rulesOf(co: string, raw: Partial<AudienceRules> | undefined): Au
     lastActivityBefore: dates.lastActivityBefore || null,
     lastActivityAfter: dates.lastActivityAfter || null,
     hasEmail: r.hasEmail === true,
+    eventPresence,
   }
 }
 
@@ -93,7 +97,14 @@ export function matchRules(co: string, rules: AudienceRules): Tenant<Lead>[] {
   const dayOf = (iso: string) => zonedParts(iso, tz).date
   const eventLeads = new Set<string>()
   if (rules.eventIds.length) {
-    for (const a of eventAttendees) if (a.companyId === co && a.leadId && rules.eventIds.includes(a.eventId)) eventLeads.add(a.leadId)
+    const presence = rules.eventPresence ?? 'any'
+    const rows = eventAttendees.filter((a) => a.companyId === co && a.leadId && rules.eventIds.includes(a.eventId))
+    const attended = new Set(rows.filter((a) => a.status === 'registered' && a.checkedInAt).map((a) => a.leadId!))
+    for (const a of rows) {
+      if (presence === 'any') eventLeads.add(a.leadId!)
+      else if (presence === 'attended' && attended.has(a.leadId!)) eventLeads.add(a.leadId!)
+      else if (presence === 'no_show' && a.status === 'registered' && !a.checkedInAt && !attended.has(a.leadId!)) eventLeads.add(a.leadId!)
+    }
   }
   let lastActivity: Map<string, string> | null = null
   if (rules.lastActivityAfter || rules.lastActivityBefore) {
@@ -116,7 +127,9 @@ export function matchRules(co: string, rules: AudienceRules): Tenant<Lead>[] {
       }
       if (rules.sources.length && !rules.sources.includes(l.sourceType)) return false
       if (rules.campaignIds.length && !rules.campaignIds.includes(l.campaignId ?? '')) return false
-      if (rules.eventIds.length && !rules.eventIds.includes(l.eventId ?? '') && !eventLeads.has(l.id)) return false
+      // Attended / no-show are decided by the attendee rows only (a lead's event_id alone says neither).
+      if (rules.eventIds.length && (rules.eventPresence ?? 'any') === 'any' && !rules.eventIds.includes(l.eventId ?? '') && !eventLeads.has(l.id)) return false
+      if (rules.eventIds.length && (rules.eventPresence ?? 'any') !== 'any' && !eventLeads.has(l.id)) return false
       if (rules.ownerIds.length && !rules.ownerIds.includes(l.ownerId)) return false
       const created = dayOf(l.createdAt)
       if (rules.createdFrom && created < rules.createdFrom) return false

@@ -632,6 +632,8 @@ export function runLifecycleForAll(until = nowMs()): void {
 const MODULE_PATHS: [RegExp, PlanModule][] = [
   [/^\/hr(\/|$)/, 'hr'],
   [/^\/events(\/|$)/, 'events'],
+  [/^\/event-templates(\/|$)/, 'events'],
+  [/^\/event-(speakers|venues|vendors)(\/|$)/, 'events'],
   [/^\/marketing(\/|$)/, 'marketing'],
   [/^\/finance(\/|$)/, 'accounting'],
   [/^\/integrations(\/|$)/, 'integrations'],

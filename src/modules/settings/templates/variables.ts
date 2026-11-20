@@ -3,7 +3,7 @@
  * editor, the server-side validation and every renderer (follow-ups, quotations, AI agent).
  */
 
-export type VariableGroupId = 'lead' | 'agent' | 'company' | 'quotation' | 'date'
+export type VariableGroupId = 'lead' | 'agent' | 'company' | 'quotation' | 'event' | 'date'
 
 export interface TemplateVariable {
   /** Full key, e.g. `lead.company`. */
@@ -68,6 +68,14 @@ export const VARIABLE_GROUPS: VariableGroup[] = [
     ['total', 'Total', 'Grand total including VAT.', '48,300'],
     ['validUntil', 'Valid until', 'Last day the quotation is valid.', '17 Dec 2026'],
     ['link', 'Link', 'Link to view the quotation online.', 'https://yourcompany.com/q/QT-2026-0012'],
+  ]),
+  group('event', 'Event', [
+    // Filled when a bulk email is linked to an event (Events › Invite an audience / Send follow-up).
+    ['name', 'Name', 'The event’s name.', 'GITEX Global 2027'],
+    ['date', 'Date', 'When the event takes place (company time).', 'Mon 12 Oct 2027 · 09:00–17:00'],
+    ['location', 'Location', 'Where it takes place (or “Online”).', 'Dubai World Trade Centre'],
+    ['registration_url', 'Registration link', 'The event’s public registration page.', 'https://yourcompany.com/e/abcdefghijklmnopqrst'],
+    ['survey_url', 'Feedback survey link', 'The recipient’s own feedback survey (attendees only).', 'https://yourcompany.com/s/abcdefghijklmnopqrstuvwx'],
   ]),
   group('date', 'Date', [['today', 'Today', 'Today’s date when the message is sent.', '17 Nov 2026']]),
 ]

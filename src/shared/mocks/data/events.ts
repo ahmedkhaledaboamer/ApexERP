@@ -1,4 +1,4 @@
-import type { AttendeeSource, EventStatus, EventType, LeadOutcome } from '@/modules/events/types'
+import type { AttendeeSource, AttendeeStatus, EventStatus, EventType, LeadOutcome, RegistrationQuestion } from '@/modules/events/types'
 import { contacts, leads } from '@/shared/mocks/db'
 import { APEX_ID, CREST_ID, companyById } from '@/shared/mocks/data/tenancy'
 import { registerArray } from '@/shared/mocks/persist/registry'
@@ -22,6 +22,8 @@ export interface EventRecord {
   endsAt: string | null
   allDay: boolean
   location: string
+  /** The venue from the company's venue library (optional); `location` stays the free-text fallback / override. */
+  venueId?: string | null
   onlineUrl: string
   budget: number | null
   actualCost: number | null
@@ -30,6 +32,18 @@ export interface EventRecord {
   registrationOpen: boolean
   /** Public registration link token (/e/:token); letters only, globally unique. */
   registrationToken: string
+  /** Overall capacity (registered attendees); null = unlimited. Full → new registrations join the waitlist. */
+  capacity: number | null
+  /** Custom registration questions (answers are stored on the attendee). */
+  questions: RegistrationQuestion[]
+  /** Reminder email to registered attendees this many hours before the start. */
+  reminderHours: number
+  /** Follow-up tasks after completion are due this many days later. */
+  followUpDays: number
+  /** Linked Marketing campaign (budget lines' actual costs post to it). */
+  campaignId: string | null
+  /** When the post-event follow-up tasks were created (once only). */
+  followUpTasksAt: string | null
   createdBy: string | null
   createdAt: string
   updatedAt: string
@@ -56,7 +70,21 @@ export interface AttendeeRecord {
   sourceDetail: string
   registeredAt: string
   checkedInAt: string | null
+  checkedInBy: string | null
   createdBy: string | null
+  /** registered (has a seat), waitlisted (waiting for one) or cancelled (kept for history). */
+  status: AttendeeStatus
+  ticketTypeId: string | null
+  /** Answers to the event's custom questions, keyed by question id. */
+  answers: Record<string, string | string[]>
+  waitlistedAt: string | null
+  cancelledAt: string | null
+  /** Unguessable ticket code (QR, check-in, public ticket page); not the registration token. */
+  ticketCode: string
+  /** Unguessable token of the attendee's feedback survey link. */
+  surveyToken: string
+  /** The reminder email before the event was handled (sent or skipped), once only. */
+  reminderSentAt: string | null
 }
 
 export interface EventHistoryRecord {
@@ -73,7 +101,63 @@ export interface RegistrationHit {
   at: number
 }
 
+/** event_ticket_types: kinds of ticket per event (capacity, price in the company currency, sales window). */
+export interface TicketTypeRecord {
+  id: string
+  eventId: string
+  name: string
+  capacity: number | null
+  price: number
+  salesOpen: string | null
+  salesClose: string | null
+  sortOrder: number
+  createdAt: string
+}
+
+/** Transactional emails of the Events module (confirmation, waitlist, promotion, reminder): a log, counted against emailsPerMonth. */
+export type EventEmailKind = 'confirmation' | 'waitlisted' | 'promoted' | 'reminder'
+export interface EventEmailRecord {
+  id: string
+  eventId: string
+  attendeeId: string
+  kind: EventEmailKind
+  to: string
+  subject: string
+  /** sent, or skipped (no email address, or the plan's monthly email allowance is used up). */
+  status: 'sent' | 'skipped'
+  skipReason: 'no_email' | 'limit' | null
+  at: string
+}
+
+export type BudgetCategory = 'venue' | 'travel' | 'logistics' | 'printing' | 'sponsorship' | 'catering' | 'marketing' | 'other'
+
+/** event_budget_lines: planned vs actual cost per category. */
+export interface BudgetLineRecord {
+  id: string
+  eventId: string
+  category: BudgetCategory
+  note: string
+  planned: number
+  actual: number
+  /** The vendor (company vendor library) the line is spent with; optional. */
+  vendorId?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+/** A budget line's actual cost posted to a Marketing campaign (campaign_costs row), once per line and campaign. */
+export interface EventCostLinkRecord {
+  eventId: string
+  lineId: string
+  campaignId: string
+  costId: string
+}
+
 export const events = registerArray<Tenant<EventRecord>>('events', [])
+export const eventBudgetLines = registerArray<Tenant<BudgetLineRecord>>('eventBudgetLines', [])
+export const eventCostLinks = registerArray<Tenant<EventCostLinkRecord>>('eventCostLinks', [])
+export const eventTicketTypes = registerArray<Tenant<TicketTypeRecord>>('eventTicketTypes', [])
+export const eventEmails = registerArray<Tenant<EventEmailRecord>>('eventEmails', [])
 export const eventTeam = registerArray<Tenant<EventTeamRecord>>('eventTeam', [])
 export const eventAttendees = registerArray<Tenant<AttendeeRecord>>('eventAttendees', [])
 export const eventHistory = registerArray<Tenant<EventHistoryRecord>>('eventHistory', [])
@@ -94,6 +178,52 @@ function seedRegistrationToken(id: string): string {
     t += LETTERS[h % LETTERS.length]
   }
   return t
+}
+
+const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+
+/** FNV-1a over the whole text first (every character counts), then one output character per further round. */
+function fnv(text: string, length: number, alphabet: string): string {
+  let h = 0x811c9dc5
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193) >>> 0
+  let t = ''
+  for (let i = 0; t.length < length; i++) {
+    h = Math.imul(h ^ ((i * 31 + 7) & 0xff), 0x01000193) >>> 0
+    h = (h ^ (h >>> 13)) >>> 0
+    t += alphabet[h % alphabet.length]
+  }
+  return t
+}
+
+const groupCode = (raw: string) => `${raw.slice(0, 4)}-${raw.slice(4, 8)}-${raw.slice(8, 12)}`
+
+/** Stable ticket code of a seeded attendee (same after every seed rebuild). */
+export function seedTicketCode(attendeeId: string): string {
+  return groupCode(fnv(`ticket:${attendeeId}`, 12, CODE_CHARS))
+}
+
+/** Stable survey token of a seeded attendee. */
+export function seedSurveyToken(attendeeId: string): string {
+  return fnv(`survey:${attendeeId}`, 24, LETTERS)
+}
+
+/** A ticket code: 12 characters (no 0/O/1/I), grouped XXXX-XXXX-XXXX, unique across companies. */
+export function newTicketCode(): string {
+  for (;;) {
+    let t = ''
+    for (let i = 0; i < 12; i++) t += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]
+    const code = groupCode(t)
+    if (!eventAttendees.some((a) => a.ticketCode === code)) return code
+  }
+}
+
+/** A survey token: 24 letters, unique across companies. */
+export function newSurveyToken(): string {
+  for (;;) {
+    let t = ''
+    for (let i = 0; i < 24; i++) t += LETTERS[Math.floor(Math.random() * LETTERS.length)]
+    if (!eventAttendees.some((a) => a.surveyToken === t)) return t
+  }
 }
 
 /** A public link token: 20 letters (no digits, so it never looks like a number), unique across companies. */
@@ -168,6 +298,44 @@ const SEED: SeedEvent[] = [
     description: 'Panel slot on last-mile logistics; meetings booked with retail distributors.',
     ownerId: 'u103', team: ['u104'], registrationOpen: true,
   },
+  // Cross-event sections seed (data/eventSections.ts adds their attendees, captures, surveys, tickets, budget lines).
+  {
+    id: 'EV-1005', companyId: APEX_ID, name: 'Hospitality Leaders Roundtable', type: 'meeting', status: 'completed', isOrganizer: true,
+    startIn: -75, days: 1, startTime: '09:00', endTime: '12:00', location: 'Address Downtown, Meeting Room 3', budget: 9000, actualCost: 8200,
+    description: 'Invite-only roundtable for hotel GMs on guest messaging and AI concierge pilots.',
+    ownerId: 'u7', team: ['u6', 'u5'], registrationOpen: false,
+  },
+  {
+    id: 'EV-1006', companyId: APEX_ID, name: 'Smart Property AI Webinar', type: 'webinar', status: 'completed', isOrganizer: true,
+    startIn: -1, days: 1, startTime: '16:00', endTime: '17:00', location: '', onlineUrl: 'https://meet.apexaora.example/smart-property', budget: 2500,
+    description: 'Live session for brokers and developers: lead qualification bots and document OCR.',
+    ownerId: 'u7', team: ['u4'], registrationOpen: false,
+  },
+  {
+    id: 'EV-5003', companyId: CREST_ID, name: 'Jeddah Cold Chain Summit', type: 'conference', status: 'completed', isOrganizer: true,
+    startIn: -90, days: 2, startTime: '09:00', endTime: '17:00', location: 'Jeddah Hilton, Al Bahr Ballroom', budget: 45000, actualCost: 47250,
+    description: 'Exhibitor table and a talk on SFDA-compliant cold storage for pharma distributors.',
+    ownerId: 'u103', team: ['u105'], registrationOpen: false,
+  },
+  {
+    id: 'EV-5004', companyId: CREST_ID, name: 'Warehouse Automation Webinar', type: 'webinar', status: 'completed', isOrganizer: true,
+    startIn: -1, days: 1, startTime: '11:00', endTime: '12:00', location: '', onlineUrl: 'https://meet.crestlogistics.example/automation', budget: 4000,
+    description: 'Crest’s operations team on pick-to-light, WMS integration and slotting.',
+    ownerId: 'u102', team: ['u104'], registrationOpen: false,
+  },
+  // Sponsors & exhibitors / Travel & logistics demo events (data/eventSponsors.ts, data/eventLogistics.ts).
+  {
+    id: 'EV-1101', companyId: APEX_ID, name: 'CES 2027', type: 'exhibition', status: 'confirmed', isOrganizer: false,
+    startIn: 47, days: 4, location: 'Las Vegas Convention Center, North Hall', budget: 150000,
+    description: 'Shared stand in the AI pavilion: chatbot and OCR demos for hotel and retail groups.',
+    ownerId: 'u7', team: ['u4', 'u5'], registrationOpen: false,
+  },
+  {
+    id: 'EV-5101', companyId: CREST_ID, name: 'Crest Cold-Chain Partner Day 2027', type: 'conference', status: 'planned', isOrganizer: true,
+    startIn: 60, days: 1, startTime: '09:00', endTime: '17:00', location: 'Crest Logistics Park, Riyadh', budget: 90000,
+    description: 'Crest’s own partner day: cold-chain roadmap, customer panels and an exhibitor area for partners.',
+    ownerId: 'u102', team: ['u104'], registrationOpen: false,
+  },
 ]
 
 function seed(): void {
@@ -200,6 +368,12 @@ function seed(): void {
       registrationOpen: s.registrationOpen,
       // Demo events get a stable token (same link after every reload of the seed); new events get a random one.
       registrationToken: seedRegistrationToken(s.id),
+      capacity: null,
+      questions: [],
+      reminderHours: 24,
+      followUpDays: 2,
+      campaignId: null,
+      followUpTasksAt: s.status === 'completed' ? endsAt : null,
       createdBy: s.ownerId,
       createdAt,
       updatedAt: createdAt,
@@ -212,9 +386,10 @@ function seed(): void {
       ;(lead as { eventId?: string | null }).eventId = s.id
       const primary = contacts.find((c) => c.leadId === lead.id)
       const registeredAt = startsAt
+      const attendeeId = `EA-${s.id.slice(3)}-${++attendeeSeq}`
       eventAttendees.push({
         companyId: s.companyId,
-        id: `EA-${s.id.slice(3)}-${++attendeeSeq}`,
+        id: attendeeId,
         eventId: s.id,
         name: primary?.name || lead.contactName || lead.company,
         companyName: lead.company,
@@ -227,7 +402,16 @@ function seed(): void {
         sourceDetail: 'Captured on the stand',
         registeredAt,
         checkedInAt: s.status === 'completed' ? registeredAt : null,
+        checkedInBy: s.status === 'completed' ? s.ownerId : null,
         createdBy: s.ownerId,
+        status: 'registered',
+        ticketTypeId: null,
+        answers: {},
+        waitlistedAt: null,
+        cancelledAt: null,
+        ticketCode: seedTicketCode(attendeeId),
+        surveyToken: seedSurveyToken(attendeeId),
+        reminderSentAt: s.status === 'completed' ? registeredAt : null,
       })
     }
   }

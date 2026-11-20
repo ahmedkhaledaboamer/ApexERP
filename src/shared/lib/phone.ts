@@ -54,6 +54,19 @@ export function formatMobile(value: string, country: CountryCode): string {
   return `+${rule.dialCode} ${parts.join(' ')}`
 }
 
+/**
+ * Display form of a stored mobile from any supported country (+971 55 908 7766); numbers from other
+ * countries (+17028920711) are shown as stored. For lists that mix countries (venues, vendors, speakers).
+ */
+export function displayMobile(value: string | null | undefined): string {
+  if (!value) return ''
+  const compact = value.replace(/\s/g, '')
+  for (const country of Object.keys(MOBILE_RULES) as CountryCode[]) {
+    if (compact.startsWith(`+${MOBILE_RULES[country].dialCode}`) && normalizeMobile(compact, country)) return formatMobile(compact, country)
+  }
+  return value
+}
+
 export function mobileExample(country: CountryCode): string {
   return MOBILE_RULES[country].example
 }

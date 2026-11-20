@@ -2,7 +2,7 @@ import type { User } from '@/shared/types'
 import { can, scopeOf, teamIdsFor } from '@/shared/lib/permissions'
 import { users } from '@/shared/mocks/db'
 import { departments } from '@/shared/mocks/data/departments'
-import { eventAttendees, events, eventTeam, type EventRecord } from '@/shared/mocks/data/events'
+import { eventAttendees, eventBudgetLines, events, eventTeam, type EventRecord } from '@/shared/mocks/data/events'
 import { subscriptionOf } from '@/shared/mocks/data/subscriptions'
 import { planAt } from '@/shared/mocks/data/plans'
 import { effectiveModules } from '@/shared/mocks/data/platform'
@@ -101,4 +101,14 @@ export function eventsAttendedBy(companyId: string, userId: string, month: strin
   return events.filter(
     (e) => e.companyId === companyId && eventLocalDate(e).slice(0, 7) === month && attendedEvent(e) && teamIdsOf(e).includes(userId),
   ).length
+}
+
+/**
+ * The event's actual cost: the sum of its budget lines' actual amounts when it has lines, else the
+ * event's own `actual_cost` (null = unknown). Used by the event stats (ROI) and Marketing Analytics.
+ */
+export function eventActualCost(e: Pick<Tenant<EventRecord>, 'id' | 'companyId' | 'actualCost'>): number | null {
+  const lines = eventBudgetLines.filter((l) => l.eventId === e.id && l.companyId === e.companyId)
+  if (lines.length) return Math.round(lines.reduce((s, l) => s + l.actual, 0) * 100) / 100
+  return e.actualCost
 }

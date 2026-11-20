@@ -4,6 +4,8 @@ import {
   Ban,
   CalendarDays,
   CircleDollarSign,
+  Contact,
+  ScanLine,
   Copy,
   ExternalLink,
   Globe,
@@ -11,6 +13,7 @@ import {
   MapPin,
   Pencil,
   Target,
+  TrendingUp,
   Trophy,
   UserMinus,
   UserPlus,
@@ -22,9 +25,19 @@ import { useAddTeamMember, useCancelEvent, useEventQuery, useEventStatsQuery, us
 import { EventStatusBadge, EventTypeBadge, eventWhen, moneyIn } from '@/modules/events/components/eventMeta'
 import { EventDrawer } from '@/modules/events/components/EventDrawer'
 import { AttendeesTab } from '@/modules/events/components/AttendeesTab'
+import { ChecklistTab } from '@/modules/events/components/ChecklistTab'
+import { AgendaTab } from '@/modules/events/components/AgendaTab'
+import { TicketsTab } from '@/modules/events/components/TicketsTab'
+import { EventCommsCard } from '@/modules/events/components/EventCommsCard'
+import { LeaderboardCard } from '@/modules/events/components/LeaderboardCard'
+import { AfterEventCard } from '@/modules/events/components/AfterEventCard'
+import { FeedbackTab } from '@/modules/events/components/FeedbackTab'
+import { BudgetTab } from '@/modules/events/components/BudgetTab'
+import { SponsorsTab } from '@/modules/events/components/SponsorsTab'
+import { LogisticsTab } from '@/modules/events/components/LogisticsTab'
 import { LinkedTasksPanel } from '@/modules/tasks/components/LinkedTasksPanel'
 import { useUsersQuery } from '@/modules/crm/hooks/useCrm'
-import { PATHS, publicEventPath } from '@/app/paths'
+import { eventCapturePath, eventCheckInPath, PATHS, publicEventPath, venuePath } from '@/app/paths'
 import { ApiError } from '@/shared/lib/apiError'
 import { fmtDate } from '@/shared/lib/utils'
 import { Avatar, AvatarGroup } from '@/shared/components/ui/Avatar'
@@ -39,8 +52,8 @@ import { useToast } from '@/shared/components/ui/Toast'
 import { SelectInput, Switch } from '@/shared/components/form/Field'
 import { PageBody } from '@/shared/components/layout/PageHeader'
 
-type Tab = 'overview' | 'attendees' | 'leads' | 'tasks' | 'activity'
-const TABS: Tab[] = ['overview', 'attendees', 'leads', 'tasks', 'activity']
+type Tab = 'overview' | 'checklist' | 'agenda' | 'tickets' | 'attendees' | 'leads' | 'feedback' | 'budget' | 'sponsors' | 'logistics' | 'tasks' | 'activity'
+const TABS: Tab[] = ['overview', 'checklist', 'agenda', 'tickets', 'attendees', 'leads', 'feedback', 'budget', 'sponsors', 'logistics', 'tasks', 'activity']
 
 export default function EventDetailPage() {
   const { id = '' } = useParams()
@@ -140,6 +153,18 @@ function EventView({ event: e }: { event: EventDetail }) {
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              {e.canEdit && e.status !== 'cancelled' && (
+                <>
+                  <Link to={eventCheckInPath(e.id)} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-line px-3 text-[0.8125rem] font-medium hover:bg-sunken">
+                    <ScanLine className="size-4" aria-hidden />
+                    Check-in
+                  </Link>
+                  <Link to={eventCapturePath(e.id)} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-line px-3 text-[0.8125rem] font-medium hover:bg-sunken">
+                    <Contact className="size-4" aria-hidden />
+                    Booth capture
+                  </Link>
+                </>
+              )}
               {e.canEdit && (
                 <Button write variant="secondary" size="sm" onClick={() => setEditing(true)}>
                   <Pencil />
@@ -161,8 +186,16 @@ function EventView({ event: e }: { event: EventDetail }) {
             className="mt-5 overflow-x-auto border-b-0"
             items={[
               { id: 'overview', label: 'Overview' },
+              { id: 'checklist', label: 'Checklist' },
+              { id: 'agenda', label: 'Agenda' },
+              { id: 'tickets', label: 'Tickets' },
               { id: 'attendees', label: 'Attendees', count: e.attendeeCount },
               { id: 'leads', label: 'Leads & deals' },
+              { id: 'feedback', label: 'Feedback' },
+              { id: 'budget', label: 'Budget' },
+              // Sponsors & exhibitors: only events the company organizes.
+              ...(e.isOrganizer ? [{ id: 'sponsors' as const, label: 'Sponsors' }] : []),
+              { id: 'logistics', label: 'Logistics' },
               { id: 'tasks', label: 'Tasks' },
               { id: 'activity', label: 'Activity' },
             ]}
@@ -173,8 +206,15 @@ function EventView({ event: e }: { event: EventDetail }) {
       <PageBody className="w-full flex-1">
         <div role="tabpanel" id={`tab-panel-${tab}`} aria-labelledby={`tab-${tab}`} className="min-w-0 space-y-6">
           {tab === 'overview' && <Overview event={e} />}
+          {tab === 'checklist' && <ChecklistTab event={e} />}
+          {tab === 'agenda' && <AgendaTab event={e} />}
+          {tab === 'tickets' && <TicketsTab event={e} />}
           {tab === 'attendees' && <AttendeesTab event={e} />}
           {tab === 'leads' && <LeadsAndDeals event={e} />}
+          {tab === 'feedback' && <FeedbackTab event={e} />}
+          {tab === 'budget' && <BudgetTab event={e} />}
+          {tab === 'sponsors' && <SponsorsTab event={e} />}
+          {tab === 'logistics' && <LogisticsTab event={e} />}
           {tab === 'tasks' && <EventTasks event={e} />}
           {tab === 'activity' && <ActivityList event={e} />}
         </div>
@@ -228,6 +268,20 @@ function Overview({ event: e }: { event: EventDetail }) {
           <CardBody>
             <PropertyList>
               <Property label="When">{eventWhen(e)}</Property>
+              <Property label="Venue">
+                {e.venueId ? (
+                  <Link to={venuePath(e.venueId)} className="text-brand-700 hover:underline dark:text-brand-300">
+                    {e.venueName}
+                  </Link>
+                ) : (
+                  '—'
+                )}
+                {e.venueWarning && (
+                  <span role="status" className="mt-1 block text-xs text-warning-700 dark:text-warning-500">
+                    {e.venueWarning}
+                  </span>
+                )}
+              </Property>
               <Property label="Location">{e.location || '—'}</Property>
               <Property label="Online link">
                 {e.onlineUrl ? (
@@ -251,6 +305,7 @@ function Overview({ event: e }: { event: EventDetail }) {
           </CardBody>
         </Card>
         <RegistrationCard event={e} />
+        <EventCommsCard event={e} />
       </div>
       <TeamCard event={e} />
     </div>
@@ -415,16 +470,26 @@ function LeadsAndDeals({ event: e }: { event: EventDetail }) {
           label="Cost per lead"
           icon={<CircleDollarSign />}
           value={s.costPerLead === null ? '—' : moneyIn(s.costPerLead, s.currency)}
-          hint={s.budget === null ? 'Set a budget to see it' : `Budget ${moneyIn(s.budget, s.currency)} ÷ ${s.leadsCreated} new leads`}
+          hint={
+            s.costPerLeadBasis === null
+              ? 'Set a budget to see it'
+              : `${s.costPerLeadBasis === 'actual' ? 'Actual cost' : 'Budget'} ${moneyIn(s.costPerLeadBasis === 'actual' ? s.actualCost : s.budget, s.currency)} ÷ ${s.leadsCreated} new lead${s.leadsCreated === 1 ? '' : 's'}`
+          }
         />
       </section>
+      <section aria-label="Return on investment" className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+        <StatCard label="Actual cost" icon={<CircleDollarSign />} value={moneyIn(s.actualCost, s.currency)} hint={s.actualCostSource === 'budget_lines' ? 'From the budget lines' : 'The event’s actual cost'} />
+        <StatCard label="ROI" icon={<TrendingUp />} value={s.roi === null ? '—' : `${Math.round(s.roi * 100)}%`} hint={s.sponsorshipIncome != null ? `(won value + ${moneyIn(s.sponsorshipIncome, s.currency)} sponsorship − actual cost) ÷ actual cost` : '(won value − actual cost) ÷ actual cost'} />
+        <StatCard label="Cost per won deal" icon={<Trophy />} value={s.costPerWonDeal === null ? '—' : moneyIn(s.costPerWonDeal, s.currency)} hint={`${s.dealsWon} deal${s.dealsWon === 1 ? '' : 's'} won`} />
+      </section>
+      <AfterEventCard event={e} />
+      <LeaderboardCard event={e} />
       <Card>
         <CardHeader title="How it’s counted" icon={<History />} />
         <CardBody className="space-y-1.5 text-[0.8125rem] text-muted">
           <p>Every registered attendee becomes a lead with the source Event, or is linked to the existing lead with the same email.</p>
           <p>
-            Deals won and their value come from those leads ({moneyIn(s.pipelineValue, s.currency)} still open in the pipeline). Cost per lead = budget ÷ new leads
-            {s.actualCost !== null && ` (actual cost so far ${moneyIn(s.actualCost, s.currency)})`}.
+            Deals won and their value come from those leads ({moneyIn(s.pipelineValue, s.currency)} still open in the pipeline). Cost per lead, ROI and cost per won deal use the actual cost once it’s known (budget lines or the event’s actual cost), otherwise the planned budget.
           </p>
         </CardBody>
       </Card>

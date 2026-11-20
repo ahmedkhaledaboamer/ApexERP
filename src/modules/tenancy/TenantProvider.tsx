@@ -14,13 +14,16 @@ import { PRODUCT_NAME, applyBranding, applyFavicon, brandTitle } from '@/modules
 
 /**
  * Routes that don't belong to a workspace screen (platform console, product sign-up, public event
- * registration, public lead capture forms /f/ and landing pages /p/ — those find their company themselves).
+ * registration /e/, event tickets /t/ and surveys /s/, public lead capture forms /f/ and landing pages /p/ —
+ * those find their company themselves).
  */
 const isPlatformPath = (pathname: string) =>
   pathname.startsWith('/platform') ||
   pathname === '/signup' ||
   pathname.startsWith('/legal/') ||
   pathname.startsWith('/e/') ||
+  pathname.startsWith('/t/') ||
+  pathname.startsWith('/s/') ||
   pathname.startsWith('/f/') ||
   pathname.startsWith('/p/')
 

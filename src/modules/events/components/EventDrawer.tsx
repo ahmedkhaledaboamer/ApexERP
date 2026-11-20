@@ -3,10 +3,13 @@ import { useNavigate } from 'react-router-dom'
 import type { EventDetail, EventInput, EventStatus, EventType } from '@/modules/events/types'
 import { EVENT_STATUS_LABEL, EVENT_TYPES, EVENT_TYPE_LABEL } from '@/modules/events/types'
 import { useCreateEvent, useUpdateEvent } from '@/modules/events/hooks/useEvents'
+import { useEventTemplatesQuery } from '@/modules/events/hooks/useEventsAdvanced'
+import { useVenuesQuery } from '@/modules/events/hooks/useEventLibrary'
+import { venueLocation } from '@/modules/events/lib/library'
 import { useUsersQuery } from '@/modules/crm/hooks/useCrm'
 import { eventPath } from '@/app/paths'
 import { useRegion } from '@/modules/tenancy/hooks'
-import { companyDay } from '@/shared/lib/companyDay'
+import { addDaysIso, companyDay } from '@/shared/lib/companyDay'
 import { useCurrentUser } from '@/store/hooks'
 import { Button } from '@/shared/components/ui/Button'
 import { Drawer } from '@/shared/components/ui/Drawer'
@@ -23,6 +26,7 @@ interface Draft {
   endDate: string
   endTime: string
   location: string
+  venueId: string
   onlineUrl: string
   budget: string
   actualCost: string
@@ -30,20 +34,21 @@ interface Draft {
   ownerId: string
   teamIds: string[]
   registrationOpen: boolean
+  templateId: string
 }
 
 function draftOf(e: EventDetail | null, today: string, me: string): Draft {
   if (!e) {
     return {
       name: '', type: 'exhibition', status: 'planned', isOrganizer: false, startDate: today, startTime: '', endDate: '', endTime: '',
-      location: '', onlineUrl: '', budget: '', actualCost: '', description: '', ownerId: me, teamIds: [], registrationOpen: false,
+      location: '', venueId: '', onlineUrl: '', budget: '', actualCost: '', description: '', ownerId: me, teamIds: [], registrationOpen: false, templateId: '',
     }
   }
   return {
     name: e.name, type: e.type, status: e.status, isOrganizer: e.isOrganizer, startDate: e.startDate, startTime: e.startTime ?? '',
-    endDate: e.endDate === e.startDate ? '' : e.endDate, endTime: e.endTime ?? '', location: e.location, onlineUrl: e.onlineUrl,
+    endDate: e.endDate === e.startDate ? '' : e.endDate, endTime: e.endTime ?? '', location: e.location, venueId: e.venueId ?? '', onlineUrl: e.onlineUrl,
     budget: e.budget === null ? '' : String(e.budget), actualCost: e.actualCost === null ? '' : String(e.actualCost),
-    description: e.description, ownerId: e.ownerId ?? '', teamIds: [], registrationOpen: e.registrationOpen,
+    description: e.description, ownerId: e.ownerId ?? '', teamIds: [], registrationOpen: e.registrationOpen, templateId: '',
   }
 }
 
@@ -66,6 +71,7 @@ export function EventDrawer({ open, onClose, event }: { open: boolean; onClose: 
   const today = companyDay({ timezone: region.timezone, weekStartsOn: region.weekStartsOn }).today
   const users = useUsersQuery()
   const create = useCreateEvent()
+  const templates = useEventTemplatesQuery(open && !event)
   const update = useUpdateEvent()
   const toast = useToast()
   const navigate = useNavigate()
@@ -84,6 +90,14 @@ export function EventDrawer({ open, onClose, event }: { open: boolean; onClose: 
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setD((x) => ({ ...x, [k]: v }))
   const errs = touched ? problems(d) : {}
   const people = (users.data ?? []).filter((u) => u.active !== false)
+  // Venue library: readable by marketing and event teams; without access the picker just stays empty.
+  const venues = useVenuesQuery(open)
+  const picked = venues.data?.find((v) => v.id === d.venueId)
+  const venueHint = venues.error
+    ? 'The venue library isn’t available to you; type the location instead.'
+    : picked
+      ? `Location fills from the venue; edit it to override.${picked.capacity ? ` Venue capacity ${picked.capacity}.` : ''}`
+      : 'Pick from the company’s venues; the location fills from it.'
   const pending = create.isPending || update.isPending
   const error = create.error ?? update.error
 
@@ -100,6 +114,7 @@ export function EventDrawer({ open, onClose, event }: { open: boolean; onClose: 
       endDate: d.endDate || null,
       endTime: d.endTime || null,
       location: d.location,
+      venueId: d.venueId || null,
       onlineUrl: d.onlineUrl.trim(),
       budget: d.budget === '' ? null : Number(d.budget),
       description: d.description,
@@ -118,7 +133,7 @@ export function EventDrawer({ open, onClose, event }: { open: boolean; onClose: 
       )
     } else {
       create.mutate(
-        { ...input, ownerId: d.ownerId || undefined, teamIds: d.teamIds },
+        { ...input, ownerId: d.ownerId || undefined, teamIds: d.teamIds, templateId: d.templateId || null },
         {
           onSuccess: (created) => {
             toast.success('Event created', created.name)
@@ -152,6 +167,29 @@ export function EventDrawer({ open, onClose, event }: { open: boolean; onClose: 
         <Field id="ev-name" label="Name" required error={errs.name}>
           <TextInput id="ev-name" value={d.name} invalid={!!errs.name} onChange={(e) => set('name', e.target.value)} placeholder="e.g. GITEX Global 2027" />
         </Field>
+        {!event && (templates.data?.length ?? 0) > 0 && (
+          <Field id="ev-template" label="Template" hint="Optional: creates its prep checklist tasks (due dates count from the start date).">
+            <SelectInput
+              id="ev-template"
+              value={d.templateId}
+              onChange={(e) => {
+                const t = templates.data?.find((x) => x.id === e.target.value)
+                setD((x) => ({
+                  ...x,
+                  templateId: e.target.value,
+                  ...(t ? { type: t.eventType, endDate: x.endDate || (t.defaultDurationDays > 1 ? addDaysIso(x.startDate, t.defaultDurationDays - 1) : '') } : {}),
+                }))
+              }}
+            >
+              <option value="">No template</option>
+              {templates.data?.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name} · {EVENT_TYPE_LABEL[t.eventType]}
+                </option>
+              ))}
+            </SelectInput>
+          </Field>
+        )}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field id="ev-type" label="Type">
             <SelectInput id="ev-type" value={d.type} onChange={(e) => set('type', e.target.value as EventType)}>
@@ -198,6 +236,27 @@ export function EventDrawer({ open, onClose, event }: { open: boolean; onClose: 
             <TextInput id="ev-end-time" type="time" value={d.endTime} onChange={(e) => set('endTime', e.target.value)} />
           </Field>
         </fieldset>
+        <Field id="ev-venue" label="Venue" hint={venueHint}>
+          <SelectInput
+            id="ev-venue"
+            value={d.venueId}
+            onChange={(e) => {
+              const v = venues.data?.find((x) => x.id === e.target.value)
+              setD((x) => ({ ...x, venueId: e.target.value, ...(v ? { location: venueLocation(v) } : {}) }))
+            }}
+          >
+            <option value="">No venue (free-text location)</option>
+            {(venues.data ?? [])
+              .filter((v) => v.status === 'active' || v.id === d.venueId)
+              .map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.name}
+                  {v.city ? ` · ${v.city}` : ''}
+                  {v.capacity ? ` · ${v.capacity} people` : ''}
+                </option>
+              ))}
+          </SelectInput>
+        </Field>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field id="ev-location" label="Location">
             <TextInput id="ev-location" value={d.location} onChange={(e) => set('location', e.target.value)} placeholder="Venue, hall, city" />

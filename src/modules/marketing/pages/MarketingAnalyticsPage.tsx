@@ -283,15 +283,16 @@ function Dashboard({ a, eventsInPlan }: { a: MarketingAnalytics; eventsInPlan: b
             </ul>
           )}
         </Panel>
-        <Panel title="Events" description="Events starting in the period: attendees → leads → won.">
+        <Panel title="Events" description="Events starting in the period: attendees → leads → won, and their actual cost.">
           {!a.events.included || !eventsInPlan ? (
             <p className="text-[0.8125rem] text-muted">Events aren’t part of your plan.</p>
           ) : (
             <>
-              <dl className="mb-4 grid grid-cols-3 gap-3 text-[0.8125rem]">
+              <dl className="mb-4 grid grid-cols-4 gap-3 text-[0.8125rem]">
                 <Figure label="Attendees" value={fmtInt(a.events.attendees)} />
                 <Figure label="Leads" value={fmtInt(a.events.leads)} />
                 <Figure label="Won" value={fmtInt(a.events.won)} />
+                <Figure label="Actual cost" value={fmtMoney(a.events.cost, a.currency)} />
               </dl>
               {a.events.rows.length === 0 ? (
                 <p className="text-[0.8125rem] text-muted">No events in this period.</p>
@@ -302,6 +303,7 @@ function Dashboard({ a, eventsInPlan }: { a: MarketingAnalytics; eventsInPlan: b
                       <span className="truncate text-ink">{e.name}</span>
                       <span className="num shrink-0 text-ink-2">
                         {e.attendees} → {e.leads} → {e.won}
+                        {e.cost !== null && <span className="ms-2 text-muted">{fmtMoney(e.cost, a.currency)}</span>}
                       </span>
                     </li>
                   ))}

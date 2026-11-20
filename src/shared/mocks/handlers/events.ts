@@ -1,6 +1,7 @@
 import { http, type HttpHandler } from 'msw'
 import type { AttendeeImportRow, AttendeeInput, EventInput, EventUpdateInput, PublicRegistrationInput } from '@/modules/events/types'
 import * as svc from '@/shared/mocks/services/events'
+import { createEventWithTemplate } from '@/shared/mocks/services/eventTemplates'
 import {
   attendeeImportMapper,
   attendeeImportResultMapper,
@@ -43,7 +44,8 @@ export const eventsHandlers: HttpHandler[] = [
   }),
   http.post(`${API}/events`, async ({ request }) => {
     const input = await body<EventInput>(request, eventInputMapper)
-    return respondAs(eventMapper, () => svc.createEvent(userFrom(request), input as EventInput))
+    // An optional template_id applies an event template right away (services/eventTemplates.ts).
+    return respondAs(eventMapper, () => createEventWithTemplate(userFrom(request), input))
   }),
   http.get<Id>(`${API}/events/:id`, ({ request, params }) => respondAs(eventMapper, () => svc.getEvent(userFrom(request), params.id))),
   http.patch<Id>(`${API}/events/:id`, async ({ request, params }) => {

@@ -1457,6 +1457,76 @@ Found while building the Events module (`events`, `event_team`, `event_attendees
 | E17 | "Events attended" target | `activity_targets` has `events_attended` | counted per team member (owner + `event_team`) per month of `starts_at` (company time) when the event is `completed`, or started with ≥ 1 checked-in attendee | No column needed; document the rule next to `activity_targets` |
 | E18 | `lead_sources` "Event" | the spec's source list has Event | registrations need an active source with key / name "Event"; a company without one gets `422 event_source_missing` (no silent creation) | Seed an `is_system` "Event" source for every company (like the protected loss reason) |
 
+#### Advanced events features (new tables)
+
+Templates, agenda, tickets / waitlist, check-in, booth capture, survey and budget (`docs/API.md` › Events ›
+Templates … Budget & ROI). None of these tables is in the design; every row carries `company_id` (tenant key)
+and, except templates, `event_id → events.id` (cascade).
+
+| # | Table / column | Design | Mock / API | Suggestion |
+|---|---|---|---|---|
+| E19 | `event_templates` + `event_template_tasks` | — | `event_templates (id, company_id, name, event_type, default_duration_days, created_by, timestamps)`; tasks inline: `(id, title, offset_days ±, role 'owner' or a roles.name, priority)` | Two tables; `event_template_tasks.offset_days int` (negative = before the start), `role string(40)` |
+| E20 | `tasks.template_task_id` for events | `project_template_task_id` only | checklist tasks carry the event template task id (idempotent re-apply: one task per template task per event); follow-up tasks use `event-follow-up:<event id>` | Add a polymorphic `source_type / source_id` on tasks (or `event_template_task_id`) |
+| E21 | `event_sessions` | — | `(id, event_id, title, starts_at, ends_at UTC, room string(120), description, speaker_ids)`; same-room overlap refused (409) | Table + `event_session_speakers` pivot; index `(event_id, room, starts_at)` |
+| E22 | `event_speakers` | — | now the event's roster `(id, event_id, speaker_id)` → the speaker directory (see L1; before: a copy of the person per event, migrated) | Pivot `event_speakers (event_id, speaker_id) UNIQUE`; was: Table (per event; a company-wide speaker directory is a later step) |
+| E23 | `event_ticket_types` | — | `(id, event_id, name, capacity null = unlimited, price decimal(12,2), sales_open date, sales_close date, sort_order)`; price in the company currency, no payment | Table; payments / orders are a separate (later) design |
+| E24 | `events.capacity`, `events.questions`, `events.reminder_hours`, `events.follow_up_days`, `events.campaign_id`, `events.follow_up_tasks_at` | — | overall seats (null = unlimited); custom registration questions (JSON: id, label, type text/single/multi, options, required); reminder N h before (default from Settings › Automation `eventReminderHours`); follow-up tasks N days after completion (`eventFollowUpDays`); linked campaign; once-only marker | Columns on `events`; `questions` as JSON or an `event_questions` table |
+| E25 | `event_attendees.status`, `ticket_type_id`, `answers`, `waitlisted_at`, `cancelled_at`, `ticket_code`, `survey_token`, `checked_in_by`, `reminder_sent_at` | — | `registered · waitlisted · cancelled` (waitlist position = order of `waitlisted_at`); answers JSON keyed by question id; unguessable `ticket_code` (12 chars, unique, ≠ registration token) and `survey_token` (24 letters, unique); reminder once-only marker | Columns on `event_attendees`; `UNIQUE (ticket_code)`, `UNIQUE (survey_token)` |
+| E26 | `event_emails` | — | transactional email log (confirmation, waitlisted, promoted, reminder; sent / skipped with reason `no_email` · `limit`), counted against `emailsPerMonth` | Table, or reuse a generic `email_logs` |
+| E27 | `event_captures` | — | `(id, event_id, attendee_id, lead_id, rating hot/warm/cold, notes, card_photo_url, captured_by, captured_at)`; leads have no tags column, so the rating lives here (plus a `meeting` activity on the lead) | Table; or add `lead_tags` if tags become a feature |
+| E28 | `event_survey_responses` | — | `(id, event_id, attendee_id UNIQUE, rating 1–5, nps 0–10, comment, submitted_at)` | Table with `UNIQUE (attendee_id)` |
+| E29 | `event_budget_lines` | — | `(id, event_id, category venue/travel/printing/sponsorship/catering/marketing/other, note, planned, actual)`; the lines' actual total replaces `events.actual_cost` in stats when lines exist | Table; `events.actual_cost` becomes derived (or kept as a manual fallback) |
+| E30 | `event_cost_links` | — | `(event_id, line_id, campaign_id, cost_id → campaign_costs.id)`: one posted cost per line and campaign (idempotent, like ad cost links); unlinking keeps posted costs | Table, or `campaign_costs.source_type / source_id` |
+| E31 | `bulk_emails.event_id` | — | a bulk email linked to an event fills the `{{event.*}}` variables (registration_url, survey_url…) | Add `event_id → events.id null` |
+| E32 | `audiences.rules.event_presence` | — | `any · attended · no_show` with `event_ids` (attended = checked in; no-show = seat, never checked in) | Part of the rules JSON; no column |
+| E33 | `automation_rules.event_reminder_hours`, `event_follow_up_days` | — | company defaults for new events (0–336 h; 0–60 days) | Two columns / keys in the automation settings |
+
+#### Cross-event sections (Attendees, Booth leads, Event analytics)
+
+`docs/API.md` › Events › Cross-event sections. Read models over the event tables; one new table. Item ids `EA*` so they
+don't collide with other Events subsections.
+
+| # | Table / column | Design | Mock / API | Suggestion |
+|---|---|---|---|---|
+| EA1 | person (attendee directory) | — (attendees are per event; no people / contact link) | de-duplicated on read: email (case-insensitive), else `lead_id`, else the registration; opaque key = first registration id | Keep it a query (index `event_attendees (company_id, email)` and `(company_id, lead_id)`); a `contact_id` on `event_attendees` would make the link exact |
+| EA2 | `event_capture_follow_up_notices` | — | `(company_id, capture_id UNIQUE, notified_at, user_id null)`: the overdue booth follow-up notice, once per capture | Table, or a nullable `event_captures.follow_up_notified_at` (like `tasks.overdue_notified_at`) |
+| EA3 | `notifications.type` `event-follow-up` | not in the type list | stored notification to the lead owner when a capture is untouched past `automation_rules.event_follow_up_days` | Add the value to the notifications type enum |
+| EA4 | follow-up state of a capture | — | derived on read from the lead after `captured_at`: status type won / lost, `meeting` activity or Meeting / Proposal status, outreach activity (call / email / WhatsApp / visit), else untouched | Keep derived (index `activities (company_id, lead_id, at)`); the capture's own activity is recognisable by its id prefix here — a real backend should link it (`activities.event_capture_id`) |
+| EA5 | event analytics | — | computed per request from `events`, `event_attendees`, `leads`, `event_budget_lines`, `event_survey_responses` with the event stats rules | No table; cache per company + range if it gets slow |
+
+#### Sponsors & exhibitors, travel & logistics (new tables)
+
+`docs/API.md` › Events › Sponsors & exhibitors / Travel & logistics. None of these tables is in the design; every row
+carries `company_id` (tenant key) and `event_id → events.id` (cascade).
+
+| # | Table / column | Design | Mock / API | Suggestion |
+|---|---|---|---|---|
+| S1 | `event_sponsor_packages` | — | `(id, event_id, name, price decimal(12,2), currency char(3) = company currency, quantity, benefits JSON, deliverables JSON [{ title, offset_days }], sort_order)` | Table; `UNIQUE (event_id, name)`; deliverables as JSON or `event_sponsor_package_deliverables` |
+| S2 | `event_sponsors` | — (sponsorship is not a lead / deal type) | `(id, event_id, package_id, lead_id null, customer_id null, organization_name snapshot, contact_name, contact_email, amount, stage prospect/contacted/proposal_sent/negotiating/signed/paid/lost, lost_reason, owner_id, expected_payment_date, actual_payment_date, notes, signed_at, created_by)`; signed + paid ≤ package quantity (409 sold_out) | Table; check the slot count in a transaction (`SELECT … FOR UPDATE` on the package); exactly one of `lead_id` / `customer_id` |
+| S3 | `event_sponsor_deliverables` | — | `(id, sponsor_id, event_id, title, offset_days, due_date, status todo/in_progress/done, owner_id, task_id null, overdue_notified_at)`; created once on signing | Table; `tasks.source_type / source_id` would replace `template_task_id = sponsor-deliverable:<id>` |
+| S4 | event stats `sponsorship_income` | — | derived: signed + paid sponsor amounts of an organized event; ROI = (won + sponsorship − actual cost) / actual cost | No column; document next to the ROI |
+| S5 | `event_trips` | — | `(id, event_id, user_id, flight_from, flight_to, depart_date, return_date, airline, booking_ref, flight_cost, hotel_name, check_in, check_out, hotel_cost, visa_required, visa_status not_needed/applied/approved/rejected, visa_expiry, visa_number_last4 char(4), per_diem, other_costs, status planned/booked/completed/cancelled, notes)`; one per person per event | Table, `UNIQUE (event_id, user_id)`; **never store the full document number** (or keep it encrypted in an HR document store) — only the last 4 |
+| S6 | `event_shipments` | — | `(id, event_id, vendor_id null → vendors.id, vendor_name, tracking_number, items, ship_date, arrival_date, status preparing/in_transit/delivered/returned/cancelled, cost, notes)` | Table |
+| S7 | `event_deadlines` | — | `(id, event_id, title, due_date, owner_id, done, done_at, notes, reminder_sent_at)`; reminder 3 days before, once | Table (or tasks with a `deadline` kind) |
+| S8 | `event_logistics_lines` + `event_budget_lines.category logistics` | — | `(event_id, line_id, kind trip/shipment, source_id)`: the one budget line each trip / shipment keeps in step (idempotent); new budget category `logistics` | `event_budget_lines.source_type / source_id` instead of a link table; add `logistics` to the category enum |
+
+#### Libraries: speakers directory, venues, vendors
+
+`docs/API.md` › Events › Speakers, venues & vendors. Company tables (`company_id` tenant key), not per event. The design has
+`vendors` (finance: "Suppliers the company pays": `name, email, phone string(30), tax_number string(50), address, is_active`;
+`expenses.vendor_id`) and nothing for speakers or venues.
+
+| # | Table / column | Design | Mock / API | Suggestion |
+|---|---|---|---|---|
+| L1 | `speakers` | — | `(id, company_id, name, title, company, bio, photo_url, email, mobile, topics JSON, linkedin_url, kind internal/external, user_id null → users.id, fee decimal(12,2) null, fee_currency char(3), notes, created_by, timestamps)`; dedupe on create: same email, or same name + company → `409 speaker_exists` | Table; index `(company_id, email)`; `topics` JSON or a `speaker_topics` pivot |
+| L2 | `event_sessions.speaker_ids` + `event_speakers` | — | sessions reference `speakers.id`; `event_speakers` is the roster `(event_id, speaker_id)`; the old per-event rows were migrated (dedupe per company: email, else name + company; gaps filled, never overwritten) | `event_session_speakers (session_id, speaker_id)` pivot; data migration as in `services/speakerMigration.ts` |
+| L3 | `speaker_ratings` | — | inline on the speaker: `(event_id, rating 1–5, note, rated_by, rated_at)`, one per event (re-rating replaces), completed events where the speaker is on the roster | Table `UNIQUE (speaker_id, event_id)` |
+| L4 | `venues` + `venue_rooms` | — | `(id, company_id, name UNIQUE per company, type exhibition_centre/hotel/conference_hall/office/online_platform/other, address, city, country char(2), map_url, lat decimal(9,6), lng decimal(9,6), capacity, contact_name, contact_mobile, contact_email, day_rate decimal(12,2), currency char(3), price_notes, amenities JSON, notes, rating tinyint null, status active/archived)`; rooms inline `(id, name, capacity)` | Two tables; `UNIQUE (company_id, name)` |
+| L5 | `events.venue_id` | `events.location string(255)` only | `venue_id → venues.id null`; `location` stays the free-text fallback / override (filled "name, city" when empty); archived venues can't be newly picked; capacity above the venue's → warning, not refused | Add `venue_id` FK (`ON DELETE SET NULL`; the mock refuses deleting a used venue) |
+| L6 | `vendors` (event use) | `name, email, phone, tax_number, address, is_active` | + `category` (booth_builder/printing/catering/giveaways/av_tech/photo_video/logistics/staffing/venue_services/other), `contact_name`, `mobile` (by company country; design `phone string(30)`), `website`, `payment_terms`, `status preferred/approved/blacklisted` (instead of `is_active`), `notes`, `documents` JSON (name + link); no `address` in the mock | Extend the design's `vendors` (one supplier table for finance and events): add the columns; `status` replaces or complements `is_active` (blacklisted ⇒ inactive) |
+| L7 | `vendor_reviews` | — | inline on the vendor: `(id, event_id, rating 1–5, notes, rated_by, rated_at)`, one per event, only for completed events with the vendor's lines | Table `UNIQUE (vendor_id, event_id)` |
+| L8 | `event_budget_lines.vendor_id` | — (design: `expenses.vendor_id`) | `vendor_id → vendors.id null`; blacklisted vendors can't be newly picked (`422 vendor_blacklisted`); vendor spend = sum of its lines' `actual` (per event and total) | Add the FK; when expenses are built, link the expense to the same vendor |
+
 ### Marketing
 
 Tables `campaigns`, `campaign_costs`, `bulk_emails`, `bulk_email_recipients` and `leads.campaign_id` (design §13).

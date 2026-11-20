@@ -705,6 +705,16 @@ export async function testBulkEmail(user: User, id: string, body: { to?: unknown
   return delay({ to, from: `${sender.name} <${sender.address}>`, subject: `[Test] ${rendered.subject}`, html: rendered.html })
 }
 
+/**
+ * Extra {{group.*}} values of a linked record (the Events module registers {{event.*}}; see
+ * services/eventComms.ts), set from outside so this module doesn't import the events services.
+ */
+type ExtraContext = (e: Tenant<BulkEmailRecord>, lead: Lead | null) => Record<string, Record<string, string>>
+let extraContext: ExtraContext | null = null
+export function setBulkEmailContext(fn: ExtraContext): void {
+  extraContext = fn
+}
+
 /** The email as a recipient gets it: variables filled from the lead, the sender and the company; branded layout. */
 function renderFor(e: Tenant<BulkEmailRecord>, lead: Lead | null): { subject: string; html: string } {
   const co = e.companyId
@@ -718,6 +728,7 @@ function renderFor(e: Tenant<BulkEmailRecord>, lead: Lead | null): { subject: st
       labels: { status: (k) => statusOf(co, k)?.label ?? k, industry: (k) => label('industries', k), source: (k) => label('sources', k) },
     }),
     company: companyContextFor(company),
+    ...(e.eventId && extraContext ? extraContext(e, lead) : {}),
   }
   const subject = renderTemplate(e.subject, ctx)
   const body = renderTemplate(e.body, ctx)

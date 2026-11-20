@@ -11,6 +11,8 @@ export const RULE_LIMITS: Record<keyof AutomationRules, [number, number]> = {
   lostReopenDays: [7, 730],
   renewalAlertDays: [1, 180],
   taskReminderDaysBefore: [0, 30],
+  eventReminderHours: [0, 336],
+  eventFollowUpDays: [0, 60],
 }
 
 const rule = (key: keyof AutomationRules) => {
@@ -30,6 +32,8 @@ export const automationSchema = z.object({
   lostReopenDays: rule('lostReopenDays'),
   renewalAlertDays: rule('renewalAlertDays'),
   taskReminderDaysBefore: rule('taskReminderDaysBefore'),
+  eventReminderHours: rule('eventReminderHours'),
+  eventFollowUpDays: rule('eventFollowUpDays'),
 }) satisfies z.ZodType<AutomationRules>
 
 /** Status labels come from the lookups so renamed statuses read correctly. */
@@ -46,7 +50,7 @@ export interface RuleDef {
 }
 
 export interface RuleGroup {
-  id: 'journey' | 'customers' | 'tasks'
+  id: 'journey' | 'customers' | 'tasks' | 'events'
   title: string
   description: string
   rules: RuleDef[]
@@ -116,6 +120,25 @@ export const RULE_GROUPS: RuleGroup[] = [
         label: 'Task reminder',
         unit: (n) => `${days(n)} before due`,
         explain: (n) => (n === 0 ? 'Remind the task owner on the due date.' : `Remind the task owner ${plural(n, 'day')} before the due date.`),
+      },
+    ],
+  },
+  {
+    id: 'events',
+    title: 'Events',
+    description: 'Defaults for new events (each event can change them).',
+    rules: [
+      {
+        key: 'eventReminderHours',
+        label: 'Attendee reminder',
+        unit: (n) => (n === 1 ? 'hour before' : 'hours before'),
+        explain: (n) => (n === 0 ? 'No reminder email before events.' : `Email registered attendees ${plural(n, 'hour')} before the event starts (once each).`),
+      },
+      {
+        key: 'eventFollowUpDays',
+        label: 'Post-event follow-up',
+        unit: (n) => `${days(n)} after`,
+        explain: (n) => `When an event is completed, each lead from it gets a follow-up task for its owner, due ${plural(n, 'day')} later.`,
       },
     ],
   },

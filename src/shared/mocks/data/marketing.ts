@@ -49,6 +49,8 @@ export interface BulkEmailRecord {
   scheduledAt: string | null
   startedAt: string | null
   sentAt: string | null
+  /** Linked event (Events › Invite an audience / follow-up): fills the {{event.*}} variables. */
+  eventId?: string | null
   createdBy: string
   createdAt: string
   updatedAt: string

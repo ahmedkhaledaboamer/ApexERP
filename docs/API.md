@@ -370,7 +370,7 @@ Scoped to the narrower of the caller's `reports` and `sales` scopes.
 
 ## Lookups & automation
 
-**Wire format:** snake_case design columns; field table in docs/DB-ALIGNMENT.md §11 for automation (`workflow_settings`: `first_contact_reminder_days`, `no_response_followup_days`, `max_attempts_before_cold`, `interested_stalled_days`, `reopen_lost_after_days`); lookups in part-a.md.
+**Wire format:** snake_case design columns; field table in docs/DB-ALIGNMENT.md §11 for automation (`workflow_settings`: `first_contact_reminder_days`, `no_response_followup_days`, `max_attempts_before_cold`, `interested_stalled_days`, `reopen_lost_after_days`); lookups in DB-ALIGNMENT.md (Part A).
 
 | Method | Path | Body / query | Returns | Rules |
 |---|---|---|---|---|
@@ -1181,8 +1181,8 @@ projects, tasks, alerts / notifications, dashboard, reports, audit, services, de
 
 ## Tasks
 
-Field names follow the database design (tasks, task_followers, comments, attachments, time_entries) and travel in
-snake_case on the wire (part-d-mappers.md §7: `owner_id`, `due_date`, `follower_ids`, attachments `original_name`, comments `user_id`; query `include_done`, `related_type`…); the full mapping and the migration are in `docs/DB-ALIGNMENT.md`.
+Field names follow the database design (tasks, task_followers, comments, attachments, time_entries) and are in
+snake_case on the wire (DB-ALIGNMENT.md (API mappers) §7: `owner_id`, `due_date`, `follower_ids`, attachments `original_name`, comments `user_id`; query `include_done`, `related_type`…); the full mapping and the migration are in `docs/DB-ALIGNMENT.md`.
 
 Tasks scope (`tasks` column of the permission matrix): **Own** for Sales Agent, Employee, Accountant and HR
 Manager; **Team** (real department membership, `teamIdsFor`) for Sales Manager, Department Head and
@@ -1206,7 +1206,7 @@ optional **lead, customer or event** (`type: 'project'` → `422`). The project 
 (tasks.project_id), shown as a separate chip (`projectName`). Event links need the Events module in the plan and an
 existing event of the company (`422` otherwise, like a missing lead); the chip opens the event (`/events/:id`).
 
-**Blocked is a flag, not a status** (`blockedAt`, `blockedReason`; Design gap, see part-b.md). A blocked task
+**Blocked is a flag, not a status** (`blockedAt`, `blockedReason`; Design gap, see DB-ALIGNMENT.md (Part B)). A blocked task
 keeps its status (e.g. `in_progress`) and can still move between columns; the board, list, drawer, My tasks
 and calendar show a "Blocked" badge. Set it with `POST /tasks/:id/block`, clear it with `POST /tasks/:id/unblock`.
 Moving a task to `done` or `cancelled` clears the flag (history "Unblocked (done)").
@@ -1438,11 +1438,416 @@ budget, actual_cost, cost_per_lead` (= budget ÷ new leads, 2 decimals; null wit
 - **Dates** are entered and shown in the company's timezone (regional settings) and stored as UTC instants; the
   calendar (`/events/calendar`, month / week, company week start) shows multi-day events on each day.
 
+### Advanced features: permissions at a glance
+
+Handlers `src/shared/mocks/handlers/eventsAdvanced.ts`, services `services/event{Templates,Agenda,Tickets,CheckIn,Comms,Capture,FollowUp,Survey,Budget}.ts`,
+wire names `shared/api/eventMappers.ts` (snake_case at any depth; `answers` keeps its question-id keys). All company paths
+are under `/events/*` or `/event-templates/*` (plan module `events` through the request policy → `403 module_not_in_plan`);
+the public ones find the company from their token / code and answer the **same 404** when the module is off, the token is
+unknown or the workspace is deleted / suspended.
+
+| Right | Who | Endpoints |
+|---|---|---|
+| sees | as above (marketing column + team) | agenda, checklist, ticket types, attendees, captures, leaderboard, survey results, budget, email log, stats |
+| edits | team members (any role) + marketing `full` | sessions / speakers, ticket types, capacity + questions (PATCH event), cancel registration, check-in (code), booth capture |
+| manages | event owner + marketing `full` | apply a template, budget lines, campaign link |
+| marketing `full` | Company Admin, Management, Marketing Manager | event templates (create / edit / delete; everyone with the module can read them) |
+| sees + Marketing edit | marketing `full` | invite an audience, send follow-up (they create Marketing bulk emails and audiences) |
+
+Role tests: `src/app/isolation/events.isolation.test.ts` (every role × both companies, with and without team membership).
+
+### Templates & prep checklist
+
+`EventTemplate { id, name, event_type, default_duration_days, tasks[] { id, title, offset_days, role ('owner' or a CRM role), priority } }`.
+Seed: 2 per company (Apex: Exhibition stand, Breakfast briefing; Crest: Trade show booth, Conference panel).
+
+| Method | Path | Who | Body | Answer | Errors |
+|---|---|---|---|---|---|
+| GET | `/event-templates` | module | | `EventTemplate[]` (own company) | |
+| POST | `/event-templates` | marketing full | `{ name, event_type, default_duration_days, tasks[] }` | `EventTemplate` | `403`, `409` name taken, `422` (name 2–120, type, 1–60 days, ≤ 60 tasks, offset −365…365 whole, role, priority) |
+| GET / PATCH / DELETE | `/event-templates/:id` | read: module; write: marketing full | PATCH: any field (existing task ids are kept) | `EventTemplate` / `{ deleted }` (tasks it made stay) | `404` |
+| POST | `/events/:id/apply-template` | manages | `{ template_id }` | `{ created, skipped, checklist }` | `409` cancelled, `422` unknown / other company's template |
+| GET | `/events/:id/checklist` | sees | | `{ items[] { task_id, title, due_date, owner_id, owner_name, status, priority, template_task_id, template_name, offset_days, done }, done, total, applied_template_ids }` | |
+| POST | `/events` | as above | `+ template_id?` | the template is applied right after the create | `422` unknown template |
+
+Rules: due date = the event's start date (company calendar) ± `offset_days`; a weekend date (the company's
+`regional.weekend`) moves to a working day — tasks **before** the event move earlier, tasks on / after it later.
+Owner: `owner` → the event owner; a role → the event-team member with that CRM role who got the fewest tasks in this
+apply (ties: user id), nobody → the event owner (noted in the task description). Tasks link to the event
+(`related_type event`) and carry the template task id: **re-applying never duplicates** (`skipped`). Owners other than
+the caller get an assignment notification. The Checklist tab shows these tasks with progress (done / total, cancelled
+left out); ticking one sets the task's status through `PATCH /tasks/:id`.
+
+### Agenda & speakers
+
+| Method | Path | Who | Body | Answer | Errors |
+|---|---|---|---|---|---|
+| GET | `/events/:id/agenda` | sees | | `{ sessions[] { id, title, date, start_time, end_time, starts_at, ends_at, room, description, speaker_ids, speakers[] }, speakers[] { id, name, title, company, bio, photo_url }, timezone, can_edit_speakers }` (speaker ids are **speaker-directory** ids) | |
+| POST / PATCH / DELETE | `/events/:id/sessions[/:sessionId]` | edits | `{ title, date, start_time, end_time, room?, description?, speaker_ids? }` | `EventSession` / `{ removed }` | `422` (title, HH:mm, end > start, speakers must be in the company's speaker directory — another company's id = missing), `422 session_outside_event`, `409 session_overlap` (`session_id`), `404` |
+| POST | `/events/:id/speakers` | edits | `{ speaker_id }` (pick from the directory) **or** `{ name, title?, company?, bio?, photo_url?, email? }` (new: creates the directory entry; the same person — email, or name + company — is reused) | `EventSpeaker` | `422` (not in the directory, name 2–120, photo URL) |
+| PATCH | `/events/:id/speakers/:speakerId` | edits **and** marketing full | `{ name?, title?, company?, bio?, photo_url? }` — changes the directory profile (every event) | `EventSpeaker` | `403`, `404` (not on this event) |
+| DELETE | `/events/:id/speakers/:speakerId` | edits | | `{ removed }` (off the roster and the sessions; the directory entry stays) | `404` |
+
+Decision: **refuse, not warn**. A session must lie inside the event (its date between the start and end dates and, for
+an event with times, between its start and end instants; all-day events: any time on their days); two sessions in the
+same room (case-insensitive, non-empty) can't overlap (back-to-back is fine; no room = parallel allowed). Times are the
+company's timezone, stored as UTC. `GET /public/events/:token` adds `agenda[]` (sessions with speakers, no ids).
+
+### Tickets, capacity, waitlist & questions
+
+`TicketType { id, name, capacity (null = unlimited), price (0 = free; company currency, no payment), currency, sales_open,
+sales_close (company dates, inclusive), registered, waitlisted, checked_in, remaining, on_sale }`. Event fields
+(PATCH `/events/:id`): `capacity` (null = unlimited), `questions[] { id, label, type text|single|multi, options[], required }`
+(ids kept when sent back; answers are keyed by them), plus `waitlist_count`, `remaining_seats`.
+
+| Method | Path | Who | Body | Answer | Errors |
+|---|---|---|---|---|---|
+| GET | `/events/:id/ticket-types` | sees | | `TicketType[]` | |
+| POST / PATCH | `/events/:id/ticket-types[/:ticketTypeId]` | edits | `{ name, capacity?, price?, sales_open?, sales_close? }` | `TicketType` | `409` name taken, `422` (capacity below the seats taken, price ≥ 0, dates), ≤ 20 types |
+| DELETE | `/events/:id/ticket-types/:ticketTypeId` | edits | | `{ removed }` | `409` people hold it |
+| POST | `/events/:id/attendees/:attendeeId/cancel` | edits | | `{ attendee, promoted[] }` | `409` already cancelled, `404` |
+
+Rules: a registration (public page, team add, import) takes a seat when both the event's capacity and the ticket's
+have room; otherwise it joins the **waitlist** (`status: waitlisted`, `waitlist_position` = order of arrival) — it still
+creates / links the lead and keeps every existing rule (duplicates, plan limit, rate limit, honeypot). The public page
+must pick a ticket when the event has types, the ticket must be on sale (`409 ticket_not_on_sale`) and required questions
+answered (`422 invalid_registration`); team adds default to the first ticket type and don't enforce the sales window or
+required answers. Cancelling (or deleting) a seated registration, raising a capacity or removing a ticket limit
+**promotes** the first waitlisted people that now fit (an email log entry `promoted` + a notification to the event owner).
+Cancelled registrations stay (history) and free their email. Waitlisted people can't be checked in (`409 not_registered`).
+Stats and `attendee_count` count seated attendees only. `Attendee` adds `status, waitlist_position, ticket_type_id,
+ticket_type_name, answers, checked_in_by_name, ticket_code, survey_token` (the last two for editors only). Public: `GET
+/public/events/:token` adds `remaining_seats, tickets[] { id, name, price, currency, remaining, on_sale }, questions[],
+starts_at, ends_at`; `POST …/register` takes `ticket_type_id, answers` and answers `{ registered, message, status,
+waitlist_position, ticket_code }` (an email already registered and the honeypot get the generic answer with nulls).
+
+### Check-in, tickets & badges
+
+| Method | Path | Who | Body | Answer | Errors |
+|---|---|---|---|---|---|
+| POST | `/events/:id/check-in` | edits | `{ code, undo? }` | `{ attendee, already_checked_in, message }` | `404 ticket_not_found` (unknown, another event's or company's code), `409 not_registered`, `409 event_cancelled` |
+| GET | `/events/:id/check-in` | edits | | `{ registered, checked_in, waitlisted, by_ticket_type[] { ticket_type_id, name, registered, checked_in }, recent[] }` | |
+| GET | `/public/tickets/:code` | **public** | | `{ code, status, waitlist_position, attendee_name, company_name, ticket_type_name, checked_in, event { name, type, dates, times, starts_at, ends_at, timezone, location, online_url, organizer_name, status } }` | `404 ticket_not_found` (also cancelled / module off), `429 rate_limited` (30 / 10 min per client) |
+
+Every attendee gets an unguessable **ticket code** (12 characters, `XXXX-XXXX-XXXX`, no 0/O/1/I; unique; never the
+registration token; seed codes are stable). Codes match case-insensitively, ignoring spaces / dashes (scanners type them).
+Check-in is idempotent: a second scan answers `already_checked_in: true` with the original time; `undo` clears it.
+Pages: `/events/:id/check-in` (code field, live counters, latest check-ins with undo; a camera isn't needed),
+`/events/:id/badges` (A4 portrait sheet of 8 badges: name, company, ticket type, QR), `/t/:code` (printable ticket + QR,
+`qrcode.react`); the confirmation shows the QR and links.
+
+### Invitations, reminders & calendar
+
+| Method | Path | Who | Body | Answer | Errors |
+|---|---|---|---|---|---|
+| POST | `/events/:id/invite` | sees + Marketing edit | `{ name?, audience_id?, industries?, statuses?, sources?, owner_ids?, template_id? \| subject? + body? }` | the bulk email draft (`BulkEmailDetail` + `event_id`) | `403`, `409` cancelled / completed, `422` as bulk emails |
+| GET | `/events/:id/emails` | sees | | `[{ id, attendee_id, attendee_name, kind confirmation\|waitlisted\|promoted\|reminder, to, subject, status sent\|skipped, skip_reason no_email\|limit, at }]` | |
+| GET | `/public/events/:token/calendar.ics` | **public** | | `text/calendar` (the event) | `404`, `409` cancelled, `429` |
+| GET | `/public/tickets/:code/calendar.ics` | **public** | | `text/calendar` (the attendee's entry, with the ticket link) | `404`, `409`, `429` |
+
+Rules: "Invite an audience" creates a Marketing bulk email **draft** linked to the event (and to its campaign) — the bulk
+email builder, exclusions (DNC, not interested, no email, duplicates), the `emailsPerMonth` limit and the fair queue all
+apply. Template variables gain an **Event** group: `{{event.name}}`, `{{event.date}}`, `{{event.location}}`,
+`{{event.registration_url}}`, `{{event.survey_url}}` (the recipient's own survey, attendees only), filled for bulk emails
+with an `event_id`. **Reminder**: each seated attendee gets one email `reminder_hours` before the start (event setting,
+default Settings › Automation `eventReminderHours` = 24, 0 = off), on the lifecycle tick; once only
+(`reminder_sent_at`), counted against `emailsPerMonth` (none left → logged `skipped / limit`, not retried); not after the
+start. Confirmation / waitlist / promotion emails are logged and counted the same way. "Add to calendar": Google and
+Outlook links (UTC times; all-day events use dates) and the .ics files (`modules/events/lib/calendar.ts`).
+
+### Booth capture & leaderboard
+
+| Method | Path | Who | Body | Answer | Errors |
+|---|---|---|---|---|---|
+| POST | `/events/:id/captures` | edits | `{ name, company_name?, email?, mobile?, title?, rating hot\|warm\|cold, notes?, card_photo_url? }` | `{ capture, outcome, lead_id, limit_reached, message }` | `422` (rating, email or mobile, https URL), `422 event_source_missing`, `409 event_cancelled`, `403`, `404` |
+| GET | `/events/:id/captures` | sees | | `EventCapture[] { id, attendee_id, name, company_name, email, mobile, title, lead_id, lead_outcome, can_open_lead, rating, notes, card_photo_url, captured_by, captured_by_name, captured_at }` | |
+| GET | `/events/:id/leaderboard` | sees | | `[{ user_id, name, captures, hot_leads, warm_leads, deals_won, won_value }]` (team + anyone who captured) | |
+
+The lead is created or linked **at once** (source Event, `event_id`; the plan limit keeps the person without a lead).
+Owner of a new lead: the capturer when their Sales scope can own leads, else the event's round-robin. The visitor becomes
+an attendee (`source: capture`, checked in, no seat check); an email already registered at the event is linked and
+checked in instead. Decision: leads have no tags column, so the **rating is stored on the capture** and written into a
+`meeting` activity on the lead (with the notes). Page: `/events/:id/capture` (phone-friendly form).
+
+### After the event
+
+| Method | Path | Who | Body | Answer | Errors |
+|---|---|---|---|---|---|
+| POST | `/events/:id/follow-up` | sees + Marketing edit | `{ attended_template_id?, no_show_template_id? }` | `{ attended, no_show, attended_audience_id, no_show_audience_id }` (two bulk email drafts) | `409` not completed, `403` |
+
+When an event becomes `completed`, each lead from it with a seat (registered or captured; not waitlisted / cancelled)
+gets **one** follow-up task for its owner (else the event owner), due `follow_up_days` after the completion day (company
+calendar; weekend → next working day; default Settings › Automation `eventFollowUpDays` = 2). Once only:
+`follow_up_tasks_at` + the task's template id `event-follow-up:<event id>` per lead. Owners get one notification each.
+"Send follow-up" creates (or reuses) two dynamic audiences — `<event> · attended` and `<event> · no-shows` — and a draft
+on each: attendees (checked in) get a thank-you with `{{event.survey_url}}`, no-shows (seat, never checked in) a "sorry we
+missed you". **Audiences rule** `event_presence: any | attended | no_show` (with `event_ids`) is available in Marketing ›
+Audiences.
+
+### Feedback survey
+
+| Method | Path | Who | Body | Answer | Errors |
+|---|---|---|---|---|---|
+| GET | `/events/:id/survey` | sees | | `{ responses, invited, response_rate, average_rating, nps, promoters, passives, detractors, comments[] }` | |
+| GET | `/public/surveys/:token` | **public** | | `{ event_name, organizer_name, attendee_first_name, open, submitted, closed_reason }` | `404 survey_not_found`, `429` |
+| POST | `/public/surveys/:token` | **public** | `{ rating 1–5, nps 0–10, comment? }` | `{ submitted, message }` | `409 survey_closed` (before the end / cancelled), `409 already_submitted`, `422 invalid_survey`, `404`, `429` |
+
+Each seated attendee has an unguessable survey token (24 letters; page `/s/:token`). The survey opens once the event is
+completed or its end has passed (not cancelled); **one answer per attendee**. NPS = % promoters (9–10) − % detractors
+(0–6), rounded (−100…100; null without answers).
+
+### Budget & ROI
+
+| Method | Path | Who | Body | Answer | Errors |
+|---|---|---|---|---|---|
+| GET | `/events/:id/budget` | sees | | `{ lines[] { id, category, note, planned, actual, posted }, planned_total, actual_total, budget, remaining, currency, campaign_id, campaign_name, posted_total, can_manage }` | |
+| POST / PATCH / DELETE | `/events/:id/budget-lines[/:lineId]` | manages | `{ category venue\|travel\|logistics\|printing\|sponsorship\|catering\|marketing\|other, planned?, actual?, note? }` | the budget | `422` (category, amounts ≥ 0, note ≤ 255), `404` |
+| PUT | `/events/:id/campaign` | manages | `{ campaign_id \| null }` | the budget | `422` unknown / other company's campaign, plan without Marketing |
+
+Linked to a campaign, each line's **actual** (> 0) is posted as a campaign cost entry — one per line and campaign
+(`event_cost_links`), kept in step when the line changes, removed when it goes to 0 or is deleted (idempotent, like synced
+ad costs). Unlinking (or linking another campaign) keeps what was posted. Stats: when the event has lines, `actual_cost` =
+their actual total (`actual_cost_source: budget_lines`), else the event's field; `roi = (won_value − actual_cost) /
+actual_cost` (ratio; null without a cost), `cost_per_won_deal = actual_cost / deals_won`. Marketing Analytics' events
+card shows each event's actual cost and the total. Seed: budget lines on both companies' completed exhibitions (their
+actuals add up to the event's actual cost).
+
+### Cross-event sections: Attendees, Booth leads, Event analytics
+
+Handlers `src/shared/mocks/handlers/eventSections.ts` (registered **before** the per-event handlers so `/events/attendees`
+isn't read as `/events/:id`), service `services/eventSections.ts`, wire names `shared/api/eventSectionMappers.ts`
+(snake_case at any depth), types `modules/events/sectionsTypes.ts`. Pages `/events/attendees`, `/events/booth-leads`,
+`/events/analytics` (nav: Events section, `planModule: 'events'`; Event analytics also `module: 'marketing'`).
+
+**Visibility (decision).** Every row comes from an event the caller **sees** (`canSeeEvent`): marketing `full` / `view`
+→ every event of the company; `team` / `own` / `hidden` → the events they're on (owner or `event_team`, + `team`: owned by
+their team). Lead details (`lead_status`, `lead_owner_*`, `lead_value`) are served only when the caller's Sales scope
+reaches the lead (`can_open_lead`), like the per-event tabs; `lead_id` and the derived follow-up state are always served.
+
+| Method | Path | Who | Body / query | Answer | Errors |
+|---|---|---|---|---|---|
+| GET | `/events/attendees` | module | | `{ people[], events[] { id, name, type, status, start_date }, can_export }` | `403 module_not_in_plan` |
+| GET | `/events/attendees/export` | marketing `full` | | `AttendeeExportRow[]` (one per person; **Do Not Contact people keep their row with `email` / `mobile` blank**) | `403` |
+| GET | `/events/booth-leads` | module | | `{ rows[], follow_up_days, today, can_assign, currency }` | `403 module_not_in_plan` |
+| POST | `/events/booth-leads/assign` | Sales edit with scope `full` / `team` | `{ capture_ids[] (1–500), owner_id }` | `{ updated, skipped[] { capture_id, reason } }` | `403`, `422` no captures / unknown, other company's or deactivated owner (same body) |
+| GET | `/events/analytics?preset=&from=&to=&compare=` | Marketing view **and** Reports `full` / `marketing` | presets as Marketing analytics (`this_month`, `last_30_days`, `this_quarter`, `ytd` default, `custom` + `from` / `to` ≤ 2 years), `compare` default true | `EventAnalytics` | `403`, `400` bad preset / dates |
+
+**Attendees directory.** `AttendeePerson { key, name, company_name, email, mobile, title, do_not_contact, events_registered,
+events_attended, checked_in_rate, last_event_id, last_event_name, last_event_date, ticket_types[], sources[], lead_id,
+lead_status, lead_owner_id, lead_owner_name, can_open_lead, registrations[] { attendee_id, event_id, event_name,
+event_type, event_status, event_date, status, ticket_type_name, source, registered_at, checked_in_at, survey { rating,
+nps, comment } | null, captures[] { id, rating, notes, captured_by_name, captured_at } } }`. **De-duplication**: one person
+per email (case-insensitive), else per lead, else the single registration; `key` is opaque (`P-<first attendee id>`, never
+the email). `events_registered` = distinct events with a registration that isn't cancelled; `events_attended` = distinct
+events checked in; `checked_in_rate` = checked in ÷ seats at events that started (company calendar), %, null before any.
+The lead is the newest registration's lead; `do_not_contact` is the lead's flag. Filters (event, type, date range,
+checked in, lead / lead status, company), search and sort run on the client; the CSV / Excel export (marketing `full`
+only) follows the filters on screen.
+
+**Booth leads.** `BoothLead { id (capture), event_id, event_name, event_type, captured_at, captured_by, captured_by_name,
+rating, notes, visitor_name, visitor_company, visitor_email, lead_id, lead_status, lead_owner_id, lead_owner_name,
+lead_value, can_open_lead, state, follow_up_due, overdue, days_overdue }`. **Follow-up state** (from the lead, activities
+**after** the capture; the capture's own "Booth capture" meeting activity `A-ECP-*` doesn't count): `won` / `lost` (status
+type) › `meeting` (a `meeting` activity, or status Meeting / Proposal) › `contacted` (a call, email, WhatsApp or visit) ›
+`untouched`; `no_lead` without a lead. **Overdue**: `untouched` and today (company timezone) is after `follow_up_due` =
+the capture day (company timezone) + Settings › Automation `eventFollowUpDays`. **Notice**: the first time a capture is
+overdue, its lead's owner (active, same company) gets ONE stored notification (`type: event-follow-up`, shown as a
+`follow-up` alert, link to the lead); `event_capture_follow_up_notices` marks the capture (also when nobody could be told),
+so it's never sent twice. The tick runs lazily for the caller's company on `GET /alerts` and `GET /events/booth-leads`.
+**Assign owner** (bulk): each capture's lead goes through the normal lead update (`updateLead`, the `PATCH /leads/:id`
+path), so the caller's lead scope rules apply per lead (a `team` scope can only hand leads within the team; refusals come
+back in `skipped` with the message). Captures the caller can't see (another company's, out of reach, unknown) are
+`not_found`, captures without a lead `no_lead`. Decision: Marketing `full` alone isn't enough (lead owners follow the
+Sales column): Company Admin, Management, Sales Manager (+ Department Head within their team).
+
+**Event analytics (decision: Marketing view AND Reports full | marketing, like Marketing analytics).** Those roles see
+every event, so the numbers are the company's; team members without it get `403` (they have the per-event pages).
+Events **held** in the period: not cancelled, start date (company calendar) in `[from, to]` and on / before today.
+`EventAnalytics { preset, from, to, timezone, currency, kpis, previous, previous_kpis, rows[], by_type[], trend[] }`.
+Each row reuses the event stats (`statsOf`) and survey results: `attendees, checked_in, check_in_rate, leads,
+leads_created, leads_linked, cost_per_lead, cost_per_lead_basis, deals_won, won_value, actual_cost, budget, roi (%),
+nps, responses` — so a row's cost per lead is **exactly** the event page's. KPIs: `events, attendees, checked_in,
+check_in_rate, leads_created, leads_linked, deals_won, won_value, actual_cost` (known actual costs), `cost_per_lead` =
+Σ cost (actual when known, else budget: the event stats basis) ÷ Σ new leads over events with a cost and new leads,
+`roi` = (won value − actual) ÷ actual over events with a known actual cost (%), `average_nps` = mean of the events' NPS.
+`by_type[] { type, events, leads_created, cost, cost_per_lead, won_value, roi }` (insight cards: best / weakest type by
+ROI, else by cost per lead), `trend[] { month, events, check_in_rate, nps }` (by the event's start month). Excel export
+(summary, events, types) and print on the client.
+
+**Seed** (synthetic, different per company): EV-1005 Hospitality Leaders Roundtable (meeting, 75 days ago) and EV-1006
+Smart Property AI Webinar (yesterday, budget only) for Apex; EV-5003 Jeddah Cold Chain Summit (conference, 90 days ago,
+budget lines) and EV-5004 Warehouse Automation Webinar (yesterday) for Crest — repeat attendees from the first exhibition,
+no-shows, a Do Not Contact person, tickets, survey answers and captures in every follow-up state (overdue and not yet
+due). Tests: `services/eventSections.test.ts`, role matrix `src/app/isolation/eventSections.isolation.test.ts`, isolation
+table `isolation/eventSectionsEndpoints.ts`, e2e `e2e/events-sections-a.spec.ts`.
+
+### Speakers, venues & vendors
+
+Company-wide libraries (sidebar › Events › Speakers, Venues, Vendors; pages `/events/speakers[/:id]`, `/events/venues[/:id]`,
+`/events/vendors[/:id]`). Handlers `src/shared/mocks/handlers/eventLibrary.ts`, services `services/eventLibrary.ts` (endpoints) and
+`services/eventLibraryCore.ts` (access, validation, the pick rules used by agenda / budget / events), stores
+`data/eventLibrary.ts`, seed `data/eventLibrarySeed.ts`, wire names `shared/api/eventLibraryMappers.ts` (snake_case at any
+depth). Paths `/event-speakers`, `/event-venues`, `/event-vendors` → plan module `events` (request policy, `403 module_not_in_plan`).
+
+**Permissions (decision)** — no own column; the MARKETING column plus event-team membership (`modules/events/lib/library.ts › libraryAccess`):
+
+| Right | Who | What |
+|---|---|---|
+| manage | marketing `full` (Company Admin, Management, Marketing Manager) | create / edit / delete (when unused) speakers, venues (archive), vendors (blacklist) |
+| read | marketing `view` (Sales Manager) **and** anyone on any event's team (owner or member, any role) | lists and detail pages; picking in their own events: agenda speakers (`edits`), the event's venue (`edits`), budget-line vendors (`manages`) |
+| rate | the event's owner or marketing `full`, event status `completed` | speaker ratings (speakers on that event's agenda), vendor reviews (vendors with lines on that event) |
+| none | everyone else | `403`; the sidebar hides the three sections for roles without marketing view (team members open them from their events) |
+
+Role tests: `src/app/isolation/eventLibrary.isolation.test.ts` (every role × both companies, without and with an event of their own).
+
+**Speakers** — `Speaker { id, name, title, company, bio, photo_url, email, mobile, topics[], linkedin_url, kind internal|external, user_id, user_name, fee, fee_currency, notes, rating (avg, 1 decimal), rating_count, event_count, created_at, updated_at }`.
+`SpeakerDetail` adds `events[] { event_id, event_name, start_date, status, sessions[] { id, title, date, start_time, end_time }, rating, can_rate }`, `hidden_events` (events the caller can't see, counted only), `ratings[] { event_id, event_name, rating, note, rated_by_name, rated_at }`, `can_manage`.
+
+| Method | Path | Who | Body | Answer | Errors |
+|---|---|---|---|---|---|
+| GET | `/event-speakers` | read | | `Speaker[]` (own company, by name) | `403` |
+| POST | `/event-speakers` | manage | `{ name, title?, company?, bio?, photo_url?, email?, mobile?, topics?, linkedin_url?, kind?, user_id?, fee?, fee_currency?, notes? }` | `Speaker` | `409 speaker_exists` (`speaker_id`; same email, or same name + company), `422` |
+| GET | `/event-speakers/:id` | read | | `SpeakerDetail` | `404` |
+| PATCH | `/event-speakers/:id` | manage | any field | `Speaker` | `404`, `409 speaker_exists`, `422` |
+| DELETE | `/event-speakers/:id` | manage | | `{ deleted }` | `404`, `409 speaker_in_use` (on an event's agenda) |
+| POST | `/event-speakers/:id/ratings` | rate | `{ event_id, rating 1–5, note? }` (re-rating an event replaces it) | `SpeakerDetail` | `404`, `403`, `422` (event missing / another company's — same answer, not completed, speaker not on its agenda, rating) |
+
+Validation: name 2–120; email valid; **mobile**: a venue's contact by the **venue's** country (else the company's), speakers and vendors by the company's country — and, since they are often abroad, any number in international form (`+` or `00`, country code, 8–15 digits, stored as `+<digits>`) is accepted; a number in the checked country's own dial code must still pass that country's rules (`shared/lib/phone.ts`); photo an https URL or an image
+from Brand Assets (a `data:image/…` URL ≤ 400 kB); topics ≤ 20 × 40 chars (case-insensitive dedupe); internal speakers may link
+an employee (`user_id` of the company); fee ≥ 0 with a currency (AED, SAR, USD, EUR, GBP, QAR, KWD, BHD, OMR, EGP; default the
+company's). The public registration page's agenda shows name, title, company, bio and photo only.
+
+**Migration (decision)**: `event_speakers` rows used to be a copy of the person per event. They are now the event's roster
+(`event_id → speaker_id`) and sessions reference directory ids. `services/speakerMigration.ts › migrateLegacySpeakers` turns
+old rows into directory entries — per company, dedupe by email, else name + company (case / whitespace-insensitive), an existing
+entry is reused and only its empty fields are filled — and rewrites session speaker ids. The seed is written the old way and
+migrated (Omar Farouk on three Apex events is one entry). Persisted dev DB: `VERSION` bumped (old snapshots reseed).
+
+**Venues** — `Venue { id, name, type exhibition_centre|hotel|conference_hall|office|online_platform|other, address, city, country (ISO-2), map_url, lat, lng, capacity, rooms[] { id, name, capacity }, contact_name, contact_mobile, contact_email, day_rate, currency, price_notes, amenities[], notes, rating 1–5|null, status active|archived, event_count }`.
+`VenueDetail` adds `past[]` / `upcoming[]` `{ event_id, event_name, start_date, end_date, status, attendee_count, checked_in_count, capacity, upcoming }`, `hidden_events`, `average_attendance` (past, not cancelled: checked-in people, else registered; rounded), `can_manage`.
+
+| Method | Path | Who | Body | Answer | Errors |
+|---|---|---|---|---|---|
+| GET | `/event-venues` | read | | `Venue[]` (archived included; the UI hides them by default) | `403` |
+| POST | `/event-venues` | manage | the fields above (`name` required) | `Venue` | `409 venue_exists` (name, per company), `422` (lat + lng both or neither, ranges, whole capacities, mobile by country…) |
+| GET / PATCH | `/event-venues/:id` | read / manage | PATCH: any field (room ids kept) | `VenueDetail` / `Venue` | `404`, `409`, `422` |
+| DELETE | `/event-venues/:id` | manage | | `{ deleted }` | `404`, `409 venue_in_use` (archive it instead) |
+
+Events get `venue_id` (POST / PATCH `/events[/:id]`, optional; `null` clears). The venue must be the company's own and
+**active** (an archived venue stays on events that already had it); another company's id answers like a missing one
+(`422 That venue doesn't exist.`). An empty `location` is filled with "name, city"; the free-text `location` stays the
+fallback / override. Event rows add `venue_id, venue_name, venue_capacity, venue_warning`.
+**Capacity (decision): WARN, not refuse** — `venue_warning` when the event's capacity is above the venue's, or more people are
+registered than the venue holds (the venue's capacity depends on the layout; the event capacity is a registration cap). The
+event page shows it under Venue.
+
+**Vendors** — `Vendor { id, category booth_builder|printing|catering|giveaways|av_tech|photo_video|logistics|staffing|venue_services|other, name, contact_name, mobile, email, website, tax_number, payment_terms, status preferred|approved|blacklisted, notes, documents[] { id, name, url }, rating (avg of reviews), review_count, total_actual, event_count, currency, created_at, updated_at }`.
+`VendorDetail` adds `spend[] { event_id, event_name, start_date, status, lines, planned, actual, rating, needs_rating, can_rate }` (events the caller can see), `hidden_events`, `total_planned`, `reviews[] { id, event_id, event_name, rating, notes, rated_by_name, rated_at }`, `can_manage`.
+Spend = the **actual** amounts of the budget lines linked to the vendor (`total_actual` over all its lines; per event in `spend`).
+
+| Method | Path | Who | Body | Answer | Errors |
+|---|---|---|---|---|---|
+| GET | `/event-vendors` | read | | `Vendor[]` | `403` |
+| POST | `/event-vendors` | manage | `{ category, name, contact_name?, mobile?, email?, website?, tax_number?, payment_terms?, status?, notes?, documents? }` | `Vendor` | `409 vendor_exists`, `422` (https website / document links, tax number 3–50 letters / digits, mobile by country) |
+| GET / PATCH | `/event-vendors/:id` | read / manage | PATCH: any field (document ids kept) | `VendorDetail` / `Vendor` | `404`, `409`, `422` |
+| DELETE | `/event-vendors/:id` | manage | | `{ deleted }` | `404`, `409 vendor_in_use` (has budget lines) |
+| POST | `/event-vendors/:id/reviews` | rate | `{ event_id, rating 1–5, notes? }` (one per event; re-rating replaces it) | `VendorDetail` | `404`, `403`, `422` (event missing / another company's — same answer, not completed, no lines of the vendor on it) |
+
+Budget lines (`/events/:id/budget-lines`) take `vendor_id` (optional; absent keeps it, `null` clears it) and serve
+`vendor_id, vendor_name`. **Blacklist rule**: a blacklisted vendor can't be picked for a new line nor newly picked on an
+existing one → `422 vendor_blacklisted` ("… is blacklisted and can't be picked for budget lines …"); a line that already had
+the vendor keeps it. Another company's vendor id answers like a missing one (`422 That vendor doesn't exist.`). The budget of a
+**completed** event adds `vendors_to_rate[] { vendor_id, vendor_name }` (vendors with lines there and no review for it): the
+Budget tab shows "Rate after the event".
+
+Seed (different per company): Apex — Dubai venues (Dubai World Trade Centre on GITEX + Arab Health, Jumeirah Emirates Towers on
+the breakfast, a Zoom account on the webinar, an archived hotel), vendors (Expo Craft Stands preferred + reviewed, Emirates Print
+House, Saffron Events Catering linked to GITEX lines and still to rate, Gulf Giveaways blacklisted), speakers (migrated + an
+internal one and a paid keynote). Crest — Riyadh venues (Riyadh Front on the expo, the Hilton on the forum: forum capacity 120 vs
+venue 100 → warning), vendors (Najd Booth Builders preferred + reviewed, Al Yamamah Printing, Riyadh AV, Desert Cargo blacklisted),
+speakers. Isolation: entries in `isolation/eventLibraryEndpoints.ts`; foreign ids in bodies (venue, speaker, session speakers,
+vendor, rating / review events, employee) in `isolation/eventLibrary.isolation.test.ts`.
+
+### Sponsors & exhibitors
+
+For events the company **organizes** (`is_organizer`; writes on an attended event → `422 not_organizer`). Read = sees
+the event; write = the event's edit right (marketing `full` or the event team — owner and members, any role). Screens:
+`/events/sponsors` (pipeline board with `onBlockedMove` messages + list, filters event / package / stage / owner; view
+kept in `userStorage.pref`), the event's **Sponsors** tab (packages, sponsors, income) and the sponsor drawer.
+
+| Method | Path | Who | Body / query | Answer | Errors |
+|---|---|---|---|---|---|
+| GET | `/events/sponsors` | module | `?event_id&package_id&stage&owner_id` | `{ currency, deals[], packages[], events[] { id, name, start_date, can_manage } }` — organized, not cancelled events the caller sees (empty for others) | |
+| GET | `/events/sponsor-organizations` | module | `?q` | `[{ kind lead\|customer, id, name, contact_name, contact_email }]` (≤ 30; leads in the caller's Sales scope, customers unless Sales is hidden) | |
+| GET | `/events/:id/sponsorship` | sees | | `{ event_id, is_organizer, currency, packages[], deals[], income { signed, paid, total }, can_manage }` | `404`, `403` |
+| POST / PATCH | `/events/:id/sponsor-packages[/:packageId]` | edits | `{ name 2–80, price ≥ 0, currency? (= company currency), quantity 1–500, benefits[] ≤ 30, deliverables[] { title, offset_days −365…365 } ≤ 30 }` | package `{ …, sold, remaining, deal_count }` | `422`, `409` same name, `409 quantity_below_sold` |
+| DELETE | `/events/:id/sponsor-packages/:packageId` | edits | | `{ removed }` | `409 package_in_use` |
+| POST | `/events/:id/sponsors` | edits | `{ package_id, lead_id \| customer_id \| new_lead { company, contact_name?, email?, mobile? }, force?, contact_name?, contact_email?, amount? (default price, ≤ price), owner_id?, stage? (open or signed), expected_payment_date?, notes? }` | sponsor (below) | `422 invalid_package` / `invalid_organization` / owner, `409 duplicate_lead { matches[] }`, `403` force without a manager, `409 already_sponsor`, `409 sold_out`, `402 LIMIT_REACHED`, `422 event_source_missing` |
+| GET / PATCH / DELETE | `/events/:id/sponsors/:sponsorId` | sees / edits | PATCH `{ package_id?, amount?, owner_id?, contact_name?, contact_email?, expected_payment_date?, actual_payment_date?, notes? }` | sponsor `{ id, event_id, event_name, event_start_date, package_id, package_name, package_price, discount, organization_name, lead_id, customer_id, can_open_organization, contact_name, contact_email, amount, currency, stage, lost_reason, owner_id, owner_name, expected_payment_date, actual_payment_date, notes, signed_at, deliverables[], can_manage }` | `404`, `409 sold_out` (moving a signed sponsor to a full package) |
+| POST | `/events/:id/sponsors/:sponsorId/stage` | edits | `{ stage, lost_reason?, actual_payment_date? }` | sponsor | `409 invalid_stage`, `409 sold_out`, `422 lost_reason_required` |
+| PATCH | `/events/:id/sponsors/:sponsorId/deliverables/:deliverableId` | edits | `{ status? todo\|in_progress\|done, due_date?, owner_id? }` | sponsor | `404`, `422` |
+| POST | `/events/:id/sponsors/:sponsorId/deliverables/:deliverableId/task` | edits | | sponsor (the deliverable's `task_id`); idempotent | `404` |
+
+Rules (`services/eventSponsors.ts`):
+- **Stages** `prospect → contacted → proposal_sent → negotiating` move freely; `→ signed` takes one of the package's
+  `quantity` slots (signed + paid sponsors) — none left → **`409 sold_out`**; `→ paid` only from `signed` (sets
+  `actual_payment_date`, default company today; `paid → signed` clears it); `signed` / `paid` only go to `paid`,
+  `signed` or `lost`; any stage → `lost` with a reason (≥ 3 characters), which frees the slot; `lost` reopens to an
+  open stage only. The board applies the same rule client-side to explain a refused drop.
+- **Organization**: a lead or customer of the company (another company's id = unknown, `422`), or a new lead through
+  the normal lead rule: duplicate name / email / domain → `409 duplicate_lead` unless `force` by a manager (Sales full /
+  team); source = the company's Event source, `source_detail` = event name, `leads.event_id` = the event; owner = the
+  sponsor owner (else the caller, the event team, the first Sales Agent who can own leads); counts toward leads + contacts.
+- **Currency**: packages are priced in the company currency (another code → `422`), so income adds up.
+- **Deliverables**: created once, when the sponsor is first signed, from the package template: due = event start date
+  (company calendar) + `offset_days`, owner = the sponsor owner. A linked task (`link event`, `template_task_id
+  sponsor-deliverable:<id>`) is created on request, once; marking the deliverable done completes it. **Overdue**
+  (due before company today, not done, sponsor not lost) → one stored notification (`marketing-overdue`) to its
+  owner, once (`overdue_notified_at`, re-armed by a new due date); runs on the lifecycle tick and the sponsor reads.
+- **Income & ROI** (decision): signed + paid amounts are the event's **sponsorship income**. `GET /events/:id/stats`
+  (`statsOf`, the one stats function) adds `sponsorship_income` (null for attended events) and, for organized events,
+  `roi = (won_value + sponsorship_income − actual_cost) / actual_cost`; attended events are unchanged. The budget answer
+  carries `sponsorship_income` too (shown on the Budget tab; it is income, not a budget line).
+
+### Travel & logistics
+
+For events the company attends **or** organizes. Read = sees the event (marketing `view` / `full`: every event; team
+members: theirs); write = the event's edit right (marketing `full` or the event team). **Everyone with the module
+always sees their own trips** (read-only), even on events outside their access. Screens: `/events/logistics` (tabs
+Trips grouped by event with per-person totals · Shipments · Deadlines by month; event filter) and the event's
+**Logistics** tab.
+
+| Method | Path | Who | Body / query | Answer | Errors |
+|---|---|---|---|---|---|
+| GET | `/events/logistics` | module | `?event_id` | `{ currency, trips[], shipments[], deadlines[], events[] { id, name, start_date, is_organizer, can_manage }, sees_all, vendors[] { id, name } }` | |
+| GET | `/events/:id/logistics` | sees, or has an own trip there (own trips only) | | same shape | `404`, `403` |
+| POST / PATCH / DELETE | `/events/:id/trips[/:tripId]` | edits | `{ user_id, flight_from, flight_to, depart_date, return_date, airline, booking_ref, flight_cost, hotel_name, check_in, check_out, hotel_cost, visa_required, visa_status not_needed\|applied\|approved\|rejected, visa_expiry, visa_number (write-only), per_diem, other_costs, status planned\|booked\|completed\|cancelled, notes }` | trip `{ …, user_name, visa_number_masked "•••• 4821", total, budget_line_id, can_manage }` | `422` (a person of another company = unknown, dates, amounts ≥ 0, number 5–30 letters / digits), `409 trip_exists` (one per person per event) |
+| POST / PATCH / DELETE | `/events/:id/shipments[/:shipmentId]` | edits | `{ items 2–500, vendor_id? (vendor library) \| vendor_name?, tracking_number, ship_date, arrival_date, status preparing\|in_transit\|delivered\|returned\|cancelled, cost, notes }` | shipment `{ …, budget_line_id }` | `422` (unknown / other company's vendor, arrival before ship date) |
+| POST / PATCH / DELETE | `/events/:id/deadlines[/:deadlineId]` | edits | `{ title 2–160, due_date, owner_id? (default event owner), done?, notes? }` | deadline `{ …, owner_name, done_at, overdue, days_left }` | `422` |
+
+Rules (`services/eventLogistics.ts`, `data/eventLogistics.ts`):
+- **Visa / document numbers are never stored or returned in full**: the server keeps the last 4 characters and serves
+  `visa_number_masked`; `visa_number` is write-only (omitted keeps it, `''` clears it; visa not required → cleared). The
+  secrets guard rejects `visa_number` / `passport_number` / `document_number` keys in any response.
+- **Costs → budget (idempotent)**: each trip keeps one budget line, category `travel` (planned = actual = flight +
+  hotel + per-diem + other), each shipment one line, category `logistics` (new category "Logistics / shipping"; the
+  shipment's `vendor_id` goes on the line). Create → line, edit → the same line updated, delete or a total of 0 → line
+  removed (`event_logistics_lines`). These lines answer `source { kind, id }` on the budget and refuse direct edits
+  (`409 managed_by_logistics`); they count in the actual cost, ROI and cost per lead, and post to a linked campaign.
+- **Deadline reminders**: an open deadline due within 3 days (company calendar) → one stored notification
+  (`marketing-due`) to its owner (else the event owner), once (`reminder_sent_at`, re-armed by a new due date).
+- Seed: Apex attends **CES 2027** (EV-1101, Las Vegas: 3 trips with flights / hotels / visas, a DHL shipment, 5
+  deadlines); Crest's Riyadh forum (EV-5002: 2 domestic trips, an SMSA shipment, 3 deadlines). Sponsors: Apex's Dubai
+  Business Breakfast (EV-1003: Platinum sold out and paid, Gold, Exhibitor table, sponsors at every stage) and Crest's
+  own **Cold-Chain Partner Day 2027** (EV-5101, organized). Isolation entries: `isolation/sponsorsLogisticsEndpoints.ts`.
+
 ### Isolation
 
 Every endpoint is in `src/shared/mocks/isolation/endpoints.ts` (company-list / -write / -item / -export with samples;
-`/public/events/*` as `public` with a reason). Events, team rows, attendees and history carry `company_id`; leads
-created by a registration land in the event's company only. Persisted dev DB: `VERSION` 8.
+`/public/events/*` as `public` with a reason); the advanced ones in `isolation/eventsEndpoints.ts` (public tickets, .ics
+files and surveys as `public` with reasons). Events, team rows, attendees, history, templates, sessions, speakers, ticket
+types, emails, captures, survey answers, budget lines and cost links carry `company_id`; leads created by a registration
+or capture land in the event's company only. Persisted dev DB: `VERSION` 13.
 
 ## Marketing
 

@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { CalendarDays, Plus, Ticket } from 'lucide-react'
+import { CalendarDays, ClipboardList, Plus, Ticket } from 'lucide-react'
 import { PATHS } from '@/app/paths'
 import { can } from '@/shared/lib/permissions'
 import { useCurrentUser } from '@/store/hooks'
@@ -37,6 +37,10 @@ export function EventsFrame({ description, children }: { description: ReactNode;
                 { value: 'calendar', label: 'Calendar' },
               ]}
             />
+            <Button variant="secondary" size="sm" onClick={() => navigate(PATHS.eventTemplates)}>
+              <ClipboardList />
+              Templates
+            </Button>
             {canCreate && (
               <Button write onClick={() => setCreating(true)}>
                 <Plus />

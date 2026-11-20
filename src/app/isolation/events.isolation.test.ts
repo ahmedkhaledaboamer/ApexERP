@@ -143,6 +143,55 @@ describe('events permissions follow the marketing column + team membership (tabl
     }
   }
 
+  /*
+   * Advanced features (docs/API.md › Events): reading follows "sees"; agenda, tickets, check-in and booth
+   * capture follow "edits" (team members + marketing full); templates (company settings) need marketing
+   * full; applying a template and budget lines need "manages" (owner or marketing full); invitations need
+   * "sees" + the Marketing edit right (bulk emails are Marketing's).
+   */
+  for (const co of COMPANIES) {
+    for (const role of Object.keys(PERMISSION_MATRIX) as Role[]) {
+      it(`${co} · ${role}: advanced event endpoints follow see / edit / manage / marketing rights`, async () => {
+        const id = await fixture(co)
+        const u = userFor(co, role)
+        const x = expected(u)
+        const att = await call(admin(co), 'POST', `/events/${id}/attendees`, { name: 'Code Holder', email: `code-${role.length}-${co}@visitor.test` })
+        const code = att.body.attendee.ticket_code as string
+        const see = x.see ? 200 : 403
+        const edit = x.edit ? 200 : 403
+        const manage = x.manage ? 200 : 403
+        expect((await call(u, 'GET', `/events/${id}/agenda`)).status).toBe(see)
+        expect((await call(u, 'GET', `/events/${id}/checklist`)).status).toBe(see)
+        expect((await call(u, 'GET', `/events/${id}/budget`)).status).toBe(see)
+        expect((await call(u, 'GET', `/events/${id}/survey`)).status).toBe(see)
+        expect((await call(u, 'GET', `/events/${id}/leaderboard`)).status).toBe(see)
+        expect((await call(u, 'POST', `/events/${id}/sessions`, { title: `Talk ${role}`, date: '2027-03-01', start_time: '10:00', end_time: '10:30' })).status).toBe(edit)
+        expect((await call(u, 'POST', `/events/${id}/ticket-types`, { name: `Ticket ${role}` })).status).toBe(edit)
+        expect((await call(u, 'POST', `/events/${id}/check-in`, { code })).status).toBe(edit)
+        expect((await call(u, 'GET', `/events/${id}/check-in`)).status).toBe(edit)
+        expect((await call(u, 'POST', `/events/${id}/captures`, { name: 'Booth Person', email: `booth-${role.length}-${co}@visitor.test`, rating: 'warm' })).status).toBe(edit)
+        expect((await call(u, 'POST', `/events/${id}/budget-lines`, { category: 'travel', planned: 100 })).status).toBe(manage)
+        const template = (await call(admin(co), 'GET', '/event-templates')).body[0].id as string
+        expect((await call(u, 'POST', `/events/${id}/apply-template`, { template_id: template })).status).toBe(manage)
+        expect((await call(u, 'GET', '/event-templates')).status).toBe(200)
+        expect((await call(u, 'POST', '/event-templates', { name: `Tpl ${role} ${co}`, event_type: 'meeting', tasks: [] })).status).toBe(x.scope === 'full' ? 200 : 403)
+        expect((await call(u, 'POST', `/events/${id}/invite`, {})).status).toBe(x.see && can(roleOf(u), 'marketing', 'edit') ? 200 : 403)
+      })
+
+      it(`${co} · ${role}: on the event's team → check-in and booth capture, not budget / templates`, async () => {
+        const id = await fixture(co)
+        const u = userFor(co, role)
+        const x = expected(u)
+        if (u.id !== ADMIN[co]) await call(admin(co), 'POST', `/events/${id}/team`, { user_id: u.id })
+        const att = await call(admin(co), 'POST', `/events/${id}/attendees`, { name: 'Door Person', email: `door-${role.length}-${co}@visitor.test` })
+        expect((await call(u, 'POST', `/events/${id}/check-in`, { code: att.body.attendee.ticket_code })).status).toBe(200)
+        expect((await call(u, 'POST', `/events/${id}/captures`, { name: 'Stand Person', email: `stand-${role.length}-${co}@visitor.test`, rating: 'hot' })).status).toBe(200)
+        expect((await call(u, 'POST', `/events/${id}/sessions`, { title: 'Team talk', date: '2027-03-01', start_time: '11:00', end_time: '11:30' })).status).toBe(200)
+        expect((await call(u, 'POST', `/events/${id}/budget-lines`, { category: 'other', planned: 1 })).status).toBe(x.manage ? 200 : 403)
+      })
+    }
+  }
+
   it('another company’s event answers 404 for every role, like a missing one', async () => {
     const foreign = await fixture('co_crest')
     for (const role of Object.keys(PERMISSION_MATRIX) as Role[]) {

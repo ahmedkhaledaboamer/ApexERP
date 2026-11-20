@@ -107,7 +107,9 @@ export interface AnalyticsEvents {
   attendees: number
   leads: number
   won: number
-  rows: { eventId: string; name: string; startsOn: string; attendees: number; leads: number; won: number }[]
+  /** Actual cost of the events (budget lines' actual when an event has lines, else its actual_cost). */
+  cost: number
+  rows: { eventId: string; name: string; startsOn: string; attendees: number; leads: number; won: number; cost: number | null }[]
 }
 
 export interface AnalyticsAdsRow extends AdTotals {

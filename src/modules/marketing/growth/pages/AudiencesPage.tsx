@@ -31,7 +31,8 @@ import { EmptyState, Skeleton } from '@/shared/components/ui/Feedback'
 import { Menu, MenuItem } from '@/shared/components/ui/Menu'
 import { Segmented } from '@/shared/components/ui/Segmented'
 import { useToast } from '@/shared/components/ui/Toast'
-import { Field, Switch, TextInput } from '@/shared/components/form/Field'
+import { Field, SelectInput, Switch, TextInput } from '@/shared/components/form/Field'
+import type { EventPresence } from '@/modules/marketing/growth/types'
 import { PageBody, PageHeader } from '@/shared/components/layout/PageHeader'
 import { DataTable, FacetFilter, useDataTable } from '@/shared/components/data-table'
 
@@ -287,7 +288,20 @@ function AudienceDrawer({ id, onClose, onCreated }: { id: string | 'new' | null;
               {facet('statusTypes', 'Status type', STATUS_TYPES.map((t) => ({ value: t, label: STATUS_TYPE_LABEL[t] })))}
               {facet('sources', 'Source', lookups.sources.map((s) => ({ value: s.key, label: s.label })))}
               {facet('campaignIds', 'Campaign', (options.data?.campaigns ?? []).map((c) => ({ value: c.id, label: c.name })))}
-              {facet('eventIds', 'Event attended', (options.data?.events ?? []).map((e) => ({ value: e.id, label: e.name })))}
+              {facet('eventIds', 'Event', (options.data?.events ?? []).map((e) => ({ value: e.id, label: e.name })))}
+              {rules.eventIds.length > 0 && (
+                <SelectInput
+                  aria-label="Event presence"
+                  className="h-8 w-auto text-xs"
+                  disabled={!canEdit}
+                  value={rules.eventPresence ?? 'any'}
+                  onChange={(e) => setRules((r) => ({ ...r, eventPresence: e.target.value as EventPresence }))}
+                >
+                  <option value="any">Registered (any)</option>
+                  <option value="attended">Attended (checked in)</option>
+                  <option value="no_show">Registered, no-show</option>
+                </SelectInput>
+              )}
               {facet('ownerIds', 'Owner', (options.data?.owners ?? []).map((o) => ({ value: o.id, label: o.name })))}
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

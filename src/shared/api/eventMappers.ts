@@ -1,5 +1,25 @@
 import { defineMapper } from './mapping'
 import type {
+  ApplyTemplateResult,
+  EventBudget,
+  PublicSurvey,
+  SurveyResults,
+  FollowUpResult,
+  CaptureResult,
+  EventCapture,
+  LeaderboardRow,
+  EventEmailLog,
+  CheckInResult,
+  CheckInSummary,
+  PublicTicket,
+  CancelRegistrationResult,
+  TicketType,
+  EventAgenda,
+  EventSession,
+  EventSpeaker,
+  EventChecklist,
+  EventTemplate,
+  EventTemplateInput,
   Attendee,
   AttendeeImportResult,
   AttendeeImportRow,
@@ -45,8 +65,37 @@ export const attendeeImportResultMapper = defineMapper<AttendeeImportResult>({ n
 
 export const eventStatsMapper = defineMapper<EventStats>()
 
-export const publicEventMapper = defineMapper<PublicEventInfo>()
+export const publicEventMapper = defineMapper<PublicEventInfo>({ deep: true })
 export const publicRegistrationMapper = defineMapper<PublicRegistrationInput & PublicRegistrationResult>()
+
+/**
+ * Advanced features (templates, agenda, tickets, check-in, captures, survey, budget): plain snake_case
+ * at any depth (`deep`). `answers` (keyed by question id) keeps its keys and values.
+ */
+const deepMapper = <T>() => defineMapper<T>({ deep: true, opaque: ['answers'] })
+
+export const eventTemplateMapper = deepMapper<EventTemplate>()
+export const eventTemplateInputMapper = deepMapper<EventTemplateInput>()
+export const checklistMapper = deepMapper<EventChecklist>()
+export const agendaMapper = deepMapper<EventAgenda>()
+export const sessionMapper = deepMapper<EventSession>()
+export const speakerMapper = deepMapper<EventSpeaker>()
+export const ticketTypeMapper = deepMapper<TicketType>()
+export const cancelRegistrationMapper = deepMapper<CancelRegistrationResult>()
+export const checkInResultMapper = deepMapper<CheckInResult>()
+export const checkInSummaryMapper = deepMapper<CheckInSummary>()
+export const publicTicketMapper = deepMapper<PublicTicket>()
+export const eventEmailLogMapper = deepMapper<EventEmailLog>()
+export const captureMapper = deepMapper<EventCapture>()
+export const captureResultMapper = deepMapper<CaptureResult>()
+export const leaderboardMapper = deepMapper<LeaderboardRow>()
+export const followUpResultMapper = deepMapper<FollowUpResult>()
+export const publicSurveyMapper = deepMapper<PublicSurvey>()
+export const surveyResultsMapper = deepMapper<SurveyResults>()
+export const budgetMapper = deepMapper<EventBudget>()
+export const applyTemplateMapper = deepMapper<ApplyTemplateResult>()
+/** Any advanced-feature payload (request or answer). */
+export const eventDeepMapper = deepMapper<unknown>()
 
 /** GET /events query (company-local dates). */
 export const EVENT_QUERY = { from: 'from', to: 'to' } as const

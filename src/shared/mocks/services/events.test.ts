@@ -149,7 +149,7 @@ describe('check-in and stats', () => {
     expect(u.body.checked_in_at).toBeNull()
   })
 
-  it('stats: attendees, leads created / linked, deals won and value from those leads, cost per lead = budget / new leads', async () => {
+  it('stats: attendees, leads created / linked, deals won and value from those leads, cost per lead = actual cost (else budget) / new leads', async () => {
     const e = ev('EV-1001')
     const atts = eventAttendees.filter((a) => a.eventId === e.id)
     const eventLeads = leads.filter((l) => atts.some((a) => a.leadId === l.id))
@@ -165,7 +165,9 @@ describe('check-in and stats', () => {
       deals_won: won.length,
       won_value: won.reduce((t, l) => t + l.value, 0),
       budget: 85000,
-      cost_per_lead: Math.round((85000 / created) * 100) / 100,
+      // EV-1001 has budget lines, so the actual cost (not the planned budget) is the basis, like ROI.
+      cost_per_lead_basis: 'actual',
+      cost_per_lead: Math.round((s.actual_cost / created) * 100) / 100,
       currency: 'AED',
     })
     // A linked lead adds to `leads_linked` / `leads` but not to cost per lead.
@@ -216,8 +218,11 @@ describe('events: create, update, team, cancel', () => {
   it('history records changes', async () => {
     await apexAdmin('PATCH', '/events/EV-1003', { budget: 15000, status: 'completed' })
     const d = (await apexAdmin('GET', '/events/EV-1003')).body
-    expect(d.history[0].summary).toMatch(/Budget: 12000 → 15000/)
-    expect(d.history[0].summary).toMatch(/Status: Confirmed → Completed/)
+    // Completing also logs the follow-up tasks it created (eventFollowUp.ts), so look the change entry up.
+    const change = d.history.find((h: { summary: string }) => h.summary.includes('Budget:'))
+    expect(change.summary).toMatch(/Budget: 12000 → 15000/)
+    expect(change.summary).toMatch(/Status: Confirmed → Completed/)
+    expect(d.history.some((h: { summary: string }) => /follow-up task/.test(h.summary))).toBe(true)
   })
 })
 
@@ -235,7 +240,8 @@ describe('public registration page', () => {
     const mail = email('pub')
     const r = await pub('EV-1003', { name: 'Public Person', company_name: 'Public Co', email: mail, mobile: '050 123 4567' })
     expect(r.status).toBe(200)
-    expect(r.body).toEqual({ registered: true, message: expect.any(String) })
+    // A new registration gets its ticket code (QR); nothing about the lead.
+    expect(r.body).toEqual({ registered: true, message: expect.any(String), status: 'registered', waitlist_position: null, ticket_code: expect.stringMatching(/^[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}$/) })
     expect(leads.length).toBe(before + 1)
     const lead = leads[leads.length - 1]
     expect(lead).toMatchObject({ sourceType: 'Event', sourceDetail: 'Dubai Business Breakfast', eventId: 'EV-1003', company: 'Public Co' })

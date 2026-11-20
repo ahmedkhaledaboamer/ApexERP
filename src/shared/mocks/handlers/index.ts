@@ -18,6 +18,10 @@ import { marketingGrowthHandlers } from './marketingGrowth'
 import { adsHandlers } from './ads'
 import { marketingCreativeHandlers } from './marketingCreative'
 import { eventsHandlers } from './events'
+import { eventsAdvancedHandlers } from './eventsAdvanced'
+import { eventSectionsHandlers } from './eventSections'
+import { eventSponsorsLogisticsHandlers } from './eventSponsorsLogistics'
+import { eventLibraryHandlers } from './eventLibrary'
 import { messagesHandlers } from './messages'
 import { quotationsHandlers } from './quotations'
 import { reportsHandlers } from './reports'
@@ -60,6 +64,13 @@ export const handlers = [
   ...marketingGrowthHandlers,
   ...adsHandlers,
   ...marketingCreativeHandlers,
+  // Cross-event sections first: `/events/attendees`, `/events/booth-leads`, `/events/analytics` aren't `/events/:id`.
+  ...eventSectionsHandlers,
+  // Sponsors & exhibitors, Travel & logistics: `/events/sponsors`, `/events/logistics` aren't `/events/:id` either.
+  ...eventSponsorsLogisticsHandlers,
+  // Speakers directory, venues, vendors: `/event-speakers`, `/event-venues`, `/event-vendors`.
+  ...eventLibraryHandlers,
+  ...eventsAdvancedHandlers,
   ...eventsHandlers,
   ...billingHandlers,
   // Last: it ends with a catch-all for unknown /platform/* paths.

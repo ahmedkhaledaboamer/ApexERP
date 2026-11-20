@@ -232,6 +232,8 @@ const RULE_LIMITS: Record<keyof AutomationRules, [number, number]> = {
   lostReopenDays: [7, 730],
   renewalAlertDays: [1, 180],
   taskReminderDaysBefore: [0, 30],
+  eventReminderHours: [0, 336],
+  eventFollowUpDays: [0, 60],
 }
 
 export async function saveAutomationRules(user: User, input: Partial<AutomationRules>): Promise<AutomationRules> {

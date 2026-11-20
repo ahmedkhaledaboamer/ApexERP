@@ -269,6 +269,11 @@ export interface AudienceRules {
   campaignIds: string[]
   /** Events the lead registered at / attended (Events module). */
   eventIds: string[]
+  /**
+   * With eventIds: "any" registration (default), "attended" (checked in at one of them) or "no_show"
+   * (registered with a seat, never checked in at any of them).
+   */
+  eventPresence?: EventPresence
   ownerIds: string[]
   /** Company-local dates (YYYY-MM-DD), inclusive. */
   createdFrom: string | null
@@ -280,7 +285,11 @@ export interface AudienceRules {
   hasEmail: boolean
 }
 
+export type EventPresence = 'any' | 'attended' | 'no_show'
+export const EVENT_PRESENCE: EventPresence[] = ['any', 'attended', 'no_show']
+
 export const EMPTY_RULES: AudienceRules = {
+  eventPresence: 'any',
   industries: [],
   statuses: [],
   statusTypes: [],

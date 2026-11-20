@@ -81,6 +81,23 @@ const EventsListPage = lazy(() => import('@/modules/events/pages/EventsListPage'
 const EventsCalendarPage = lazy(() => import('@/modules/events/pages/EventsCalendarPage'))
 const EventDetailPage = lazy(() => import('@/modules/events/pages/EventDetailPage'))
 const PublicRegistrationPage = lazy(() => import('@/modules/events/pages/PublicRegistrationPage'))
+const EventTemplatesPage = lazy(() => import('@/modules/events/pages/EventTemplatesPage'))
+const EventCheckInPage = lazy(() => import('@/modules/events/pages/EventCheckInPage'))
+const EventBadgesPage = lazy(() => import('@/modules/events/pages/EventBadgesPage'))
+const EventCapturePage = lazy(() => import('@/modules/events/pages/EventCapturePage'))
+const AttendeesDirectoryPage = lazy(() => import('@/modules/events/pages/AttendeesDirectoryPage'))
+const BoothLeadsPage = lazy(() => import('@/modules/events/pages/BoothLeadsPage'))
+const EventAnalyticsPage = lazy(() => import('@/modules/events/pages/EventAnalyticsPage'))
+const EventSponsorsPage = lazy(() => import('@/modules/events/pages/EventSponsorsPage'))
+const EventLogisticsPage = lazy(() => import('@/modules/events/pages/EventLogisticsPage'))
+const SpeakersPage = lazy(() => import('@/modules/events/pages/SpeakersPage'))
+const SpeakerDetailPage = lazy(() => import('@/modules/events/pages/SpeakerDetailPage'))
+const VenuesPage = lazy(() => import('@/modules/events/pages/VenuesPage'))
+const VenueDetailPage = lazy(() => import('@/modules/events/pages/VenueDetailPage'))
+const VendorsPage = lazy(() => import('@/modules/events/pages/VendorsPage'))
+const VendorDetailPage = lazy(() => import('@/modules/events/pages/VendorDetailPage'))
+const PublicTicketPage = lazy(() => import('@/modules/events/pages/PublicTicketPage'))
+const PublicSurveyPage = lazy(() => import('@/modules/events/pages/PublicSurveyPage'))
 
 /** Every module's routes, behind the session guard and (per route) a permission guard. */
 export function AppRouter() {
@@ -102,6 +119,22 @@ export function AppRouter() {
   return (
     <Routes>
       <Route path={PATHS.index} element={<IndexRedirect />} />
+      <Route
+        path={PATHS.publicSurvey}
+        element={
+          <Suspense fallback={<div className="grid h-full place-items-center text-[0.8125rem] text-muted">Loading…</div>}>
+            <PublicSurveyPage />
+          </Suspense>
+        }
+      />
+      <Route
+        path={PATHS.publicTicket}
+        element={
+          <Suspense fallback={<div className="grid h-full place-items-center text-[0.8125rem] text-muted">Loading…</div>}>
+            <PublicTicketPage />
+          </Suspense>
+        }
+      />
       <Route
         path={PATHS.publicEvent}
         element={
@@ -198,7 +231,23 @@ export function AppRouter() {
 
         <Route path={PATHS.events} element={eventsGuard(<EventsListPage />)} />
         <Route path={PATHS.eventCalendar} element={eventsGuard(<EventsCalendarPage />)} />
+        <Route path={PATHS.eventTemplates} element={eventsGuard(<EventTemplatesPage />)} />
+        <Route path={PATHS.eventAttendees} element={eventsGuard(<AttendeesDirectoryPage />)} />
+        <Route path={PATHS.eventBoothLeads} element={eventsGuard(<BoothLeadsPage />)} />
+        <Route path={PATHS.eventAnalytics} element={eventsGuard(<EventAnalyticsPage />)} />
+        {/* Libraries: plan-gated only — reading is for marketing view/full AND event teams (the API decides; 403 → a notice). */}
+        <Route path={PATHS.eventSpeakers} element={eventsGuard(<SpeakersPage />)} />
+        <Route path={PATHS.eventSpeakerDetail} element={eventsGuard(<SpeakerDetailPage />)} />
+        <Route path={PATHS.eventVenues} element={eventsGuard(<VenuesPage />)} />
+        <Route path={PATHS.eventVenueDetail} element={eventsGuard(<VenueDetailPage />)} />
+        <Route path={PATHS.eventVendors} element={eventsGuard(<VendorsPage />)} />
+        <Route path={PATHS.eventVendorDetail} element={eventsGuard(<VendorDetailPage />)} />
+        <Route path={PATHS.eventSponsors} element={eventsGuard(<EventSponsorsPage />)} />
+        <Route path={PATHS.eventLogistics} element={eventsGuard(<EventLogisticsPage />)} />
         <Route path={PATHS.eventDetail} element={eventsGuard(<EventDetailPage />)} />
+        <Route path={PATHS.eventCheckIn} element={eventsGuard(<EventCheckInPage />)} />
+        <Route path={PATHS.eventBadges} element={eventsGuard(<EventBadgesPage />)} />
+        <Route path={PATHS.eventCapture} element={eventsGuard(<EventCapturePage />)} />
         <Route
           path={PATHS.salesReports}
           element={

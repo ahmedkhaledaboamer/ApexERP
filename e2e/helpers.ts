@@ -3,12 +3,29 @@ import type { Page } from '@playwright/test'
 /** Signs in as a seeded user through the mock's dev sign-in (no password), on that workspace. */
 export async function signInAs(page: Page, userId: string, workspace = 'apexaora'): Promise<void> {
   await page.goto(`/login?workspace=${workspace}`)
-  await page.waitForLoadState('networkidle')
-  await page.evaluate(async (id) => {
-    const r = await fetch('/api/auth/dev/sign-in', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: id }) })
-    if (!r.ok) throw new Error(`dev sign-in failed: ${r.status}`)
-    localStorage.setItem('apexcrm.session', JSON.stringify(await r.json()))
-  }, userId)
+  // Wait for what matters — the mock's service worker controls the page — not for a quiet network
+  // ('networkidle' can hang when the worker reloads the page once on a cold start).
+  await page.waitForFunction(() => !!navigator.serviceWorker?.controller, null, { timeout: 45_000 })
+  // The app renders only after the mock API has started (main.tsx), so content in #root means requests are answered.
+  await page.waitForFunction(() => (document.getElementById('root')?.childElementCount ?? 0) > 0, null, { timeout: 45_000 })
+  // The first load may still reload once (MSW takes control): retry if the page navigates mid-call.
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await page.evaluate(async (id) => {
+        const r = await fetch('/api/auth/dev/sign-in', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: id }) })
+        if (!r.ok) throw new Error(`dev sign-in failed: ${r.status}`)
+        localStorage.setItem('apexcrm.session', JSON.stringify(await r.json()))
+      }, userId)
+      return
+    } catch (e) {
+      const transient = /Execution context was destroyed|navigation|Target closed|dev sign-in failed: 404/.test(String(e))
+      if (!transient || attempt >= 5) throw e
+      await page.waitForTimeout(500 * attempt)
+      await page.waitForLoadState('domcontentloaded')
+      await page.waitForFunction(() => !!navigator.serviceWorker?.controller, null, { timeout: 45_000 })
+      await page.waitForFunction(() => (document.getElementById('root')?.childElementCount ?? 0) > 0, null, { timeout: 45_000 })
+    }
+  }
 }
 
 /** The board column (section) for a stage label, e.g. "Interested". */

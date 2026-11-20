@@ -76,6 +76,10 @@ export interface AutomationRules {
   renewalAlertDays: number
   /** Remind a task owner this many days before the due date. */
   taskReminderDaysBefore: number
+  /** Events: a new event's reminder email to registered attendees, this many hours before the start (0 = none). */
+  eventReminderHours: number
+  /** Events: a new event's post-event follow-up tasks are due this many days after completion. */
+  eventFollowUpDays: number
 }
 
 export const DEFAULT_AUTOMATION_RULES: AutomationRules = {
@@ -86,6 +90,8 @@ export const DEFAULT_AUTOMATION_RULES: AutomationRules = {
   lostReopenDays: 90,
   renewalAlertDays: 30,
   taskReminderDaysBefore: 1,
+  eventReminderHours: 24,
+  eventFollowUpDays: 2,
 }
 
 /* ---------------- Audit log ---------------- */

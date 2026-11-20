@@ -1,9 +1,11 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { createColumnHelper, type FilterFn } from '@tanstack/react-table'
-import { CheckCircle2, ExternalLink, FileUp, Link2, Trash2, UserPlus, X } from 'lucide-react'
+import { Ban, CheckCircle2, Download, ExternalLink, FileUp, Link2, Trash2, UserPlus, X } from 'lucide-react'
 import type { Attendee, AttendeeImportResult, AttendeeImportRow, EventDetail } from '@/modules/events/types'
-import { ATTENDEE_SOURCE_LABEL } from '@/modules/events/types'
+import { ATTENDEE_SOURCE_LABEL, ATTENDEE_STATUS_LABEL } from '@/modules/events/types'
+import { buildCsv, csvFileName, downloadCsv, type CsvColumn } from '@/modules/platform/csv'
+import { useCancelRegistration } from '@/modules/events/hooks/useEventsAdvanced'
 import { useAddAttendee, useAttendeesQuery, useCheckIn, useImportAttendees, useRemoveAttendee } from '@/modules/events/hooks/useEvents'
 import { readSpreadsheet } from '@/modules/leads/import/importModel'
 import { leadPath } from '@/app/paths'
@@ -27,6 +29,7 @@ export function AttendeesTab({ event: e }: { event: EventDetail }) {
   const [importing, setImporting] = useState(false)
   const checkIn = useCheckIn()
   const remove = useRemoveAttendee()
+  const cancelReg = useCancelRegistration()
   const toast = useToast()
   const writable = e.canEdit && e.status !== 'cancelled'
 
@@ -57,13 +60,34 @@ export function AttendeesTab({ event: e }: { event: EventDetail }) {
         header: 'Lead',
         cell: ({ row }) => <LeadCell attendee={row.original} />,
       }),
+      col.display({
+        id: 'ticket',
+        header: 'Ticket',
+        cell: ({ row }) => {
+          const a = row.original
+          return (
+            <div className="min-w-0 text-xs">
+              <p className="truncate text-ink-2">{a.ticketTypeName || '—'}</p>
+              {a.status === 'waitlisted' && <Badge tone="amber">Waitlist #{a.waitlistPosition}</Badge>}
+              {a.status === 'cancelled' && <Badge tone="neutral">Cancelled</Badge>}
+            </div>
+          )
+        },
+      }),
+      ...e.questions.map((q) =>
+        col.display({
+          id: `answer-${q.id}`,
+          header: q.label,
+          cell: ({ row }) => <span className="text-xs text-ink-2">{answerText(row.original.answers[q.id]) || '—'}</span>,
+        }),
+      ),
       col.accessor('source', { header: 'Source', cell: ({ row }) => <span className="text-xs text-muted" title={row.original.sourceDetail}>{ATTENDEE_SOURCE_LABEL[row.original.source]}</span> }),
       col.accessor('registeredAt', { header: 'Registered', cell: ({ getValue }) => <span className="num whitespace-nowrap text-xs text-muted">{fmtDate(getValue())}</span> }),
       col.accessor('checkedInAt', {
         header: 'Check-in',
         cell: ({ row }) => {
           const a = row.original
-          if (!writable) return a.checkedInAt ? <Badge tone="green">Checked in</Badge> : <span className="text-xs text-subtle">—</span>
+          if (!writable || a.status !== 'registered') return a.checkedInAt ? <Badge tone="green">Checked in</Badge> : <span className="text-xs text-subtle">—</span>
           return (
             <Button
               write
@@ -96,6 +120,28 @@ export function AttendeesTab({ event: e }: { event: EventDetail }) {
         meta: { align: 'end' },
         cell: ({ row }) =>
           writable ? (
+            <div className="flex justify-end">
+            {row.original.status !== 'cancelled' && (
+              <Button
+                write
+                size="xs"
+                variant="ghost"
+                iconOnly
+                aria-label={`Cancel the registration of ${row.original.name}`}
+                onClick={(ev) => {
+                  ev.stopPropagation()
+                  cancelReg.mutate(
+                    { id: e.id, attendeeId: row.original.id },
+                    {
+                      onSuccess: (r) => toast.success('Registration cancelled', r.promoted.length ? `From the waitlist: ${r.promoted.map((p) => p.name).join(', ')}` : undefined),
+                      onError: (err) => toast.error('Not cancelled', err.message),
+                    },
+                  )
+                }}
+              >
+                <Ban />
+              </Button>
+            )}
             <Button
               write
               size="xs"
@@ -112,10 +158,11 @@ export function AttendeesTab({ event: e }: { event: EventDetail }) {
             >
               <Trash2 />
             </Button>
+            </div>
           ) : null,
       }),
     ]
-  }, [writable, e.id, checkIn, remove, toast])
+  }, [writable, e.id, e.questions, checkIn, remove, cancelReg, toast])
 
   const table = useDataTable({ id: 'event-attendees', data, columns, globalFilter: search, globalFilterFn: attendeeSearch, getRowId: (r) => r.id })
 
@@ -135,8 +182,12 @@ export function AttendeesTab({ event: e }: { event: EventDetail }) {
                 <X />
               </Button>
             )}
+            <Button variant="secondary" size="sm" className="ms-auto" disabled={!data.length} onClick={() => exportAttendees(e, data)}>
+              <Download />
+              Export
+            </Button>
             {writable && (
-              <div className="ms-auto flex gap-2">
+              <div className="flex gap-2">
                 <Button write variant="secondary" size="sm" onClick={() => setImporting(true)}>
                   <FileUp />
                   Import
@@ -393,4 +444,24 @@ function ImportAttendeesModal({ open, onClose, event: e }: { open: boolean; onCl
       )}
     </Modal>
   )
+}
+
+const answerText = (v: string | string[] | undefined) => (Array.isArray(v) ? v.join(', ') : (v ?? ''))
+
+/** CSV of the attendees with their ticket, status and answers to the custom questions. */
+function exportAttendees(e: EventDetail, rows: Attendee[]): void {
+  const columns: CsvColumn<Attendee>[] = [
+    { header: 'Name', value: (a) => a.name },
+    { header: 'Company', value: (a) => a.companyName },
+    { header: 'Title', value: (a) => a.title },
+    { header: 'Email', value: (a) => a.email },
+    { header: 'Mobile', value: (a) => a.mobile },
+    { header: 'Status', value: (a) => (a.status === 'waitlisted' ? `Waitlist #${a.waitlistPosition}` : ATTENDEE_STATUS_LABEL[a.status]) },
+    { header: 'Ticket', value: (a) => a.ticketTypeName },
+    ...e.questions.map((q): CsvColumn<Attendee> => ({ header: q.label, value: (a) => answerText(a.answers[q.id]) })),
+    { header: 'Source', value: (a) => ATTENDEE_SOURCE_LABEL[a.source] },
+    { header: 'Registered at', value: (a) => a.registeredAt },
+    { header: 'Checked in at', value: (a) => a.checkedInAt ?? '' },
+  ]
+  downloadCsv(csvFileName(`attendees-${e.id}`), buildCsv(rows, columns))
 }

@@ -137,6 +137,8 @@ export interface BulkEmailCounts {
 export interface BulkEmail {
   id: string
   name: string
+  /** Linked event (Events › Invite an audience / Send follow-up), if any. */
+  eventId?: string | null
   campaignId: string | null
   campaignName: string | null
   /** Settings › Templates email template it started from (null = written from scratch). */

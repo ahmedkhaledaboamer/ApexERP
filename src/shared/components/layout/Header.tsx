@@ -99,7 +99,14 @@ function Breadcrumbs() {
   if (match) {
     const exact = match.item.to === pathname
     crumbs.push({ label: match.item.label, to: exact ? undefined : match.item.to })
-    if (!exact) crumbs.push({ label: crumbLabel(decodeURIComponent(pathname.slice(match.item.to.length + 1))) })
+    if (!exact) {
+      // Nested sub-pages (/events/EV-1004/check-in) get one crumb per segment: "EV-1004 › Check-in".
+      const rest = decodeURIComponent(pathname.slice(match.item.to.length + 1)).split('/').filter(Boolean)
+      rest.forEach((segment, i) => {
+        const to = i < rest.length - 1 ? `${match.item.to}/${rest.slice(0, i + 1).map(encodeURIComponent).join('/')}` : undefined
+        crumbs.push({ label: crumbLabel(segment), to })
+      })
+    }
   }
   if (crumbs.length === 0) return null
   return (

@@ -22,6 +22,7 @@ import { lookupsFor, statusOf, SYSTEM_STATUS } from '@/shared/mocks/data/lookups
 import { leadStatusHistory } from '@/shared/mocks/data/leadStatusHistory'
 import { bulkEmailRecipients, bulkEmails, campaignCosts, campaigns } from '@/shared/mocks/data/marketing'
 import { eventAttendees, events } from '@/shared/mocks/data/events'
+import { eventActualCost } from '@/shared/mocks/selectors/events'
 import { adConnections, adDailyStats } from '@/shared/mocks/data/ads'
 import { contentItems } from '@/shared/mocks/data/marketingCreative'
 import { formSubmissions, leadForms } from '@/shared/mocks/data/marketingGrowth'
@@ -285,7 +286,7 @@ export function buildAnalytics(co: string, preset: AnalyticsPreset, from: string
             const l = leads.find((x) => x.companyId === co && x.id === id)
             return !!l && isWon(co, l)
           }).length
-          return { eventId: e.id, name: e.name, startsOn: ctx.dayOf(e.startsAt), attendees: att.length, leads: leadIds.length, won }
+          return { eventId: e.id, name: e.name, startsOn: ctx.dayOf(e.startsAt), attendees: att.length, leads: leadIds.length, won, cost: eventActualCost(e) }
         })
         .sort((a, b) => a.startsOn.localeCompare(b.startsOn))
     : []
@@ -329,6 +330,7 @@ export function buildAnalytics(co: string, preset: AnalyticsPreset, from: string
       attendees: eventRows.reduce((s, r) => s + r.attendees, 0),
       leads: eventRows.reduce((s, r) => s + r.leads, 0),
       won: eventRows.reduce((s, r) => s + r.won, 0),
+      cost: Math.round(eventRows.reduce((s, r) => s + (r.cost ?? 0), 0) * 100) / 100,
       rows: eventRows,
     },
     ads: { providers, totals: adTotalsOf(stats) },
