@@ -15,9 +15,11 @@ import {
   FileText,
   CheckSquare,
   Building2,
+  Palette,
 } from 'lucide-react'
 import type { Role } from '@/shared/types'
 import { PATHS } from '@/app/paths'
+import { MARKETING_PATHS } from '@/modules/marketing/paths'
 import { switchRole } from '@/modules/auth/api/authApi'
 import { AlertsBell } from '@/modules/alerts/components/AlertsBell'
 import { can } from '@/shared/lib/permissions'
@@ -127,6 +129,7 @@ function Breadcrumbs() {
 
 function NewMenu() {
   const dispatch = useAppDispatch()
+  const navigate = useNavigate()
   const user = useCurrentUser()
   // Sales and tasks are in every plan; the role decides. `write`: nothing to create while read-only.
   const sales = !!user && can(user.role, 'sales', 'view')
@@ -172,6 +175,17 @@ function NewMenu() {
               New task
             </MenuItem>
           )}
+          {/* Everyone may ask the design team (plan module `marketing`; without it the page shows the upgrade state). */}
+          <MenuItem
+            icon={<Palette />}
+            hint="Design"
+            onSelect={() => {
+              close()
+              navigate(`${MARKETING_PATHS.designRequests}?new=1`)
+            }}
+          >
+            New design request
+          </MenuItem>
         </>
       )}
     </Menu>
@@ -225,6 +239,15 @@ function UserMenu() {
             }}
           >
             My account
+          </MenuItem>
+          <MenuItem
+            icon={<Palette />}
+            onSelect={() => {
+              close()
+              navigate(MARKETING_PATHS.designRequests)
+            }}
+          >
+            My design requests
           </MenuItem>
           <MenuSeparator />
           <MenuLabel>Demo: view as role</MenuLabel>

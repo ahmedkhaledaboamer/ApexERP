@@ -84,8 +84,9 @@ test('campaign → cost → bulk email from a template → exclusions → send n
   // The queue sends in 5-second slots; the page polls while the send is in progress.
   await expect(results).toContainText('Open rate 100%', { timeout: 30_000 })
 
-  // Marketing reports: the campaign's cost per lead (1,200 spend ÷ 1 lead).
+  // Marketing reports (now Marketing analytics): the campaign's cost per lead (1,200 spend ÷ 1 lead).
   await page.goto('/marketing/reports')
+  await expect(page).toHaveURL(/\/marketing\/analytics$/)
   const row = page.getByRole('row').filter({ hasText: CAMPAIGN })
   await expect(row).toBeVisible()
   await expect(row).toContainText('1,200')
@@ -102,6 +103,8 @@ test('roles: a Sales Agent has no Marketing; a Sales Manager reads campaigns but
   await expect(page.getByRole('heading', { name: 'Campaigns' })).toBeVisible()
   await expect(page.getByText('Q4 LinkedIn outreach')).toBeVisible()
   await expect(page.getByRole('button', { name: 'New campaign' })).toHaveCount(0)
+  // The old Marketing reports URL lands on Marketing analytics, with the same access rule.
   await page.goto('/marketing/reports')
-  await expect(page.getByText('Marketing reports isn’t part of your role')).toBeVisible()
+  await expect(page).toHaveURL(/\/marketing\/analytics$/)
+  await expect(page.getByText('Marketing analytics isn’t part of your role')).toBeVisible()
 })

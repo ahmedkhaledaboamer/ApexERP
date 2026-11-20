@@ -75,7 +75,7 @@ function seedLookups(companyId: string): Lookups {
     return {
       statuses,
       // 'Event': the source of leads registered at an event (Events module).
-      sources: ['Website', 'Referral', 'Tender Portal', 'LinkedIn', 'Trade Show', 'Event', 'Cold Outreach'].map(opt),
+      sources: ['Website', 'Referral', 'Tender Portal', 'LinkedIn', 'Trade Show', 'Event', 'Cold Outreach', 'Paid ads'].map(opt),
       industries: industriesSeed(CREST_INDUSTRY_SEED),
       lossReasons: lossReasonsSeed(['Price too high', 'Lost the tender', 'Chose a competitor', 'Project postponed', 'No budget this year']),
       tags: ['Hot', 'Tender', 'Government', 'Vision 2030', 'Key account'].map(opt),
@@ -85,7 +85,7 @@ function seedLookups(companyId: string): Lookups {
   // Apex Aora (first tenant) and the defaults for any new tenant.
   return {
     statuses,
-    sources: ['Website', 'Directory', 'Online Research', 'LinkedIn', 'Referral', 'Event', 'Cold Outreach'].map(opt),
+    sources: ['Website', 'Directory', 'Online Research', 'LinkedIn', 'Referral', 'Event', 'Cold Outreach', 'Paid ads'].map(opt),
     industries: industriesSeed(INDUSTRY_SEED),
     lossReasons: lossReasonsSeed([
       'Budget too low',

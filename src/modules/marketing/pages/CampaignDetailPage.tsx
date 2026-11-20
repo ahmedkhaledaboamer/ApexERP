@@ -8,6 +8,7 @@ import { BulkEmailStatusBadge, CampaignStatusBadge, ChannelBadge } from '@/modul
 import { CampaignDrawer } from '@/modules/marketing/components/CampaignDrawer'
 import { NewBulkEmailModal } from '@/modules/marketing/components/NewBulkEmailModal'
 import { NoMarketingAccess } from '@/modules/marketing/components/NoAccess'
+import { CampaignContentPanel } from '@/modules/marketing/creative/components/CampaignContentPanel'
 import { bulkEmailPath, MARKETING_PATHS } from '@/modules/marketing/paths'
 import { AXIS_TICK, C, CURSOR, Legend, LegendRow, TOOLTIP_STYLE } from '@/modules/reports/components/chartKit'
 import { fmtDate, fmtMoney } from '@/shared/lib/utils'
@@ -143,6 +144,7 @@ function CampaignDetail() {
           <CostsCard results={r} canEdit={canEdit} onAdd={() => setAddingCost(true)} />
           <EmailsCard results={r} canEdit={canEdit} onNew={() => setNewEmail(true)} />
         </div>
+        <CampaignContentPanel campaignId={c.id} />
       </PageBody>
       <CampaignDrawer open={editing} onClose={() => setEditing(false)} campaign={c} currentUserId={user.id} />
       <AddCostModal open={addingCost} onClose={() => setAddingCost(false)} campaignId={c.id} currency={c.currency} />

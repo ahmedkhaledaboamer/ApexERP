@@ -100,6 +100,11 @@ export interface AudienceFilter {
   statuses: string[]
   sources: string[]
   ownerIds: string[]
+  /**
+   * A saved audience (Marketing › Audiences) the send starts from; the filters above narrow it further.
+   * Resolved again by the server at send time (dynamic rules re-applied). Absent = no audience.
+   */
+  audienceId?: string | null
 }
 
 export type RecipientStatus = 'queued' | 'sent' | 'skipped' | 'failed'

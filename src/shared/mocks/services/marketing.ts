@@ -52,6 +52,7 @@ import { delay, fail, ownerName } from '@/shared/mocks/server'
 import { CodedApiError, findInTenant, scoped, stamp, tenantOf, type Tenant } from '@/shared/mocks/tenant'
 import { assertCapacity, limitDetails, onLifecycleTick, recordUsage, remainingCapacity, subOf, subPlan } from '@/shared/mocks/services/billing'
 import { emailSenderOf } from '@/shared/mocks/services/messages'
+import { audienceLeadIds } from '@/shared/mocks/services/audiences'
 
 /* ------------------------------------------------------------------------------------------
  * Marketing (plan module `marketing`; every /marketing/* path is gated in userFrom →
@@ -140,12 +141,17 @@ interface Planned {
   skip: SkipReason | null
 }
 
-/** The audience of a send, in a stable order (lead id), each lead with its exclusion (if any). */
+/**
+ * The audience of a send, in a stable order (lead id), each lead with its exclusion (if any). A saved
+ * audience (`audienceId`) is resolved NOW (dynamic rules re-applied; a deleted one = nobody), then
+ * the filters narrow it; every exclusion rule below still applies.
+ */
 function planAudience(co: string, audience: AudienceFilter): Planned[] {
   const excluded = excludedStatusKeys(co)
   const seen = new Set<string>()
+  const saved = audience.audienceId ? (audienceLeadIds(co, audience.audienceId) ?? new Set<string>()) : null
   return leads
-    .filter((l) => l.companyId === co && matches(l, audience))
+    .filter((l) => l.companyId === co && (!saved || saved.has(l.id)) && matches(l, audience))
     .sort((a, b) => a.id.localeCompare(b.id, 'en', { numeric: true }))
     .map((lead) => {
       const email = lead.contactEmail?.trim().toLowerCase() ?? ''
@@ -483,7 +489,11 @@ function audienceOf(co: string, raw: Partial<AudienceFilter> | undefined): Audie
   const ownerIds = strings(a.ownerIds)
   if (!industries || !statuses || !sources || !ownerIds) return 'The target list must be lists of industries, statuses, sources and owners.'
   if (ownerIds.some((id) => !companyUser(co, id))) return 'Pick owners from your team.'
-  return { industries, statuses, sources, ownerIds }
+  // A saved audience of the company (another company's id answers like a missing one).
+  const audienceId = typeof a.audienceId === 'string' ? a.audienceId.trim() : ''
+  if (a.audienceId !== undefined && a.audienceId !== null && typeof a.audienceId !== 'string') return 'The audience must be an audience id.'
+  if (audienceId && !audienceLeadIds(co, audienceId)) return 'That audience doesn’t exist.'
+  return { industries, statuses, sources, ownerIds, ...(audienceId ? { audienceId } : {}) }
 }
 
 function emailFields(co: string, input: BulkEmailUpdateInput, creating: boolean): Partial<BulkEmailRecord> | string {

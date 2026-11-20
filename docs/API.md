@@ -1543,3 +1543,357 @@ foreign ids in bodies (lead `campaign_id`, bulk email `campaign_id` / `message_t
 campaign `owner_id`) are in `REFS` of `scoped.isolation.test.ts`. Roles per the matrix:
 `src/app/isolation/marketing.isolation.test.ts`; rules: `src/shared/mocks/services/marketing.test.ts`. Persisted dev
 DB: `VERSION` 7 added the marketing stores.
+
+### Lead generation
+
+Plan module `marketing`; rights from the **Marketing** column (hidden → 403, view → reads, full → writes). Lead
+capture forms (the design's `web_form_endpoints`, extended — DB-ALIGNMENT › Design gaps › Marketing (growth)), landing
+pages and UTM links. Wire names: `src/shared/api/marketingGrowthMappers.ts`; screens: Marketing › Lead Generation.
+
+- **Form** `id, name, public_key (20 letters, unique across companies), status (active|paused), field_map[{ key, type
+  (company_name|contact_name|email|mobile|industry|source_detail|message|custom), label, required }]` (order = display
+  order; one of each type, up to 5 `custom`; needs `contact_name` or `company_name`, and a **required** `email` or
+  `mobile`), `success_message, redirect_url (http(s) or null), default_owner_ids[] (round-robin; active users with a
+  Sales & CRM scope that owns records), default_source_id (an active lead source key), campaign_id, consent_text (empty
+  = no checkbox), created_by(_name), created_at, updated_at, owner_names[], campaign_name, stats { views, submissions
+  (spam excluded), conversion_rate (submissions ÷ views, %), leads_created, leads_linked, limit_reached, spam, won_deals
+  (leads created by the form now in a Won-type status) }`.
+- **Submission** `id, form_id, landing_page_id, channel (hosted|embed|landing), submitted_at, name, email, mobile,
+  company_name, answers[{ label, value }], consent, outcome (created|linked|limit|spam), lead_id, do_not_contact`.
+- **Landing page** `id, slug (lower-case letters, digits, hyphens; unique per company), title, headline, body,
+  hero_image_url (http(s) URL, e.g. a Brand Assets file, or null), form_id, form_name, published, views, submissions`.
+- **UTM link** `id, name, base_url, utm_source, utm_medium (required), utm_campaign, utm_term, utm_content, campaign_id,
+  campaign_name, url (the tagged URL; existing query and #hash kept), created_by(_name), created_at`.
+
+| Method & path | Roles | Body / query | Answer · errors |
+|---|---|---|---|
+| `GET /marketing/forms` | view | — | Form[] |
+| `POST /marketing/forms` | full | `name, default_source_id, field_map, status?, success_message?, redirect_url?, default_owner_ids?, campaign_id?, consent_text?` | Form · 422 (rules above; another company's owner / campaign = missing) |
+| `GET /marketing/forms/:id` | view | — | Form · 404 |
+| `PATCH /marketing/forms/:id` | full | any create field | Form · 404, 422 |
+| `DELETE /marketing/forms/:id` | full | — | `{ deleted }` · 409 when it has submissions (pause it instead) |
+| `GET /marketing/forms/:id/submissions` | view | — | Submission[] (newest first) · 404 |
+| `GET /marketing/landing-pages` | view | — | LandingPage[] |
+| `POST /marketing/landing-pages` | full | `slug, title, headline?, body?, hero_image_url?, form_id?, published?` | LandingPage · **409 `slug_taken`**, 422 |
+| `PATCH /marketing/landing-pages/:id` | full | any create field | LandingPage · 404, 409, 422 |
+| `DELETE /marketing/landing-pages/:id` | full | — | `{ deleted }` · 404 |
+| `GET /marketing/utm-links` · `POST` · `DELETE /:id` | view · full · full | `base_url, utm_source, utm_medium, utm_campaign?, utm_term?, utm_content?, campaign_id?, name?` (values: letters, digits, `- _ . + ~`) | UtmLink · 422, 404 |
+| `GET /public/forms/:key` | **public** | — | `{ public_key, name, fields[] (industry fields carry the company's active industries as options), success_message, redirect_url, consent_text, accepting, closed_reason, organizer_name, country }`; counts one **view** · 404 `form_not_found` |
+| `POST /public/forms/:key/submit` | **public** | `{ values: { [field key]: string }, consent?, website? (honeypot), channel? (hosted|embed), landing_page? (slug) }` + `X-Client-Id` | `{ ok, message, redirect_url }` · 404, 409 `form_paused` / `form_closed`, 422 `invalid_submission` / `consent_required`, 429 `rate_limited` |
+| `GET /public/pages/:slug` | **public** | company = the workspace the page is opened on (Host; `X-Workspace` / `?workspace=` in the mock) | `{ title, headline, body, hero_image_url, organizer_name, form (public form or null) }`; counts a page view and a form view · 404 `page_not_found` |
+
+**Submit rules** (same lead path as event registration). Unknown key, a company without the Marketing module (plan
+or platform override), a deleted workspace or a suspended company → the same **404** (keys can't be probed). Honeypot
+`website` filled → a fake success, stored as `spam`, no lead. **Rate limit** like sign-up / event registration
+(`services/rateLimit.ts`, shared): 5 per 10 minutes per client (`X-Client-Id`) and per email, per form → 429. Paused →
+409 `form_paused`; a suspended / cancelled (read-only) workspace → 409 `form_closed`. Values are validated against the
+form (required, email format, **mobile against the company's country**, industry from the company's list); consent text
+set → `consent: true` required. Then: an existing lead of the company with the same email (the lead's or a contact's)
+→ **linked**, an activity on it, no duplicate — a **Do Not Contact** lead stays Do Not Contact (`do_not_contact: true`
+on the submission, "no outreach" in the activity); otherwise a **new lead** (`insertLead`): the form's source and
+campaign, source detail = the `source_detail` answer or the form name, owner = the form's owners in turn (by the number
+of leads the form created; none → the first active Sales Agent), message / custom answers in its first note; the
+plan's **leads + contacts limit** (402 inside) → stored with outcome `limit`, no lead. The visitor's answer is the same
+in every case. A `landing_page` slug of the company's page that embeds this form sets `channel: landing`.
+
+Hosted page `/f/:key` (`?embed=1` = the iframe of the embed snippet; it posts `{ apexFormHeight, key }` to the parent
+for auto height) and landing pages `/p/:slug` are public routes (no sign-in, exempt in `TenantProvider`).
+
+### Audiences
+
+Saved segments of leads (and their contacts' emails). Marketing view reads (and the live preview), full writes and
+exports. **Do Not Contact leads are always excluded** — not a rule, whatever the rules or a frozen list say.
+
+- **Audience** `id, name (unique per company), description, rules { industries[], statuses[], status_types[]
+  (open|cold|won|lost), sources[], campaign_ids[], event_ids[] (registered / attended: leads.event_id or an attendee
+  row), owner_ids[], created_from, created_to, last_activity_after, last_activity_before (company-local YYYY-MM-DD;
+  last activity = latest activity or creation), has_email }` (lists OR within, rules AND across; `statuses` and
+  `status_types` are OR-ed together), `kind (dynamic|static), frozen_at, counts { leads, emails (distinct, with
+  contacts), excluded_dnc }, created_by(_name), created_at, updated_at`; the detail adds `members[]` (first 50:
+  `lead_id, company, name, email, status, owner_name, contacts`).
+- **dynamic** = the rules are applied every time; **static** = the lead ids matched when saved / frozen
+  (`POST /:id/freeze` re-freezes from the current rules). A frozen member that became Do Not Contact is still left out.
+
+| Method & path | Roles | Body / query | Answer · errors |
+|---|---|---|---|
+| `GET /marketing/audiences` | view | — | Audience[] |
+| `GET /marketing/audiences/options` | view | — | `{ owners[], campaigns[], events[] }` of the company |
+| `POST /marketing/audiences/preview` | view | `{ rules }` | `{ counts, members[] }` (live count of unsaved rules) · 422 |
+| `POST /marketing/audiences` | full | `name, description?, rules?, kind?` | detail · 422 (another company's campaign / event / owner = missing) |
+| `GET /marketing/audiences/:id` | view | — | detail · 404 |
+| `PATCH /marketing/audiences/:id` | full | any create field (static keeps its members when rules change; dynamic → static freezes now) | detail · 404, 422 |
+| `DELETE /marketing/audiences/:id` | full | — | `{ deleted }` |
+| `POST /marketing/audiences/:id/freeze` | full | — | detail (`static`, new `frozen_at`) |
+| `GET /marketing/audiences/:id/export` | full | `?hashed=true&include_contacts=false` | `{ file_name, content (CSV: header email or email_sha256), rows, hashed }` — unique, lower-cased emails of the members (and their contacts unless `include_contacts=false`); hashed = **SHA-256 hex of the trimmed, lower-cased address** (custom-audience upload format) |
+
+**Bulk email:** `filters.audience_id` (optional) on `POST/PATCH /marketing/emails` and `preview-audience` — the send
+starts from the audience, the other filters narrow it, and every exclusion rule above still applies. The server
+resolves the audience **again** at preview, schedule and send time (a dynamic audience picks up new leads; a deleted
+audience leaves nobody → 422 at send). Another company's audience id = missing (422 "That audience doesn’t exist.").
+
+### Website & SEO
+
+No crawling, no Google APIs: pages, tags and positions are entered or imported by the team (the screens say so).
+
+- **Site page** `id, url (https://… or /path; unique per company), title, meta_description, h1, target_keyword,
+  page_type (home|service|product|blog|landing|about|contact|other), status (published|draft|needs_update),
+  checks[{ key, label, status (pass|warn|fail), detail }], score (0–100), created_at, updated_at`. Checks
+  (`modules/marketing/growth/seoChecks.ts`, recomputed for **every** page of the company on any save because duplicates
+  span pages): title 30–60 chars (empty fail, outside warn); meta description 70–160 (empty fail, outside warn); H1
+  present (fail) and ≠ title (warn); target keyword set (warn) and found in title / H1 / meta / URL slug (warn each);
+  readable slug (lower case, hyphens, no query, no long ids, no extension, ≤ 4 folders, ≤ 75 chars; warn); duplicate
+  title / meta description across the company's pages (fail). Score: pass 1, warning ½, fail 0, equal weights.
+- **Keyword** `id, keyword (lower-cased; unique per company + country), target_url, search_volume, difficulty (0–100),
+  country (ISO-2; default the company's), positions[{ date, position (1–1000, one decimal; null = not ranking) }],
+  current_position, previous_position, change (previous − current; positive = up), best_position`.
+
+| Method & path | Roles | Body / query | Answer · errors |
+|---|---|---|---|
+| `GET /marketing/seo/pages` | view | — | `{ pages[] (worst score first), summary { pages, average_score, pages_with_issues, failing, warnings, by_check[{ key, label, fail, warn }] } }` |
+| `POST /marketing/seo/pages` · `PATCH /:id` · `DELETE /:id` | full | page fields | SitePage (checks computed) · 404, 422 |
+| `GET /marketing/seo/keywords` | view | — | Keyword[] |
+| `POST /marketing/seo/keywords` · `PATCH /:id` · `DELETE /:id` | full | `keyword, target_url?, search_volume?, difficulty?, country?` | Keyword · 404, 422 |
+| `POST /marketing/seo/keywords/:id/positions` | full | `{ date (≤ today, company time), position }` — the same date replaces | Keyword · 404, 422 |
+| `POST /marketing/seo/keywords/import` | full | `{ rows[{ row, keyword, date, position }], file_name }` (≤ 5,000; the client parses a `keyword,date,position` CSV — header optional, Search Console names accepted) | `{ imported, keywords_created, failed[{ row, keyword, reason }] }` — unknown keywords are added |
+| `GET /marketing/seo/website-leads` | view | `?from=&to=` (YYYY-MM-DD) | `{ from, to, total, months[{ month, forms, landing, website_source, total }], by_source[{ kind (form|landing|website_source), id, name, leads, won }], leads[] (latest 100) }` — leads created in the period through a form / landing page (the submission that created them) or with the company's Website source; each lead once · 400 |
+
+### Isolation (growth)
+
+Every endpoint is in `src/shared/mocks/isolation/growthEndpoints.ts` (spread into the coverage table; the three public
+endpoints carry a `reason`). Roles per the matrix, foreign ids inside bodies (form owners / campaign, landing page form,
+UTM campaign, audience rules, bulk email `filters.audience_id`) and the public endpoints:
+`src/app/isolation/marketingGrowth.isolation.test.ts`; rules: `src/shared/mocks/services/{leadGen,audiences,seo}.test.ts`.
+Form field keys are `key` (not `id`), so a form's field names never look like record ids. Persisted dev DB: `VERSION` 9
+added the growth stores. Client state: none beyond the shared `apexcrm.client-id` (rate-limit id, already allowed).
+
+### Content calendar
+
+Plan module `marketing`; rights from the **Marketing** column (hidden → 403, view → reads, full → writes and
+comments). Tables (not in the design yet, see `docs/DB-ALIGNMENT.md` › Design gaps › Marketing (creative)):
+`content_items`, comments / history as rows of the design's polymorphic `comments` / `audit_logs`. Wire names:
+`src/shared/api/creativeMappers.ts` (mechanical snake_case).
+
+**Content item** `id, title, type (social_post|blog_post|newsletter|video|case_study|press_release|other), channels[]
+(linkedin|instagram|facebook|x|tiktok|youtube|blog|email|website), status (idea|draft|in_review|approved|scheduled|
+published|archived), owner_id, owner_name, reviewer_id, reviewer_name, approved_by, approved_by_name, approved_at,
+publish_at (UTC), publish_local ("YYYY-MM-DDTHH:mm" in the company timezone), timezone, campaign_id, campaign_name,
+body, notes, asset_ids[], assets[{ id, name, kind, url }], published_url, published_at, created_by, created_at,
+updated_at, overdue (scheduled and publish_at passed), can_approve, comments[{ id, author_id, author_name, body,
+mentions[], at }], history[{ id, user_id, user_name, summary, at }]`.
+
+| Method & path | Roles | Body / query | Answer · errors |
+|---|---|---|---|
+| `GET /marketing/content` | view | `?status=&type=&channel=&campaign_id=&owner_id=&from=&to=` (company-local publish days) | ContentItem[] (by publish time) |
+| `POST /marketing/content` | full | `title, type, channels[] (≥ 1), status? (idea·draft·in_review; default idea), owner_id?, reviewer_id?, publish_at? ("YYYY-MM-DDTHH:mm" company wall time), campaign_id?, body?, notes?, asset_ids?` | ContentItem · 422 (missing title / type / channel, bad time, > 2 years ahead, unknown owner, reviewer without Marketing full, unknown campaign / asset — another company's id answers exactly like a missing one) |
+| `GET /marketing/content/:id` | view | — | ContentItem · 404 |
+| `PATCH /marketing/content/:id` | full | any create field except status | ContentItem · 404, 422 (a scheduled item's `publish_at` must stay in the future), 409 (published: only notes / assets / campaign; archived: only notes) |
+| `POST /marketing/content/:id/status` | full | `{ status, publish_at?, published_url? }` | ContentItem · 404, 403 (approving your own item), 409 (move not allowed from the current status), 422 (no / past publish time, missing or non-http(s) URL) |
+| `POST /marketing/content/:id/comments` | full | `{ body }` (`@Full Name` mentions) | ContentItem · 404, 422 |
+
+Rules (`services/contentCalendar.ts`):
+- **Approval**: only a marketing `full` role approves, and only an item `in_review`. **The owner can't approve their own
+  item unless they are a Company Admin** (four-eyes rule; a Company Admin may need to unblock a one-person team). The
+  reviewer is a suggestion: they get a notification when the item goes to review, but any other `full` role may
+  approve. The owner is notified on approval.
+- **Scheduling**: `scheduled` needs the item `approved` and a `publish_at` in the future (wall time in the company's
+  timezone, Settings › Company › Regional; stored as UTC). `scheduled → approved` unschedules.
+- **Publishing** is marked by hand with the live link (`published_url`, http/https); no social network API is called.
+  A published item only moves to `archived`; `archived` returns as `idea` or `draft`.
+- Changing title / type / channels / copy of an `approved` or `scheduled` item sends it back to `in_review` and clears
+  the approval. Moving back to idea / draft / in review clears it too.
+- **Reminders** (stored, once; `services/creativeReminders.ts`, the task-reminder pattern): the owner gets
+  `marketing-due` **24 h before** `publish_at` of a scheduled item (`content_items.reminder_sent_at`) and
+  `marketing-overdue` once it is past and still not published (`overdue_notified_at`). Changing `publish_at` re-arms
+  both. The tick runs lazily per company on `GET /alerts` and the creative list / item GETs.
+- Comments: `full` roles; mentions notify only people who can see Marketing.
+
+### Design requests
+
+Plan module `marketing` (every `/marketing/*` path answers 403 `module_not_in_plan` without it — also for people who
+only request designs; the screen shows the upgrade state). **Rights are not the Marketing column alone**
+(`services/designRequests.ts`):
+
+| Who | Sees | Can |
+|---|---|---|
+| any active user of the company | the requests **they made** and the ones **assigned to them** | create a request; edit their brief while `requested` / `changes_requested`; comment and attach files on their requests; approve / request changes when it's `in_review`; cancel it |
+| the assignee (designer, any role) | what is assigned to them | comment, attach files, move it `in_progress` → `in_review`, and `approved` → `delivered` |
+| Marketing `view` (Sales Manager) | every request | read only (writes 403) |
+| Marketing `full` (Company Admin, Management, Marketing Manager) | every request | everything: assign (`assignee_id`), edit, any allowed status move, save to Brand assets |
+
+A request the caller can't see answers **404, exactly like a missing (or another company's) id**. Only `full` roles
+set `assignee_id` (403 otherwise); `campaign_id`, `content_item_id` and `asset_ids` are Marketing data, unknown (422)
+to roles without Marketing view.
+
+**Design request** `id, title, type (social_post|banner|brochure|presentation|video|logo|other), brief, formats[],
+due_date (company-local), priority (low|medium|high|urgent), status (requested|in_progress|in_review|
+changes_requested|approved|delivered|cancelled), requester_id, requester_name, assignee_id, assignee_name,
+campaign_id, campaign_name, content_item_id, content_item_title, asset_ids[], assets[], attachments[{ id, name,
+mime_type, size_bytes, url (image preview or null), uploaded_by, uploaded_by_name, uploaded_at }], delivered_at,
+saved_asset_ids[], created_at, updated_at, overdue, can_manage, can_edit, can_comment, next_statuses[], comments[],
+history[]`.
+
+Status flow (managers: any listed move; others: their subset above): requested → in_progress | cancelled;
+in_progress → in_review | cancelled; in_review → approved | changes_requested | in_progress | cancelled;
+changes_requested → in_progress | in_review | cancelled; approved → delivered | changes_requested | cancelled;
+cancelled → requested; delivered is final. `in_progress` / `in_review` need an assignee; `delivered` needs a file.
+
+| Method & path | Roles | Body / query | Answer · errors |
+|---|---|---|---|
+| `GET /marketing/design-requests/options` | any | — | `{ can_view_all, can_manage, timezone, designers[] (managers only), campaigns[], content_items[] (Marketing view only) }` |
+| `GET /marketing/design-requests` | any (scoped as above) | `?status=&assignee_id=&mine=1` | DesignRequest[] (by due date) |
+| `POST /marketing/design-requests` | any | `title, type, brief, formats[]?, due_date?, priority?, assignee_id? (full), campaign_id?, content_item_id?, asset_ids? (view)` | DesignRequest · 403 (assigning without full), 422. Unassigned → the Marketing `full` users are notified; assigned → the assignee |
+| `GET /marketing/design-requests/:id` | who sees it | — | DesignRequest · 404 |
+| `PATCH /marketing/design-requests/:id` | requester (open) / full | any create field | DesignRequest · 404, 403. A due-date change re-arms the reminders |
+| `POST /marketing/design-requests/:id/status` | per table | `{ status, note? }` | DesignRequest · 404, 403, 409 (not a valid move), 422 (no assignee / no file) |
+| `POST /marketing/design-requests/:id/comments` | requester, assignee, full | `{ body }` | DesignRequest · 404, 403, 422. `@mentions` notify only people who can see the request |
+| `POST /marketing/design-requests/:id/attachments` | requester, assignee, full | `{ name, mime_type, size_bytes, data_url? }` | DesignRequest · 404, 403, 409 (cancelled), 422 (type / size: `assetRules.ts`), **402 LIMIT_REACHED `storageMb`** |
+| `DELETE /marketing/design-requests/:id/attachments/:attachmentId` | uploader or full | — | DesignRequest · 404, 403 |
+| `POST /marketing/design-requests/:id/save-to-assets` | full | `{ attachment_id? (default newest), name?, kind?, tags? }` | BrandAsset (`source: design_request`) · 403, 409 (not delivered / already saved), 422 |
+
+Attachments are metadata (mime type, size; a data-URL preview for images ≤ 1 MB) and count against the plan's
+`storageMb` like task attachments. A file saved to Brand assets is the same stored file (counted once). Reminders
+(stored, once): `marketing-due` to the assignee and the requester from 1 day before the due date (company calendar),
+`marketing-overdue` from the day after, while the request is open (`reminder_sent_at`, `overdue_notified_at`).
+
+Entry points: Marketing › Design Requests (nav, Marketing view roles); for everyone, **New › New design request** in
+the top bar and **My design requests** in the user menu. The route `/marketing/design-requests` is plan-gated only
+(`ModuleGate`), not role-gated.
+
+### Brand assets
+
+Plan module `marketing`; Marketing column (view → reads, full → writes). **Brand asset** `id, name, kind (logo|image|
+video|document|template|font|other), mime_type, size_bytes, url (data-URL preview for images ≤ 1 MB, else null),
+tags[], campaign_id, campaign_name, source (upload|design_request|system), design_request_id, description,
+usage_rights_expires_at (company-local date), status (active|archived), system, expiring_soon (≤ 30 days), expired,
+created_by, created_by_name, created_at, updated_at`.
+
+| Method & path | Roles | Body / query | Answer · errors |
+|---|---|---|---|
+| `GET /marketing/assets` | view | `?kind=&tag=&campaign_id=&status=&expiring=1` | BrandAsset[] (system assets first) |
+| `POST /marketing/assets` | full | `name, kind, mime_type, size_bytes, data_url?, tags[]?, campaign_id?, description?, usage_rights_expires_at?` | BrandAsset · 422 (type not allowed for the kind, over the kind's size limit, preview content ≠ declared type or size, unsafe SVG, tags, dates, unknown campaign), **402 LIMIT_REACHED `storageMb`** |
+| `GET /marketing/assets/:id` | view | — | BrandAsset · 404 |
+| `PATCH /marketing/assets/:id` | full | metadata fields + `status` (the file itself can't be replaced) | BrandAsset · 404, 409 (system asset), 422. A new expiry date re-arms the alert |
+| `DELETE /marketing/assets/:id` | full | — | `{ id, deleted }` · 404, 409 (system asset). Frees storage; unlinks it from content items and design requests |
+
+Upload rules are one module shared by the upload form and the API (`modules/marketing/creative/assetRules.ts`): per
+kind MIME lists and limits (logo 5 MB, image 20 MB, video 200 MB, document 25 MB, template 50 MB, font 5 MB); image
+previews are checked like Settings › Branding logos (`modules/settings/branding.ts`: magic bytes, safe SVG).
+**System assets**: the company's branding images (Settings › Branding light / dark logo, favicon) are listed read-only
+with ids `SYS-logo-light`, `SYS-logo-dark`, `SYS-favicon` (computed, not stored, never counted in storage). **Usage
+rights**: `expiring_soon` within 30 days; one stored `marketing` alert to the creator (`expiry_notified_at`).
+
+### Isolation (creative)
+
+Every endpoint above is in the coverage table (`src/shared/mocks/isolation/creativeEndpoints.ts`, spread into
+`endpoints.ts`) with samples; foreign ids in bodies (content campaign / owner / reviewer / assets, design assignee /
+campaign / content item / assets, asset campaign) behave like missing ones
+(`services/marketingCreative.test.ts`). Roles from the matrix, including requester / assignee rights for all nine
+roles: `src/app/isolation/marketingCreative.isolation.test.ts`. Persisted dev DB: `VERSION` 11 added the creative
+stores. New stored notification types `marketing-due`, `marketing-overdue`, `marketing` (bell group "Marketing").
+
+### Ads integrations
+
+Screen: Marketing › Ads Integrations (`/marketing/ads`). Service `src/shared/mocks/services/ads.ts`, handlers
+`handlers/ads.ts`, wire names `src/shared/api/adsMappers.ts`. Providers `meta | google | linkedin | tiktok`; lead ads
+(lead forms → leads) for `meta` and `linkedin`.
+
+**Access.** Plan module `marketing` (central gate). Marketing column: `view` reads (connections list and detail);
+`full` (Company Admin, Management, Marketing Manager) also lists ad accounts, connects, syncs, disconnects and maps.
+Listing ad accounts, connecting, syncing and disconnecting also need the plan module **`integrations`** (403
+`module_not_in_plan`, `{ module: 'integrations', planId }`); without it the list / detail still answer (synced history
+stays readable), mapping still works (CRM data only) and the daily sync is paused. The screen shows an upgrade card
+for connecting in that case.
+
+**Models.**
+- **Ad connection** `id, provider, account_id, account_name, currency_code, status (connected|error|disconnected),
+  token_hint ("•••• 4f2a" | null after disconnect), connected_by, connected_by_name, connected_at, disconnected_at,
+  last_synced_at, last_sync_status (success|error|null), last_error, synced_through (last company-local day imported),
+  lead_ads, campaigns, mapped, last30 { spend, impressions, clicks, conversions, leads, ctr (%), cpc }, pending_leads`.
+  The access token is stored server-side only (never in any response; the secrets guard flags `adtok_…` anywhere).
+  The detail adds `ad_campaigns[] { id, connection_id, external_id, name, objective (leads|traffic|conversions|awareness),
+  status, campaign_id, campaign_name, mapped_at, totals {…last 30 days}, cost_entries }`, `runs[]` (last 20, newest first:
+  `id, trigger (initial|daily|manual), status, started_at, finished_at, rows, costs, leads_created, leads_duplicate,
+  leads_skipped, leads_pending, error`), `submissions[]` (last 50: `id, ad_campaign_id, ad_campaign_name, submitted_at,
+  name, email, company_name, outcome (created|duplicate|limit|pending_source), lead_id, campaign_id, message`) and
+  `daily[] { date, spend, clicks, impressions, leads }` (last 30 synced days).
+
+| Method & path | Roles | Body / query | Answer · errors |
+|---|---|---|---|
+| `GET /marketing/ads/connections` | view | — | AdConnection[] (live first, then disconnected) |
+| `GET /marketing/ads/providers/:provider/accounts` | full + `integrations` | — | `[{ account_id, name, currency_code, connected }]`: the ad accounts the (simulated) authorizing login can see · 403, 404 unknown provider |
+| `POST /marketing/ads/connections` | full + `integrations` | `provider, account_id, consent: true` | AdConnectionDetail after the initial sync · 422 (bad provider, no consent, account not available to this login — another company's account answers the same), 409 already connected, 403 |
+| `GET /marketing/ads/connections/:id` | view | — | AdConnectionDetail · 404 |
+| `DELETE /marketing/ads/connections/:id` | full + `integrations` | — | AdConnectionDetail (`disconnected`, token deleted) · 409 already disconnected, 404, 403 |
+| `POST /marketing/ads/connections/:id/sync` | full + `integrations` | — | AdConnectionDetail with the new run first ("Sync now" / retry) · 409 disconnected, 404, 403 |
+| `PATCH /marketing/ads/campaigns/:id` | full | `campaign_id` (string \| null) | AdCampaign · 422 unknown campaign (another company's = missing), 404, 403 |
+
+**Mock OAuth.** "Connect" lists three ad accounts per provider (ids derived from the company: `act_…`, `123-456-7890`,
+`5…`, `7…`), the user picks one and consents; the server stores a token and answers the masked hint. Reconnecting a
+disconnected account reactivates the same connection (history kept, no duplicates).
+
+**Sync.** Complete company-local days only (up to yesterday). The first sync imports `BACKFILL_DAYS` = 30 days; later
+syncs import the days after `synced_through` (catch-up capped at 30 days). The daily sync rides on the company's lazy
+lifecycle tick (every authenticated request, Dev › advance clock — `onLifecycleTick('marketing.ads')`), once per new day
+per live connection, only for the ticked company. Simulated stats per ad campaign and day (spend, impressions, clicks,
+conversions, lead-form leads) are deterministic (FNV hash of the ad campaign id and date). About one run in ten fails
+(simulated provider timeout): nothing is imported, the run is logged with `error`, the connection shows `error`, the
+daily tick retries after an hour of mock-clock time and "Sync now" retries at once. Dev / test hook (read only when
+`import.meta.env.DEV || MODE === 'test'`): `window.__apexAdsSync = 'ok' | 'fail'`.
+
+**Costs (idempotent).** A mapped ad campaign's synced spend becomes `campaign_costs` rows on its CRM campaign: one row
+per ad campaign per day with spend, keyed `ad_campaign_id|date` in the cost-link table, so syncing again, re-mapping
+or remapping never creates a second row for a day. Mapping backfills every synced day not costed yet. Unmapping stops
+new rows; rows already created stay on the campaign they were created for (history). Disconnecting keeps stats, costs
+and mappings. So campaign `spend`, `cost_per_lead` and analytics use the real ad spend.
+
+**Lead ads → leads.** Meta / LinkedIn lead-form submissions made after the connection (`leads_from` = connect time;
+seeded connections: seed time) arrive with the sync (or the provider webhook, simulated by `receiveLeadWebhook`) and go
+through the normal lead creation path (`insertLead`): source = the company's active source matching the provider
+(Meta: "Paid ads", "Meta Ads", "Meta", "Facebook", "Instagram", "Social media"…; LinkedIn: "LinkedIn Ads", "LinkedIn",
+"Paid ads"), source detail = `<Provider>: <ad campaign>`, `campaign_id` = the ad campaign's mapping, owner =
+auto-assignment (least-loaded Sales Agent), `created_at` = the submission time. Duplicates (same email / company /
+domain in the company) link to the existing lead with an activity (`duplicate`). The plan's leads + contacts limit
+(`LIMIT_REACHED`) → `limit`, no lead. No matching source → `pending_source` with a clear message (no silent creation);
+waiting submissions are retried on every sync. The webhook routes by connection (provider + ad account of a live
+connection), never by a company field of the payload: a lead for company A's account can't land in company B.
+
+**Seed.** Apex: Meta and Google connected (lead-form / search campaigns mapped to "Q4 LinkedIn outreach"); Apex has no
+"Paid ads" source, so Meta lead forms wait for one. Crest: LinkedIn connected (mapped to "LinkedIn sponsored content Q4").
+
+### Marketing analytics
+
+Screen: Marketing › Marketing Analytics (`/marketing/analytics`); the old `/marketing/reports` URL redirects there
+(the old cost-per-lead page is absorbed; `GET /marketing/reports/cost-per-lead` stays for compatibility). Service
+`src/shared/mocks/services/marketingAnalytics.ts`.
+
+| Method & path | Roles | Query | Answer · errors |
+|---|---|---|---|
+| `GET /marketing/analytics` | Marketing view + Reports `full` / `marketing` | `preset` (this_month \| last_30_days \| this_quarter \| ytd \| custom; default this_month), `from`, `to` (custom, YYYY-MM-DD, ≤ 2 years), `compare` (default true) | MarketingAnalytics · 400 bad preset / range, 403 |
+
+Everything is the caller's company; dates are company-local (timezone), presets are resolved on the server from the
+mock clock and end today. The previous period is the same number of days right before `from`. Answer: `preset, from,
+to, days, previous { from, to } | null, currency, timezone, kpis, previous_kpis, bucket (day ≤ 45 days | week ≤ 200 |
+month), timeline[{ start, leads, spend }], by_source[{ source, label, leads, attributed, won }], by_channel[{ channel |
+'none', leads, spend, won }], funnel[{ key, label, count, rate }], campaigns[{ campaign_id, name, channel, status,
+spend, leads, cost_per_lead, won, won_value, cost_per_won, roi, sent, opened, replied }], email { sent, opened,
+replied, open_rate, reply_rate, sends[] }, events { included, attendees, leads, won, rows[] }, ads { providers[{
+provider, spend, impressions, clicks, conversions, leads, ctr, cpc }], totals }, content { published, scheduled,
+by_type[] }, forms { submissions, leads_created, linked, rows[] }`.
+
+Definitions: **spend** = `campaign_costs` incurred in the period (manual + synced ad spend); **leads** = leads created
+in the period (the cohort), `attributed_leads` = with a campaign; **won / won value** = cohort leads whose status type is
+`won` now; **cost per lead** = spend ÷ attributed leads; **ROI** = (won value of attributed won leads − spend) ÷ spend,
+in % (null without spend); **conversion rate** = won ÷ leads, in %. **Funnel**: the furthest stage each cohort lead
+reached, from `lead_status_history` and its current status (type `won` → Won; Proposal, Meeting, Interested by key;
+Contacted / No response / Call later → Contacted; anything else → New). **Email**: bulk email recipients sent in the
+period (opens / replies visible by now). **Events** (plan module `events`): events starting in the period, not cancelled
+— attendees, distinct linked leads, of which won. **Ads**: synced daily stats in the period per provider (disconnected
+accounts keep their history). **Content**: Content Calendar items published (`published_at`) / scheduled (`publish_at`)
+in the period. **Forms**: Lead Generation form submissions in the period, spam excluded. Excel export (one sheet per
+table) and Print / PDF are client-side.
+
+**Isolation (ads and analytics).** Every endpoint is in `endpoints.ts` (module `marketing/ads`, `marketing/analytics`);
+foreign ids in bodies (`campaign_id` of a mapping, `account_id` of a connect) are in `REFS`. Roles per the matrix (and
+the `integrations` gate): `src/app/isolation/marketingAds.isolation.test.ts`; rules:
+`src/shared/mocks/services/ads.test.ts`, `marketingAnalytics.test.ts` (numbers recomputed from the raw tables in both
+companies); masked tokens: `secrets.isolation.test.ts`. Persisted dev DB: `VERSION` 10 added the ads stores.

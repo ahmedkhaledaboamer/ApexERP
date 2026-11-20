@@ -64,7 +64,18 @@ const CampaignsPage = lazy(() => import('@/modules/marketing/pages/CampaignsPage
 const CampaignDetailPage = lazy(() => import('@/modules/marketing/pages/CampaignDetailPage'))
 const BulkEmailsPage = lazy(() => import('@/modules/marketing/pages/BulkEmailsPage'))
 const BulkEmailPage = lazy(() => import('@/modules/marketing/pages/BulkEmailPage'))
-const MarketingReportsPage = lazy(() => import('@/modules/reports/pages/MarketingReportsPage'))
+const AdsIntegrationsPage = lazy(() => import('@/modules/marketing/pages/AdsIntegrationsPage'))
+const MarketingAnalyticsPage = lazy(() => import('@/modules/marketing/pages/MarketingAnalyticsPage'))
+const ContentCalendarPage = lazy(() => import('@/modules/marketing/creative/pages/ContentCalendarPage'))
+const DesignRequestsPage = lazy(() => import('@/modules/marketing/creative/pages/DesignRequestsPage'))
+const BrandAssetsPage = lazy(() => import('@/modules/marketing/creative/pages/BrandAssetsPage'))
+// Marketing › growth (lead generation, audiences, website & SEO). /f/:key and /p/:slug need no sign-in.
+const LeadGenerationPage = lazy(() => import('@/modules/marketing/growth/pages/LeadGenerationPage'))
+const CaptureFormPage = lazy(() => import('@/modules/marketing/growth/pages/LeadFormPage'))
+const AudiencesPage = lazy(() => import('@/modules/marketing/growth/pages/AudiencesPage'))
+const SeoPage = lazy(() => import('@/modules/marketing/growth/pages/SeoPage'))
+const PublicFormPage = lazy(() => import('@/modules/marketing/growth/pages/PublicFormPage'))
+const PublicLandingPage = lazy(() => import('@/modules/marketing/growth/pages/PublicLandingPage'))
 // Events (plan module `events`, Phase 2): loaded on first visit. The public registration page needs no sign-in.
 const EventsListPage = lazy(() => import('@/modules/events/pages/EventsListPage'))
 const EventsCalendarPage = lazy(() => import('@/modules/events/pages/EventsCalendarPage'))
@@ -96,6 +107,22 @@ export function AppRouter() {
         element={
           <Suspense fallback={<div className="grid h-full place-items-center text-[0.8125rem] text-muted">Loading…</div>}>
             <PublicRegistrationPage />
+          </Suspense>
+        }
+      />
+      <Route
+        path={MARKETING_PATHS.publicForm}
+        element={
+          <Suspense fallback={<div className="grid h-full place-items-center text-[0.8125rem] text-muted">Loading…</div>}>
+            <PublicFormPage />
+          </Suspense>
+        }
+      />
+      <Route
+        path={MARKETING_PATHS.publicLanding}
+        element={
+          <Suspense fallback={<div className="grid h-full place-items-center text-[0.8125rem] text-muted">Loading…</div>}>
+            <PublicLandingPage />
           </Suspense>
         }
       />
@@ -147,7 +174,27 @@ export function AppRouter() {
         <Route path={MARKETING_PATHS.campaignDetail} element={marketing(<CampaignDetailPage />)} />
         <Route path={MARKETING_PATHS.emails} element={marketing(<BulkEmailsPage />)} />
         <Route path={MARKETING_PATHS.emailDetail} element={marketing(<BulkEmailPage />)} />
-        <Route path={MARKETING_PATHS.reports} element={marketing(<MarketingReportsPage />)} />
+        <Route path={MARKETING_PATHS.leadGeneration} element={marketing(<LeadGenerationPage />)} />
+        <Route path={MARKETING_PATHS.leadForm} element={marketing(<CaptureFormPage />)} />
+        <Route path={MARKETING_PATHS.audiences} element={marketing(<AudiencesPage />)} />
+        <Route path={MARKETING_PATHS.seo} element={marketing(<SeoPage />)} />
+        <Route path={MARKETING_PATHS.content} element={marketing(<ContentCalendarPage />)} />
+        <Route path={MARKETING_PATHS.assets} element={marketing(<BrandAssetsPage />)} />
+        {/* Design requests: every user may ask for a design, so the route is plan-gated only (no Marketing role check). */}
+        <Route
+          path={MARKETING_PATHS.designRequests}
+          element={
+            <ModuleGate module="marketing">
+              <Suspense fallback={<GateSkeleton />}>
+                <DesignRequestsPage />
+              </Suspense>
+            </ModuleGate>
+          }
+        />
+        <Route path={MARKETING_PATHS.ads} element={marketing(<AdsIntegrationsPage />)} />
+        <Route path={MARKETING_PATHS.analytics} element={marketing(<MarketingAnalyticsPage />)} />
+        {/* The old Marketing reports page lives on in Marketing analytics (same access rule). */}
+        <Route path={MARKETING_PATHS.reports} element={<Navigate to={MARKETING_PATHS.analytics} replace />} />
 
         <Route path={PATHS.events} element={eventsGuard(<EventsListPage />)} />
         <Route path={PATHS.eventCalendar} element={eventsGuard(<EventsCalendarPage />)} />

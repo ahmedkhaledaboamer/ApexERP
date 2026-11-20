@@ -22,6 +22,7 @@ import {
   useUpdateBulkEmail,
 } from '@/modules/marketing/hooks/useMarketing'
 import { BulkEmailStatusBadge } from '@/modules/marketing/components/badges'
+import { useAudiencesQuery } from '@/modules/marketing/growth/hooks'
 import { NoMarketingAccess } from '@/modules/marketing/components/NoAccess'
 import { campaignPath, MARKETING_PATHS } from '@/modules/marketing/paths'
 import { BodyEditor, VariablePicker } from '@/modules/settings/templates/components/BodyEditor'
@@ -111,6 +112,7 @@ function Builder({ email }: { email: BulkEmailDetail }) {
   const [modal, setModal] = useState<null | 'test' | 'schedule' | 'send'>(null)
   const bodyRef = useRef<HTMLTextAreaElement>(null)
   const preview = useAudiencePreview(email.id, audience)
+  const savedAudiences = useAudiencesQuery()
   const dirty = subject !== email.subject || body !== email.body || !sameAudience(audience, email.audience)
   const editable = canEdit
 
@@ -146,7 +148,9 @@ function Builder({ email }: { email: BulkEmailDetail }) {
     })
   }
 
-  const facet = (key: keyof AudienceFilter, title: string, opts: { value: string; label: string }[]) => (
+  const pickAudience = (id: string) =>
+    setAudience(({ audienceId: _old, ...rest }) => (id ? { ...rest, audienceId: id } : rest))
+  const facet = (key: Exclude<keyof AudienceFilter, 'audienceId'>, title: string, opts: { value: string; label: string }[]) => (
     <FacetFilter title={title} options={opts} selected={audience[key]} onChange={(v) => setAudience((a) => ({ ...a, [key]: v }))} />
   )
 
@@ -233,6 +237,24 @@ function Builder({ email }: { email: BulkEmailDetail }) {
             <Card>
               <CardHeader title="Target list" description="Leads matching every filter you set. Empty filters include everyone." />
               <CardBody className="space-y-4">
+                <Field
+                  id="be-saved-audience"
+                  label="Use a saved audience"
+                  hint={
+                    audience.audienceId
+                      ? 'The audience is resolved again when the email is sent; the filters below narrow it, and every exclusion still applies.'
+                      : 'Optional: start from a segment saved in Marketing › Audiences.'
+                  }
+                >
+                  <SelectInput id="be-saved-audience" value={audience.audienceId ?? ''} disabled={!editable} onChange={(e) => pickAudience(e.target.value)}>
+                    <option value="">No saved audience (filters only)</option>
+                    {(savedAudiences.data ?? []).map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name} ({a.counts.leads.toLocaleString()} leads{a.kind === 'static' ? ', frozen' : ''})
+                      </option>
+                    ))}
+                  </SelectInput>
+                </Field>
                 <div className="flex flex-wrap gap-2" aria-label="Audience filters">
                   {facet('industries', 'Industry', lookups.industries.map((i) => ({ value: i.key, label: i.label })))}
                   {facet('statuses', 'Status', lookups.statuses.map((s) => ({ value: s.key, label: s.label })))}

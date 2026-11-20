@@ -14,6 +14,9 @@ import { projectsHandlers } from './projects'
 import { leadImportHandlers } from './leadImport'
 import { leadHandlers } from './leads'
 import { marketingHandlers } from './marketing'
+import { marketingGrowthHandlers } from './marketingGrowth'
+import { adsHandlers } from './ads'
+import { marketingCreativeHandlers } from './marketingCreative'
 import { eventsHandlers } from './events'
 import { messagesHandlers } from './messages'
 import { quotationsHandlers } from './quotations'
@@ -54,6 +57,9 @@ export const handlers = [
   ...quotationsHandlers,
   ...reportsHandlers,
   ...marketingHandlers,
+  ...marketingGrowthHandlers,
+  ...adsHandlers,
+  ...marketingCreativeHandlers,
   ...eventsHandlers,
   ...billingHandlers,
   // Last: it ends with a catch-all for unknown /platform/* paths.

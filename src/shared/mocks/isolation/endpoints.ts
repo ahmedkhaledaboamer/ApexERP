@@ -4,6 +4,8 @@ import { contracts } from '@/shared/mocks/data/contracts'
 import { departments } from '@/shared/mocks/data/departments'
 import { quotations } from '@/shared/mocks/data/quotations'
 import { bulkEmails, campaigns } from '@/shared/mocks/data/marketing'
+import { adCampaigns, adConnections } from '@/shared/mocks/data/ads'
+import { accountsFor } from '@/shared/mocks/services/ads'
 import { reportSchedules } from '@/shared/mocks/data/reportSchedules'
 import { packages, services } from '@/shared/mocks/data/services'
 import { templates } from '@/shared/mocks/data/templates'
@@ -13,6 +15,8 @@ import { eventAttendees, events } from '@/shared/mocks/data/events'
 import { teamIdsOf } from '@/shared/mocks/selectors/events'
 import { APEX, ADMIN, api, adminToken, other, platformToken, userById, type Co } from './harness'
 import { contactInputMapper, importRowMapper, leadInputMapper } from '@/shared/api/mappers'
+import { CREATIVE_ENDPOINTS } from './creativeEndpoints'
+import { GROWTH_ENDPOINTS } from './growthEndpoints'
 
 /**
  * THE COVERAGE TABLE of the isolation suite: one entry per registered MSW handler (method + path as
@@ -135,6 +139,9 @@ async function draftQuote(co: Co): Promise<string> {
 
 /** A seed campaign of the company (marketing). */
 const campaign = (co: Co) => pick(campaigns, co, 'campaign')
+/** A live (seeded) ad account connection and one of its ad campaigns (marketing › ads). */
+const adConnection = (co: Co) => pick(adConnections, co, 'ad connection', (c) => c.status !== 'disconnected')
+const adCampaign = (co: Co) => pick(adCampaigns, co, 'ad campaign')
 /** A bulk email body in the API's snake_case: from an email template, to the company's New leads. */
 const bulkEmailBody = (co: Co) => ({
   name: `Isolation bulk email ${uniq()}`,
@@ -569,6 +576,23 @@ export const ENDPOINTS: Endpoint[] = [
     method: 'GET', path: '/marketing/reports/cost-per-lead', kind: 'company-export', module: 'marketing',
     sample: () => ({ query: { from: day(-365), to: day(0) } }),
   },
+  /* ---- marketing › content calendar, design requests, brand assets (isolation/creativeEndpoints.ts) ---- */
+  ...CREATIVE_ENDPOINTS,
+  /* ---- marketing › lead generation, audiences, website & SEO (isolation/growthEndpoints.ts) ---- */
+  ...GROWTH_ENDPOINTS,
+  /* ---- marketing › ads integrations + analytics (handlers/ads.ts) ---- */
+  { method: 'GET', path: '/marketing/ads/connections', kind: 'company-list', module: 'marketing/ads', sample: () => ({}), count: { of: len, expected: ownCount(adConnections) } },
+  {
+    method: 'POST', path: '/marketing/ads/connections', kind: 'company-write', module: 'marketing/ads',
+    // Re-running the sample (spoofing variants) finds the account already connected: 409.
+    sample: (co) => ({ body: { provider: 'tiktok', account_id: accountsFor(co, 'tiktok')[0].accountId, consent: true }, expect: [200, 409] }),
+  },
+  { method: 'GET', path: '/marketing/ads/connections/:id', kind: 'company-item', module: 'marketing/ads', sample: (co) => ({ params: { id: adConnection(co).id } }) },
+  { method: 'DELETE', path: '/marketing/ads/connections/:id', kind: 'company-item', module: 'marketing/ads', sample: (co) => ({ params: { id: adConnection(co).id }, expect: [200, 409] }) },
+  { method: 'POST', path: '/marketing/ads/connections/:id/sync', kind: 'company-item', module: 'marketing/ads', sample: (co) => ({ params: { id: adConnection(co).id } }) },
+  { method: 'GET', path: '/marketing/ads/providers/:provider/accounts', kind: 'company-list', module: 'marketing/ads', notOwned: ['provider'], sample: () => ({ params: { provider: 'meta' } }) },
+  { method: 'PATCH', path: '/marketing/ads/campaigns/:id', kind: 'company-item', module: 'marketing/ads', sample: (co) => ({ params: { id: adCampaign(co).id }, body: { campaign_id: campaign(co).id } }) },
+  { method: 'GET', path: '/marketing/analytics', kind: 'company-export', module: 'marketing/analytics', sample: () => ({ query: { preset: 'custom', from: day(-60), to: day(0), compare: 'true' } }) },
   { method: 'GET', path: '/finance/invoices', kind: 'company-list', module: 'billing/usage', sample: () => ({}) },
   { method: 'GET', path: '/integrations', kind: 'company-list', module: 'integrations/email', sample: () => ({}) },
 

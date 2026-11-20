@@ -296,9 +296,11 @@ export interface StoredNotification {
   /**
    * `billing`: subscription lifecycle and reminders; `usage`: plan usage warnings (to Company Admins);
    * `task-due`: the owner's reminder N days before the due date; `task-overdue`: the overdue notice
-   * to the owner's manager (both stored once per task by the reminder tick).
+   * to the owner's manager (both stored once per task by the reminder tick). `marketing-due` /
+   * `marketing-overdue` / `marketing`: content calendar, design requests and brand assets
+   * (services/creativeReminders.ts and the creative services).
    */
-  type: 'won' | 'assignment' | 'mention' | 'task-overdue' | 'task-due' | 'billing' | 'usage'
+  type: 'won' | 'assignment' | 'mention' | 'task-overdue' | 'task-due' | 'billing' | 'usage' | 'marketing-due' | 'marketing-overdue' | 'marketing'
   title: string
   body: string
   link: string

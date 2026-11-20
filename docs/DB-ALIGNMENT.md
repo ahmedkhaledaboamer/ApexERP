@@ -1478,3 +1478,74 @@ Wire mapping (`src/shared/api/marketingMappers.ts`): campaign `currency → curr
   lead, the lead's email column.
 - The queue position (`queued_at`, order) is mock-only state for the fair queue; a real backend keeps it in the job queue.
 - `campaign_costs.expense_id` (Accounting, Phase 3) isn't used.
+
+### Design gaps › Marketing (growth)
+
+Lead generation, audiences and website & SEO (`src/shared/mocks/data/marketingGrowth.ts`, services `leadGen.ts`,
+`audiences.ts`, `seo.ts`, wire `src/shared/api/marketingGrowthMappers.ts`; API in `docs/API.md` › Marketing › Lead
+generation, Audiences, Website & SEO). The design has `web_form_endpoints` (§ Integrations: `default_source_id,
+default_owner_id, name, public_key, secret_hash, allowed_origins, is_active, last_used_at`) and nothing for landing
+pages, UTM links, audiences or SEO. Differences and proposals:
+
+| # | Table / column | Design | Mock / API | Suggestion |
+|---|---|---|---|---|
+| G1 | `web_form_endpoints.field_map` | — (the endpoint receives whatever the website posts) | `field_map` json: ordered `[{ key, type, label, required }]`, types = lead fields (company name, contact name, email, mobile, industry, source detail, message, custom question); drives the hosted page, the embed and validation | Add `field_map json not null` |
+| G2 | `web_form_endpoints.default_owner_id` | one owner | `default_owner_ids` (round-robin among chosen agents, by the number of leads the form created) | Add `default_owner_ids json` (or a `web_form_owners` pivot) and keep `default_owner_id` as the single-owner case |
+| G3 | `web_form_endpoints.is_active` | bool | `status active · paused` (paused = the page shows "not accepting responses", submit 409) | Keep `is_active` (paused = false) or add `status string(10)` |
+| G4 | `web_form_endpoints` success / redirect / consent | — | `success_message`, `redirect_url`, `consent_text` (checkbox required when set) | Add `success_message string(500)`, `redirect_url string(500) null`, `consent_text string(500) null` |
+| G5 | `web_form_endpoints.campaign_id` | — | leads from the form get `leads.campaign_id` (cost per lead) | Add `campaign_id → campaigns.id null` |
+| G6 | `web_form_endpoints.views_count` | — (`last_used_at` only) | `views`: loads of the hosted page / embed / landing pages (public GET), for conversion rate | Add `views_count unsigned int default 0` (or a daily `web_form_views` table for trends) |
+| G7 | `secret_hash`, `allowed_origins` | server-to-server post with a secret | not used: the browser posts to the public key (honeypot + rate limit instead of a secret); origins aren't checked by the mock | Keep for server-side integrations; the browser embed uses the public key only |
+| G8 | form submissions | — | `web_form_submissions(id, company_id, web_form_endpoint_id, landing_page_id, channel hosted·embed·landing, submitted_at, name, email, mobile, company_name, answers json, consent bool, outcome created·linked·limit·spam, lead_id null, do_not_contact bool)` — spam and plan-limit submissions are kept | New table; index `(company_id, web_form_endpoint_id, submitted_at)` |
+| G9 | landing pages | — | `landing_pages(id, company_id, slug, title, headline, body text, hero_image_url, web_form_endpoint_id null, is_published, views_count, timestamps)`; public at `/p/:slug` on the company's own host | New table, `UNIQUE (company_id, slug)`; `hero_image_url` could become `brand_asset_id` once Brand Assets has stable public URLs |
+| G10 | UTM links | — | `utm_links(id, company_id, name, base_url, utm_source, utm_medium, utm_campaign, utm_term, utm_content, campaign_id null, url, created_by, created_at)` | New table (or derive `url` on read) |
+| G11 | audiences | — (`bulk_emails.filters` json only) | `audiences(id, company_id, name, description, rules json, kind dynamic·static, frozen_at, created_by, timestamps)` + frozen members | New table + `audience_members(audience_id, lead_id)` for static audiences, `UNIQUE (company_id, name)` |
+| G12 | `bulk_emails.audience_id` | — | `filters.audience_id` (resolved again at send time; other filters narrow it) | Add `audience_id → audiences.id null` on `bulk_emails` (instead of inside `filters`) |
+| G13 | `leads` country | — | "countries" isn't an audience rule: leads have no country column (contacts only have a mobile) | Add `leads.country_code char(2) null` if segmenting by country is needed |
+| G14 | SEO pages | — | `seo_pages(id, company_id, url, title, meta_description, h1, target_keyword, page_type, status, checks json, score tinyint, timestamps)`; checks recomputed for the whole company on every save | New table, `UNIQUE (company_id, url)`; `checks`/`score` can be computed on read instead of stored |
+| G15 | keywords | — | `seo_keywords(id, company_id, keyword, target_url, search_volume, difficulty, country_code, timestamps)` + `seo_keyword_positions(keyword_id, date, position decimal(5,1) null)` | New tables, `UNIQUE (company_id, keyword, country_code)`, `UNIQUE (keyword_id, date)` |
+| G16 | rate limit of the public submit | — | per client / email per form, 10-minute window (shared helper with event registration) | Laravel `RateLimiter` (cache), no table |
+| G17 | lead origin | `leads.source_id` only | "Website leads" = leads created by a form / landing page submission (`web_form_submissions.lead_id`, outcome created) or with the Website source | No column needed if G8 exists; otherwise add `leads.web_form_endpoint_id null` |
+
+### Marketing (ads & analytics)
+
+Ads integrations (`src/shared/mocks/data/ads.ts`, `services/ads.ts`, wire `src/shared/api/adsMappers.ts`) and Marketing
+analytics (`services/marketingAnalytics.ts`). The design has `integrations` and `integration_sync_logs` only; gaps:
+
+| # | Need | Design | Mock | Proposal |
+|---|---|---|---|---|
+| M1 | One row per connected ad account | `integrations` (provider `meta_ads \| google_ads \| …`, `label`, `status connected \| expired \| error \| disconnected`, `credentials` encrypted, `last_synced_at`); UNIQUE `(company_id, provider, label)` | `ads.connections`: provider `meta \| google \| linkedin \| tiktok`, `account_id`, `account_name`, `currency`, `status`, `token_hint`, `connected_by/at`, `disconnected_by/at`, `last_sync_status`, `last_error`, `synced_through`, `leads_from`, `retry_after` | Add providers `linkedin_ads`, `tiktok_ads`; store `external_account_id`, `account_name`, `currency_code`, `synced_through` (date), `leads_from`, `disconnected_by/at`, `last_error` (or `settings` json); UNIQUE `(company_id, provider, external_account_id)` instead of `label` |
+| M2 | Token never served | `credentials` encrypted JSON | separate `ads.tokens` map, only a masked hint (`•••• 4f2a`) is ever answered | Keep `credentials` encrypted; add `credentials_hint string(12)` (or compute it at write time) |
+| M3 | Sync log | `integration_sync_logs` (`direction`, `status success \| failed \| partial`, `records_count`, `error_message`, `started_at`, `finished_at`) | `ads.syncRuns` adds `trigger (initial \| daily \| manual)` and split counts (`rows`, `costs`, `leads_created`, `leads_duplicate`, `leads_skipped`, `leads_pending`) | Add `trigger` and a `summary` json for the split counts; status `error` = design `failed` |
+| M4 | Ad campaigns and their mapping to CRM campaigns | none | `ads.campaigns` (`connection_id`, `external_id`, `name`, `objective`, `status`, `campaign_id`, `mapped_at`, `mapped_by`) | New table `ad_campaigns` (company_id, integration_id, external_id, name, objective, status, campaign_id FK nullable, mapped_at, mapped_by); UNIQUE `(integration_id, external_id)` |
+| M5 | Daily ad stats | none | `ads.dailyStats` (`ad_campaign_id`, `date`, `spend`, `impressions`, `clicks`, `conversions`, `leads`) | New table `ad_campaign_daily_stats`; UNIQUE `(ad_campaign_id, stat_date)`. This is the `integration_sync_items` the design doesn't have |
+| M6 | Idempotent cost entries from ad spend | `campaign_costs` (no source columns) | `ads.costLinks` (`ad_campaign_id\|date` → `cost_id`, `campaign_id`) | Add `campaign_costs.ad_campaign_id` (nullable FK) + `source (manual \| ads)` with UNIQUE `(ad_campaign_id, incurred_on)`; then no link table is needed |
+| M7 | Lead-form submissions | none (`web_form_endpoints` is for website forms) | `ads.leadSubmissions` (`connection_id`, `ad_campaign_id`, `external_id`, `submitted_at`, person fields, `outcome created \| duplicate \| limit \| pending_source`, `lead_id`, `campaign_id`, `message`) | New table `ad_lead_submissions`; UNIQUE `(integration_id, external_id)`; `pending_source` rows are retried by the sync job |
+| M8 | Lead source per provider | `lead_sources` | matched by key / name ("Paid ads", "Meta", "LinkedIn"…); none → `pending_source` | Seed an `is_system` "Paid ads" source per company, or store `settings.lead_source_id` on the integration |
+| M9 | Lead attribution to the ad | `leads.campaign_id` | campaign from the mapping; source detail = "Provider: ad campaign" | Optional `leads.ad_campaign_id` for ad-level attribution |
+| M10 | Analytics funnel | `lead_status_history` (rows from now on) | seed leads have no history rows: their current status counts | Backfill one history row per existing lead at migration |
+| M11 | Analytics ROI / won value | `leads.value` + status type `won` | cohort = leads created in the period; won = status type `won` now (not `won_at` in the period) | Fine for a cohort view; a "won in the period" view would read `lead_status_history` / `contracts` |
+| M12 | Presets in the company timezone | `companies.timezone` | resolved server-side from the mock clock | Same in the backend (Carbon with the company timezone) |
+
+### Design gaps › Marketing (creative)
+
+Content calendar, design requests and brand assets (`src/shared/mocks/data/marketingCreative.ts`, services
+`contentCalendar.ts`, `designRequests.ts`, `brandAssets.ts`, `creativeReminders.ts`; wire
+`src/shared/api/creativeMappers.ts`, mechanical snake_case). **The design has none of these tables** (§13 covers
+campaigns, bulk email and events only); the mock's columns are the proposal. Comments, files and history reuse the
+design's polymorphic tables.
+
+| # | Table / column | Design | Mock / API | Proposal |
+|---|---|---|---|---|
+| C1 | `content_items` | — | `id, company_id, title, type, channels, status, owner_id, reviewer_id, approved_by, approved_at, publish_at, campaign_id, body, notes, published_url, published_at, created_by, reminder_sent_at, overdue_notified_at, timestamps` | New table: `title string(200)`, `type string(20)` (`social_post · blog_post · newsletter · video · case_study · press_release · other`), `status string(12)` (`idea · draft · in_review · approved · scheduled · published · archived`), `owner_id / reviewer_id / approved_by / created_by → users.id`, `publish_at datetime null` (UTC; entered in `companies.timezone`), `campaign_id → campaigns.id null`, `body longText`, `notes text`, `published_url string(500) null`, `published_at datetime null`, `reminder_sent_at`, `overdue_notified_at` (stored-once reminders, like `tasks`); INDEX `(company_id, status, publish_at)`, INDEX `(company_id, campaign_id)` |
+| C2 | `content_items.channels` | — | array of `linkedin · instagram · facebook · x · tiktok · youtube · blog · email · website` | `channels json` (small fixed set), or a `content_item_channels (content_item_id, channel)` pivot if channel reports need SQL grouping |
+| C3 | content ↔ assets | — | `asset_ids[]` on the item | Pivot `content_item_assets (content_item_id, brand_asset_id)`, UNIQUE pair |
+| C4 | `design_requests` | — | `id, company_id, title, type, brief, formats, due_date, priority, status, requester_id, assignee_id, campaign_id, content_item_id, delivered_at, reminder_sent_at, overdue_notified_at, timestamps` | New table: `type string(20)` (`social_post · banner · brochure · presentation · video · logo · other`), `brief text`, `formats json` (free-text sizes), `due_date date null`, `priority string(10)` (`low · medium · high · urgent`, like `tasks.priority`), `status string(20)` (`requested · in_progress · in_review · changes_requested · approved · delivered · cancelled`), `requester_id → users.id`, `assignee_id → users.id null`, `campaign_id null`, `content_item_id null`; INDEX `(company_id, status)`, `(company_id, requester_id)`, `(company_id, assignee_id)` |
+| C5 | design request ↔ reference assets | — | `asset_ids[]` | Pivot `design_request_assets` |
+| C6 | Attachments of design requests | `attachments` morph types: Task, Project, Lead, Customer, Contract, Expense, EmployeeDocument | `attachments[]` (name, mime_type, size_bytes, uploaded_by, preview) on the request; counted in `storageMb` | Add `DesignRequest` (and `BrandAsset`, see C8) to `attachments.attachable_type`; the image preview is a thumbnail derived from `path` (no column) |
+| C7 | Comments with mentions on content / design requests | `comments` morph | `comments[]` with `mentions[]` | Add `ContentItem`, `DesignRequest` to `comments.commentable_type`; mentions like task comments |
+| C8 | `brand_assets` | — | `id, company_id, name, kind, mime_type, size_bytes, tags, campaign_id, source, design_request_id, source_attachment_id, description, usage_rights_expires_at, status, created_by, expiry_notified_at, timestamps` | New table: `kind string(12)` (`logo · image · video · document · template · font · other`), `source string(16)` (`upload · design_request`), `design_request_id null`, `attachment_id → attachments.id` (the stored file: a design-request file saved to assets points at the same attachment, so storage is counted once — the mock's `source_attachment_id`), `usage_rights_expires_at date null`, `status string(10)` (`active · archived`), `expiry_notified_at`; tags through the design's `taggables` (`taggable_type = BrandAsset`) instead of the mock's `tags[]` |
+| C9 | System assets | `companies` branding columns (logo, dark logo, favicon) | listed as read-only assets `SYS-logo-light / SYS-logo-dark / SYS-favicon`, computed | No table: the API composes them from `companies`; never stored or counted |
+| C10 | Status history | — | `history[]` per item / request | `audit_logs` with `auditable_type = ContentItem / DesignRequest` (like the events gap E14) |
+| C11 | Stored notifications | `notifications.type` | new types `marketing-due`, `marketing-overdue`, `marketing` | Add the three values to the notification type list |
+| C12 | Storage usage | plan limit `storage_mb` over `attachments.size_bytes` | the mock adds design-request attachments and uploaded (non-design) brand assets | With C6 / C8 every file is an `attachments` row, so the existing `SUM(size_bytes)` stays correct |

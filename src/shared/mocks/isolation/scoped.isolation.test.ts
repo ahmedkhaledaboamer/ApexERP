@@ -6,6 +6,8 @@ import { quotations } from '@/shared/mocks/data/quotations'
 import { services, packages } from '@/shared/mocks/data/services'
 import { templates } from '@/shared/mocks/data/templates'
 import { campaigns } from '@/shared/mocks/data/marketing'
+import { adCampaigns } from '@/shared/mocks/data/ads'
+import { accountsFor } from '@/shared/mocks/services/ads'
 import { events } from '@/shared/mocks/data/events'
 import { contracts } from '@/shared/mocks/data/contracts'
 import { tasks, projects } from '@/shared/mocks/data/tasks'
@@ -180,6 +182,8 @@ const REFS: Ref[] = [
   { name: 'event team member', method: 'POST', path: (co) => `/events/${one(events, co, (e) => e.status === 'confirmed').id}/team`, id: (co) => one(users, co, (u) => u.role === 'Management').id, body: (_co, id) => ({ user_id: id }) },
   { name: 'event owner change', method: 'PATCH', path: (co) => `/events/${one(events, co, (e) => e.status === 'confirmed').id}`, id: (co) => one(users, co, (u) => u.role === 'Management').id, body: (_co, id) => ({ owner_id: id }) },
   { name: 'task link event', method: 'POST', path: () => '/tasks', id: (co) => one(events, co).id, body: (_co, id) => ({ title: 'Ref', link: { type: 'event', id } }) },
+  { name: 'ad campaign mapping', method: 'PATCH', path: (co) => `/marketing/ads/campaigns/${one(adCampaigns, co).id}`, id: (co) => one(campaigns, co).id, body: (_co, id) => ({ campaign_id: id }) },
+  { name: 'ad account connect', method: 'POST', path: () => '/marketing/ads/connections', id: (co) => accountsFor(co, 'tiktok')[2].accountId, body: (_co, id) => ({ provider: 'tiktok', account_id: id, consent: true }) },
   { name: 'audit user filter', method: 'GET', path: () => '/audit-log', id: (co) => ADMIN[co], query: (id) => `?user_id=${id}` },
 ]
 

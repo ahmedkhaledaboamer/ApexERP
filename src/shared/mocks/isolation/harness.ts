@@ -136,6 +136,8 @@ const SECRET_KEY = /^(password|passwordHash|hash|salt|secret|clientSecret|apiSec
 /** The key without underscores, so snake_case keys (password_hash, recovery_codes, two_factor_secret…) are checked too. */
 const bare = (k: string) => k.replace(/_/g, '')
 const SESSION_TOKEN_KEY = /^token$/i
+/** An unmasked ad platform access token (marketing › ads integrations). */
+const AD_TOKEN = /adtok_[a-z0-9]{8,}/i
 
 /** Luhn check: a 13–19 digit run that passes it looks like a card number. */
 export function luhn(digits: string): boolean {
@@ -189,6 +191,8 @@ export function secretsIn(body: unknown, where: string): string[] {
   const walk = (v: unknown, path: string) => {
     if (typeof v === 'string') {
       if (v.includes(DEMO_PASSWORD)) out.push(`${path}: contains the demo password`)
+      // Ad platform access tokens (services/ads.ts) stay server-side; only a masked hint ("•••• 4f2a") is served.
+      if (AD_TOKEN.test(v)) out.push(`${path}: ad platform access token`)
       for (const m of v.matchAll(/\d[\d -]{11,}\d/g)) {
         const digits = m[0].replace(/[ -]/g, '')
         if (digits.length >= 13 && digits.length <= 19 && luhn(digits) && !/^\+/.test(v.slice(Math.max(0, (m.index ?? 0) - 1)))) {

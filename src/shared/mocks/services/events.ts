@@ -52,6 +52,7 @@ import { delay, fail, ownerName } from '@/shared/mocks/server'
 import { CodedApiError, findInTenant, stamp, tenantOf, type Tenant } from '@/shared/mocks/tenant'
 import { assertCapacity, assertModule, isReadOnly, LimitReachedError, noteUsage } from '@/shared/mocks/services/billing'
 import { insertLead, mobileHint, visibleLeads } from '@/shared/mocks/services/leads'
+import { hitRateLimit as sharedRateLimit } from '@/shared/mocks/services/rateLimit'
 
 /**
  * Events module (Phase 2, plan module `events`; docs/API.md › Events). Exhibitions, conferences,
@@ -785,17 +786,7 @@ export async function getPublicEvent(token: string): Promise<PublicEventInfo> {
 
 /** Sliding-window rate limit for the public page (like sign-up): per client and per email. */
 function hitRateLimit(keys: string[]): void {
-  const t = nowMs()
-  const windowMs = PUBLIC_REGISTER_WINDOW_MINUTES * 60_000
-  for (let i = registrationHits.length - 1; i >= 0; i--) if (t - registrationHits[i].at >= windowMs) registrationHits.splice(i, 1)
-  for (const key of keys) {
-    const hits = registrationHits.filter((h) => h.key === key)
-    if (hits.length >= PUBLIC_REGISTER_LIMIT) {
-      const retry = Math.max(1, Math.ceil((Math.min(...hits.map((h) => h.at)) + windowMs - t) / 1000))
-      throw new CodedApiError(`Too many registration attempts. Try again in ${retry} seconds.`, 429, 'rate_limited')
-    }
-  }
-  for (const key of keys) registrationHits.push({ key, at: t })
+  sharedRateLimit(registrationHits, keys, { limit: PUBLIC_REGISTER_LIMIT, windowMs: PUBLIC_REGISTER_WINDOW_MINUTES * 60_000, what: 'registration' })
 }
 
 const PUBLIC_DONE = 'You’re registered. See you there!'

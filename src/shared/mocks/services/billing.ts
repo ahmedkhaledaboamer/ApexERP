@@ -26,6 +26,7 @@ import { can, canViewCompanyProfile } from '@/shared/lib/permissions'
 import { contacts, customers, leads, users } from '@/shared/mocks/db'
 import { notifications, projects, pushNotification, tasks } from '@/shared/mocks/data/tasks'
 import { quotations } from '@/shared/mocks/data/quotations'
+import { creativeStorageBytes } from '@/shared/mocks/data/marketingCreative'
 import { companyById } from '@/shared/mocks/data/tenancy'
 import { recordActorAudit, recordAudit, recordSystemAudit, type AuditActor } from '@/shared/mocks/data/audit'
 import { activePlans, billingSettings, enabledModulesFrom, planAt, planById, planOf, trialConversionPlan } from '@/shared/mocks/data/plans'
@@ -279,6 +280,8 @@ function realUsage(companyId: string, key: LimitKey, sub: BillingSubscription): 
     case 'storageMb': {
       let bytes = 0
       for (const t of tasks) if (t.companyId === companyId) for (const a of t.attachments) bytes += a.sizeBytes
+      // Marketing creative files: design-request attachments and uploaded brand assets.
+      bytes += creativeStorageBytes(companyId)
       return round2(bytes / (1024 * 1024))
     }
     case 'emailsPerMonth':

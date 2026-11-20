@@ -12,6 +12,7 @@ import {
   FileClock,
   Gauge,
   Hourglass,
+  Palette,
   Trophy,
   UserCheck,
   type LucideIcon,
@@ -38,6 +39,7 @@ const ICON: Partial<Record<string, LucideIcon>> = {
   renewal: FileClock,
   billing: CreditCard,
   usage: Gauge,
+  marketing: Palette,
 }
 
 const SEVERITY_DOT: Record<Alert['severity'], string> = {

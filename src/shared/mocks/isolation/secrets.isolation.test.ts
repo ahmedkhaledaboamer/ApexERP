@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { users } from '@/shared/mocks/db'
+import { adTokens } from '@/shared/mocks/data/ads'
 import {
   ADMIN,
   APEX,
@@ -118,6 +119,42 @@ describe('§8 Integrations hold no secrets', () => {
     const get = await api(adminToken(co), 'GET', '/settings/email-connection')
     expect(get.text).not.toMatch(/smtp-secret|k-123|t-1/)
     expect((await api(adminToken(co), 'GET', '/integrations')).status).toBeLessThan(500)
+  })
+})
+
+describe('§8 Ad platform tokens are stored server-side and served masked', () => {
+  it('the guard flags an unmasked ad token', () => {
+    expect(secretsIn({ note: 'adtok_0123456789abcdef' }, 'GET /x')).toHaveLength(1)
+    expect(secretsIn({ token_hint: '•••• 4f2a' }, 'GET /x')).toEqual([])
+  })
+
+  it.each(COMPANIES)('%s: connect, list, detail, sync and disconnect answer a "•••• xxxx" hint, never the token', async (co) => {
+    ;(globalThis as { __apexAdsSync?: string }).__apexAdsSync = 'ok'
+    try {
+      const accounts = await api(adminToken(co), 'GET', '/marketing/ads/providers/tiktok/accounts')
+      expect(accounts.status, accounts.text).toBe(200)
+      const res = await api(adminToken(co), 'POST', '/marketing/ads/connections', { body: { provider: 'tiktok', account_id: accounts.body[1].account_id, consent: true } })
+      expect(res.status, res.text).toBe(200)
+      expect(res.body.token_hint).toMatch(/^•••• [0-9a-f]{4}$/)
+      const token = adTokens.get(res.body.id)!
+      expect(token).toMatch(/^adtok_/)
+      expect(res.body.token_hint.slice(-4)).toBe(token.slice(-4))
+      for (const [method, path] of [
+        ['GET', '/marketing/ads/connections'],
+        ['GET', `/marketing/ads/connections/${res.body.id}`],
+        ['POST', `/marketing/ads/connections/${res.body.id}/sync`],
+        ['GET', '/marketing/analytics?preset=last_30_days'],
+      ]) {
+        const r = await api(adminToken(co), method, path)
+        expect(r.status, path).toBe(200)
+        expect(r.text, path).not.toContain(token)
+      }
+      const off = await api(adminToken(co), 'DELETE', `/marketing/ads/connections/${res.body.id}`)
+      expect(off.body.token_hint).toBeNull()
+      expect(adTokens.has(res.body.id)).toBe(false)
+    } finally {
+      delete (globalThis as { __apexAdsSync?: string }).__apexAdsSync
+    }
   })
 })
 

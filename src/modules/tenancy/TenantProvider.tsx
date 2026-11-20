@@ -12,9 +12,17 @@ import { getPublicWorkspace, getTenant } from '@/modules/tenancy/api'
 import { useBranding } from '@/modules/tenancy/hooks'
 import { PRODUCT_NAME, applyBranding, applyFavicon, brandTitle } from '@/modules/tenancy/branding'
 
-/** Routes that don't belong to a workspace (platform console, product sign-up, public event registration). */
+/**
+ * Routes that don't belong to a workspace screen (platform console, product sign-up, public event
+ * registration, public lead capture forms /f/ and landing pages /p/ — those find their company themselves).
+ */
 const isPlatformPath = (pathname: string) =>
-  pathname.startsWith('/platform') || pathname === '/signup' || pathname.startsWith('/legal/') || pathname.startsWith('/e/')
+  pathname.startsWith('/platform') ||
+  pathname === '/signup' ||
+  pathname.startsWith('/legal/') ||
+  pathname.startsWith('/e/') ||
+  pathname.startsWith('/f/') ||
+  pathname.startsWith('/p/')
 
 /**
  * Resolves and enforces the tenant:

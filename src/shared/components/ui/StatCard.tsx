@@ -22,10 +22,14 @@ interface StatCardProps {
   /** Sparkline values, oldest first. */
   spark?: number[]
   sparkColor?: string
+  /** Costs: a decrease is good news (green), an increase bad (red). The arrow still shows the real direction. */
+  lowerIsBetter?: boolean
+  /** Also show `hint` under the delta line (by default the hint only shows when there's no delta). */
+  hintWithDelta?: boolean
 }
 
 /** KPI card: label + icon tile, big value, change vs last period, optional sparkline. */
-export function StatCard({ label, value, hint, delta, deltaLabel = "vs last period", alert, icon, to, progress, spark, sparkColor = "var(--color-brand-600)" }: StatCardProps) {
+export function StatCard({ label, value, hint, delta, deltaLabel = "vs last period", alert, icon, to, progress, spark, sparkColor = "var(--color-brand-600)", lowerIsBetter = false, hintWithDelta = false }: StatCardProps) {
   const gradientId = useId().replace(/:/g, '')
   const body = (
     <>
@@ -41,14 +45,22 @@ export function StatCard({ label, value, hint, delta, deltaLabel = "vs last peri
         <div className="min-w-0">
           <p className={cn('num text-[1.75rem] leading-none font-bold whitespace-nowrap tracking-[-0.02em]', alert ? 'text-danger-600' : 'text-ink')}>{value}</p>
           {delta !== undefined && Number.isFinite(delta) ? (
+            <>
             <p className="mt-3 flex flex-wrap items-center gap-1 text-[0.8125rem]">
-              <span className={cn('num inline-flex items-center gap-1 font-semibold', delta >= 0 ? 'text-success-600' : 'text-danger-600')}>
+              <span
+                className={cn(
+                  'num inline-flex items-center gap-1 font-semibold',
+                  delta === 0 ? 'text-muted' : delta > 0 !== lowerIsBetter ? 'text-success-600' : 'text-danger-600',
+                )}
+              >
                 {delta >= 0 ? <TrendingUp className="size-3.5" aria-hidden /> : <TrendingDown className="size-3.5" aria-hidden />}
                 {delta >= 0 ? '+' : ''}
                 {delta.toFixed(1)}%
               </span>
               <span className="text-muted">{deltaLabel}</span>
             </p>
+            {hintWithDelta && hint && <p className="mt-1 truncate text-xs text-muted">{hint}</p>}
+            </>
           ) : hint ? (
             <p className="mt-3 truncate text-[0.8125rem] text-muted">{hint}</p>
           ) : null}

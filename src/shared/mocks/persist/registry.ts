@@ -8,7 +8,7 @@
  * Bump VERSION whenever the *shape* of a stored record changes in a way old saved data would
  * break (store additions/removals are picked up automatically through the name hash).
  */
-export const VERSION = 8 // 5: database alignment part B (task enums, blocked flag, sub-tasks, time entries, attachments sizeBytes/mimeType, lead status history); 6: part A (lead status type/flags, follow-up dates, customer/quotation/contract enums, quotation viewedAt); 7: marketing (campaigns, campaign costs, bulk emails, recipients, leads.campaignId); 8: events (events, event team, attendees, history, leads.eventId, Crest Event source)
+export const VERSION = 12 // 12: "Paid ads" lead source in both seeds (ad lead forms import); 11: marketing creative (content items, design requests + attachments, brand assets, alert types marketing*); 10: marketing ads (ad connections, ad campaigns, daily stats, cost links, sync runs, lead-form submissions, tokens); 9: marketing growth (lead forms, submissions, landing pages, UTM links, audiences, SEO pages, keywords);5: database alignment part B (task enums, blocked flag, sub-tasks, time entries, attachments sizeBytes/mimeType, lead status history); 6: part A (lead status type/flags, follow-up dates, customer/quotation/contract enums, quotation viewedAt); 7: marketing (campaigns, campaign costs, bulk emails, recipients, leads.campaignId); 8: events (events, event team, attendees, history, leads.eventId, Crest Event source)
 
 export interface StoreAdapter {
   /** A structured-clone-able value (it is cloned on save and on restore). */
