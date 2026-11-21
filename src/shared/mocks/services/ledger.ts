@@ -47,11 +47,14 @@ export interface PostInput {
  * finance screen sees the same data whichever page is opened first. Hooks must be idempotent.
  */
 const financeHooks = new Map<string, (companyId: string) => void>()
-export function onFinanceAccess(name: string, fn: (companyId: string) => void): void {
-  financeHooks.set(name, fn)
+const lateHooks = new Map<string, (companyId: string) => void>()
+/** `last`: runs after every other hook (e.g. a seed that files VAT returns once all other seeds have posted). */
+export function onFinanceAccess(name: string, fn: (companyId: string) => void, opts: { last?: boolean } = {}): void {
+  ;(opts.last ? lateHooks : financeHooks).set(name, fn)
 }
 export function runFinanceHooks(companyId: string): void {
   for (const fn of financeHooks.values()) fn(companyId)
+  for (const fn of lateHooks.values()) fn(companyId)
 }
 
 /** Hook for the ledger core: throws (e.g. 423 period_locked) when `date` can't be posted to. */

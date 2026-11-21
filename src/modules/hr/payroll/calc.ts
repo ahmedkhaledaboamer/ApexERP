@@ -171,8 +171,8 @@ export function computeLine(input: LineCalcInput): LineCalc {
   }
   let variable = overtimeAmount
   for (const a of input.adjustments) {
-    if (a.kind === 'deduction') continue
-    add(`adj:${a.id}`, a.label, 'earning', a.amount, a.kind === 'bonus' ? 'Bonus' : 'Allowance')
+    if (a.kind === 'deduction' || a.kind === 'reimbursement') continue
+    add(`adj:${a.id}`, a.label, 'earning', a.amount, a.kind === 'bonus' ? 'Bonus' : a.kind === 'commission' ? 'Commission' : 'Allowance')
     variable += r2(a.amount)
   }
 
@@ -189,12 +189,16 @@ export function computeLine(input: LineCalcInput): LineCalc {
   add('si_employee', input.national ? 'Social insurance (employee)' : 'Social insurance (employee)', 'deduction', employeeSI, `${empRate}% of ${fmt2(base)}`)
   for (const l of input.loans) add(`loan:${l.id}`, l.label, 'deduction', l.amount, 'Installment')
   for (const a of input.adjustments) if (a.kind === 'deduction') add(`adj:${a.id}`, a.label, 'deduction', a.amount, 'Deduction')
+  // Expense claim reimbursements: paid with the net, outside gross and the social-insurance base (not taxable).
+  for (const a of input.adjustments) if (a.kind === 'reimbursement') add(`adj:${a.id}`, a.label, 'reimbursement', a.amount, 'Expense claim')
+  const reimbursements = sum(items.filter((i) => i.type === 'reimbursement').map((i) => i.amount))
   add('si_employer', 'Social insurance (employer)', 'employer', employerSI, `${erRate}% of ${fmt2(base)}`)
 
   const gross = sum(items.filter((i) => i.type === 'earning').map((i) => i.amount))
   const totalDeductions = sum(items.filter((i) => i.type === 'deduction').map((i) => i.amount))
-  const net = r2(gross - totalDeductions)
-  const variablePay = r2(Math.max(0, Math.min(r2(variable), net)))
+  const net = r2(gross - totalDeductions + reimbursements)
+  // Reimbursements ride with the variable part of the WPS split (they are not fixed pay).
+  const variablePay = r2(Math.max(0, Math.min(r2(variable + reimbursements), net)))
   return {
     daysInMonth: dim,
     paidDays,

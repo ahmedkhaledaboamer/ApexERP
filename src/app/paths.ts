@@ -111,6 +111,40 @@ export const PATHS = {
   /** Accounts & finance › Receivables (?tab=aging|statements|credit|reminders, ?customer=) and a printable statement (?from=&to=). */
   financeReceivables: '/finance/receivables',
   financeStatement: '/finance/receivables/statements/:id',
+  /** Accounts & finance › Purchases & payables: suppliers (+ printable statement ?from=&to=), purchase orders (?view=mine|awaiting, ?status=; any employee requests), bills (?tab=bills|payments|debit-notes|payables, ?status=, ?pay=1), bill editor (?po=), payment voucher. */
+  financeSuppliers: '/finance/suppliers',
+  financeSupplierStatement: '/finance/suppliers/:id/statement',
+  financePurchaseOrders: '/finance/purchase-orders',
+  financePurchaseOrderNew: '/finance/purchase-orders/new',
+  financePurchaseOrderDetail: '/finance/purchase-orders/:id',
+  financePurchaseOrderEdit: '/finance/purchase-orders/:id/edit',
+  financePurchaseOrderPrint: '/finance/purchase-orders/:id/print',
+  financeBills: '/finance/bills',
+  financeBillNew: '/finance/bills/new',
+  financeBillDetail: '/finance/bills/:id',
+  financeBillEdit: '/finance/bills/:id/edit',
+  financeBillVoucher: '/finance/bill-payments/:id/voucher',
+  /** Accounts & finance › Expenses (?tab=expenses|claims|petty|policy, ?expense=, ?claim=, ?fund=, ?new=1; claims: every employee). */
+  financeExpenses: '/finance/expenses',
+  /** Accounts & finance › Banking (?tab=accounts|transfers|reconcile|rules|payroll, ?account=). */
+  financeBanking: '/finance/banking',
+  /** Accounts & finance › Sales commissions (?tab=statements|plans, ?statement=, ?month=). */
+  financeCommissions: '/finance/commissions',
+  /** Accounts & finance › Financial statements (?tab=pnl|balance-sheet|cash-flow|general-ledger|trial-balance|year-end; accounting full / view). */
+  financeStatements: '/finance/statements',
+  /** Accounts & finance › Tax (?tab=vat|estimate, ?return=, ?box=; accounting full / view) and a printable VAT return. */
+  financeTax: '/finance/tax',
+  financeVatReturnPrint: '/finance/tax/vat-returns/:id/print',
+  /** Accounts & finance › Budgets & forecast (?tab=budgets|vs-actual|forecast, ?budget=, ?department=, ?month=; plan gate only — department heads see their own department, the API scopes it). */
+  financePlanning: '/finance/planning',
+  /** Accounts & finance › Profitability (?tab=projects|events|customers|departments|settings, ?period=, ?from=&to=, ?dept=; accounting full / view) and one project (?from=&to=). */
+  financeProfitability: '/finance/profitability',
+  financeProfitabilityProject: '/finance/profitability/projects/:id',
+  /** Insights & admin › Reports hub (every report by area, favourites, recently viewed) and Company performance (?period=, ?from=&to=). */
+  reportsHub: '/reports',
+  companyPerformance: '/reports/performance',
+  /** A rep's own commission statements (any sales role; accounting not needed). */
+  myCommissions: '/sales/my-commissions',
   /** Public payment page of a payment link (no sign-in, no workspace). */
   publicPay: '/pay/:token',
   /** Platform console: outside any workspace (TenantProvider exempts /platform). */
@@ -198,6 +232,17 @@ export function publicSurveyPath(token: string): string {
   return `/s/${enc(token)}`
 }
 
+/** Accounts & finance › Purchases & payables links. */
+export const financePurchaseOrderPath = (id: string): string => `/finance/purchase-orders/${enc(id)}`
+export const financeBillPath = (id: string): string => `/finance/bills/${enc(id)}`
+export const financeBillVoucherPath = (id: string): string => `/finance/bill-payments/${enc(id)}/voucher`
+export function financeSupplierStatementPath(vendorId: string, from?: string, to?: string): string {
+  const q = new URLSearchParams()
+  if (from) q.set('from', from)
+  if (to) q.set('to', to)
+  const s = q.toString()
+  return `/finance/suppliers/${enc(vendorId)}/statement${s ? `?${s}` : ''}`
+}
 /** An invoice (Accounts & finance › Invoices). */
 /** A payment's printable receipt (Accounts & finance › Payments). */
 export function financeReceiptPath(id: string): string {
@@ -213,6 +258,18 @@ export function financeStatementPath(customerId: string, from?: string, to?: str
 }
 export function financeInvoicePath(id: string): string {
   return `/finance/invoices/${enc(id)}`
+}
+/** A VAT return's printable page (Accounts & finance › Tax). */
+export function financeVatReturnPrintPath(id: string): string {
+  return `/finance/tax/vat-returns/${enc(id)}/print`
+}
+/** One project's profitability (Accounts & finance › Profitability), optionally for a period. */
+export function financeProfitabilityProjectPath(id: string, from?: string, to?: string): string {
+  const q = new URLSearchParams()
+  if (from) q.set('from', from)
+  if (to) q.set('to', to)
+  const s = q.toString()
+  return `/finance/profitability/projects/${enc(id)}${s ? `?${s}` : ''}`
 }
 /** "Invoice this" from a quotation, contract or won deal (opens the prefilled source dialog on the invoices page). */
 export function invoiceFromSourcePath(kind: 'quotation' | 'contract' | 'won', id: string): string {

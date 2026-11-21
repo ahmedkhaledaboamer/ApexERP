@@ -127,6 +127,34 @@ const ReceiptPage = lazy(() => import('@/modules/finance/collections/pages/Recei
 const ReceivablesPage = lazy(() => import('@/modules/finance/collections/pages/ReceivablesPage'))
 const StatementPage = lazy(() => import('@/modules/finance/collections/pages/StatementPage'))
 const PublicPayPage = lazy(() => import('@/modules/finance/collections/pages/PublicPayPage'))
+// Accounts & finance › Purchases & payables: suppliers, purchase orders (every employee), bills, payment vouchers.
+const SuppliersPage = lazy(() => import('@/modules/finance/purchases/pages/SuppliersPage'))
+const SupplierStatementPage = lazy(() => import('@/modules/finance/purchases/pages/SupplierStatementPage'))
+const PurchaseOrdersPage = lazy(() => import('@/modules/finance/purchases/pages/PurchaseOrdersPage'))
+const PurchaseOrderEditorPage = lazy(() => import('@/modules/finance/purchases/pages/PurchaseOrderEditorPage'))
+const PurchaseOrderDetailPage = lazy(() => import('@/modules/finance/purchases/pages/PurchaseOrderDetailPage'))
+const PurchaseOrderPrintPage = lazy(() => import('@/modules/finance/purchases/pages/PurchaseOrderPrintPage'))
+const BillsPage = lazy(() => import('@/modules/finance/purchases/pages/BillsPage'))
+const BillEditorPage = lazy(() => import('@/modules/finance/purchases/pages/BillEditorPage'))
+const BillDetailPage = lazy(() => import('@/modules/finance/purchases/pages/BillDetailPage'))
+const PaymentVoucherPage = lazy(() => import('@/modules/finance/purchases/pages/PaymentVoucherPage'))
+// Accounts & finance › Expenses: company expenses, employee expense claims (every employee), petty cash, categories & policy.
+const ExpensesPage = lazy(() => import('@/modules/finance/expenses/pages/ExpensesPage'))
+// Accounts & finance › Banking (accounts, transfers, reconciliation, payroll postings) and Sales commissions; "My commissions" for reps.
+const BankingPage = lazy(() => import('@/modules/finance/banking/pages/BankingPage'))
+const CommissionsPage = lazy(() => import('@/modules/finance/commissions/pages/CommissionsPage'))
+const MyCommissionsPage = lazy(() => import('@/modules/finance/commissions/pages/MyCommissionsPage'))
+// Accounts & finance › Financial statements (P&L, balance sheet, cash flow, general ledger, trial balance, year-end close).
+const FinancialStatementsPage = lazy(() => import('@/modules/finance/statements/pages/FinancialStatementsPage'))
+// Accounts & finance › Profitability; Insights & admin › Reports hub and Company performance.
+const ProfitabilityPage = lazy(() => import('@/modules/finance/profitability/pages/ProfitabilityPage'))
+const ProjectProfitabilityPage = lazy(() => import('@/modules/finance/profitability/pages/ProjectProfitabilityPage'))
+// Accounts & finance › Tax (VAT returns, corporate tax / zakat) and Budgets & forecast.
+const TaxPage = lazy(() => import('@/modules/finance/tax/pages/TaxPage'))
+const VatReturnPrintPage = lazy(() => import('@/modules/finance/tax/pages/VatReturnPrintPage'))
+const PlanningPage = lazy(() => import('@/modules/finance/planning/pages/PlanningPage'))
+const ReportsHubPage = lazy(() => import('@/modules/reports/hub/ReportsHubPage'))
+const CompanyPerformancePage = lazy(() => import('@/modules/reports/performance/PerformancePage'))
 const SpeakerDetailPage = lazy(() => import('@/modules/events/pages/SpeakerDetailPage'))
 const VenuesPage = lazy(() => import('@/modules/events/pages/VenuesPage'))
 const VenueDetailPage = lazy(() => import('@/modules/events/pages/VenueDetailPage'))
@@ -251,6 +279,17 @@ export function AppRouter() {
         <Route path={PATHS.quotationDetail} element={sales(<QuotationEditorPage />)} />
 
         <Route path={PATHS.salesTargets} element={sales(<SalesTargetsPage />)} />
+        {/* A rep's own commission statements: sales access + the accounting plan module (no accounting role needed). */}
+        <Route
+          path={PATHS.myCommissions}
+          element={sales(
+            <ModuleGate module="accounting">
+              <Suspense fallback={<GateSkeleton />}>
+                <MyCommissionsPage />
+              </Suspense>
+            </ModuleGate>,
+          )}
+        />
 
         <Route path={MARKETING_PATHS.campaigns} element={marketing(<CampaignsPage />)} />
         <Route path={MARKETING_PATHS.campaignDetail} element={marketing(<CampaignDetailPage />)} />
@@ -302,6 +341,27 @@ export function AppRouter() {
           element={
             <RequirePermission module="reports">
               <SalesReportsPage />
+            </RequirePermission>
+          }
+        />
+        {/* Insights & admin › Reports hub and Company performance: reports column (sections inside follow each role's scopes). */}
+        <Route
+          path={PATHS.reportsHub}
+          element={
+            <RequirePermission module="reports">
+              <Suspense fallback={<GateSkeleton />}>
+                <ReportsHubPage />
+              </Suspense>
+            </RequirePermission>
+          }
+        />
+        <Route
+          path={PATHS.companyPerformance}
+          element={
+            <RequirePermission module="reports">
+              <Suspense fallback={<GateSkeleton />}>
+                <CompanyPerformancePage />
+              </Suspense>
             </RequirePermission>
           }
         />
@@ -478,6 +538,24 @@ export function AppRouter() {
             [PATHS.financeReceipt, <ReceiptPage key="rct" />],
             [PATHS.financeReceivables, <ReceivablesPage key="rcv" />],
             [PATHS.financeStatement, <StatementPage key="stmt" />],
+            // Accounts & finance › Purchases & payables (Sales Manager: view only).
+            [PATHS.financeSuppliers, <SuppliersPage key="sup" />],
+            [PATHS.financeSupplierStatement, <SupplierStatementPage key="sup-st" />],
+            [PATHS.financeBills, <BillsPage key="bills" />],
+            [PATHS.financeBillNew, <BillEditorPage key="bill-new" />],
+            [PATHS.financeBillEdit, <BillEditorPage key="bill-e" />],
+            [PATHS.financeBillVoucher, <PaymentVoucherPage key="pv" />],
+            // Accounts & finance › Banking and Commissions (Sales Manager: view; approves commission step 1).
+            [PATHS.financeBanking, <BankingPage key="bank" />],
+            [PATHS.financeCommissions, <CommissionsPage key="com" />],
+            // Accounts & finance › Financial statements (Sales Manager: view; closing a year: Company Admin / Accountant).
+            [PATHS.financeStatements, <FinancialStatementsPage key="fst" />],
+            // Accounts & finance › Profitability (Sales Manager: view, without the labour allocation).
+            [PATHS.financeProfitability, <ProfitabilityPage key="prf" />],
+            [PATHS.financeProfitabilityProject, <ProjectProfitabilityPage key="prf-p" />],
+            // Accounts & finance › Tax: VAT returns, corporate tax / zakat (Sales Manager: view).
+            [PATHS.financeTax, <TaxPage key="tax" />],
+            [PATHS.financeVatReturnPrint, <VatReturnPrintPage key="tax-p" />],
           ] as const
         ).map(([path, page]) => (
           <Route
@@ -487,6 +565,52 @@ export function AppRouter() {
               <RequirePermission module="accounting">
                 <Suspense fallback={<GateSkeleton />}>{page}</Suspense>
               </RequirePermission>
+            }
+          />
+        ))}
+
+        {/* Accounts & finance › Budgets & forecast: plan-gated only — department heads read their own department's budget vs actual without accounting access (the API scopes the rest). */}
+        <Route
+          path={PATHS.financePlanning}
+          element={
+            <ModuleGate module="accounting">
+              <Suspense fallback={<GateSkeleton />}>
+                <PlanningPage />
+              </Suspense>
+            </ModuleGate>
+          }
+        />
+
+        {/* Accounts & finance › Expenses: plan-gated only — every employee files claims; company expenses need accounting (the API scopes the rest). */}
+        <Route
+          path={PATHS.financeExpenses}
+          element={
+            <ModuleGate module="accounting">
+              <Suspense fallback={<GateSkeleton />}>
+                <ExpensesPage />
+              </Suspense>
+            </ModuleGate>
+          }
+        />
+
+        {/* Accounts & finance › Purchase orders (self-service: every employee requests for their own department) and bill detail (approvers without accounting access): plan gate only — the API scopes what each user sees. */}
+        {(
+          [
+            [PATHS.financePurchaseOrders, <PurchaseOrdersPage key="po" />],
+            [PATHS.financePurchaseOrderNew, <PurchaseOrderEditorPage key="po-new" />],
+            [PATHS.financePurchaseOrderDetail, <PurchaseOrderDetailPage key="po-d" />],
+            [PATHS.financePurchaseOrderEdit, <PurchaseOrderEditorPage key="po-e" />],
+            [PATHS.financePurchaseOrderPrint, <PurchaseOrderPrintPage key="po-p" />],
+            [PATHS.financeBillDetail, <BillDetailPage key="bill-d" />],
+          ] as const
+        ).map(([path, page]) => (
+          <Route
+            key={path}
+            path={path}
+            element={
+              <ModuleGate module="accounting">
+                <Suspense fallback={<GateSkeleton />}>{page}</Suspense>
+              </ModuleGate>
             }
           />
         ))}

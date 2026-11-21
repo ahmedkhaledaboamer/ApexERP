@@ -106,9 +106,11 @@ export interface PayrollProfileInput {
 
 /* ---------------- Adjustments and loans ---------------- */
 
-export type AdjustmentKind = 'allowance' | 'bonus' | 'deduction'
+/** `commission`: pushed by Accounts & finance › Commissions (approved statement), never typed in HR (not in ADJUSTMENT_KINDS). */
+/** `reimbursement`: an approved expense claim paid through payroll (Accounts & finance › Expenses); not taxable, not in gross or the social-insurance base, paid with the net; never typed in HR. */
+export type AdjustmentKind = 'allowance' | 'bonus' | 'deduction' | 'commission' | 'reimbursement'
 export const ADJUSTMENT_KINDS: AdjustmentKind[] = ['allowance', 'bonus', 'deduction']
-export const ADJUSTMENT_KIND_LABEL: Record<AdjustmentKind, string> = { allowance: 'Allowance', bonus: 'Bonus', deduction: 'Deduction' }
+export const ADJUSTMENT_KIND_LABEL: Record<AdjustmentKind, string> = { allowance: 'Allowance', bonus: 'Bonus', deduction: 'Deduction', commission: 'Commission', reimbursement: 'Reimbursement' }
 export type Recurrence = 'once' | 'monthly'
 
 export interface PayAdjustment {
@@ -195,7 +197,8 @@ export interface LoanInput {
 export type RunStatus = 'draft' | 'calculated' | 'approved' | 'paid'
 export const RUN_STATUS_LABEL: Record<RunStatus, string> = { draft: 'Draft', calculated: 'Awaiting approval', approved: 'Approved', paid: 'Paid' }
 
-export type PayItemType = 'earning' | 'deduction' | 'employer'
+/** `reimbursement`: expense claims repaid with the salary (added to net, not to gross). */
+export type PayItemType = 'earning' | 'deduction' | 'employer' | 'reimbursement'
 export interface PayItem {
   code: string
   label: string

@@ -14,6 +14,7 @@ import { Modal } from '@/shared/components/ui/Modal'
 import { EmptyState, Skeleton } from '@/shared/components/ui/Feedback'
 import { Field, TextInput } from '@/shared/components/form/Field'
 import { useToast } from '@/shared/components/ui/Toast'
+import { PayrollJournalLink } from '@/modules/finance/banking/components/PayrollJournalLink'
 
 /** Salary › Runs: the monthly runs and the run drawer (calculate → approve (another HR user) → paid). */
 export function RunsTab({ openRun, onOpenRun }: { openRun: string | null; onOpenRun: (id: string | null) => void }) {
@@ -150,6 +151,7 @@ function RunBody({ r, onDeleted }: { r: PayrollRunDetail; onDeleted: () => void 
         {r.approvedByName && <span className="text-xs text-muted">· Approved by {r.approvedByName}</span>}
         {r.paidByName && <span className="text-xs text-muted">· Paid {fmtDate(r.paidAt)}</span>}
       </div>
+      <PayrollJournalLink runId={r.id} status={r.status} />
 
       <dl className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         {[
@@ -301,12 +303,12 @@ function RunBody({ r, onDeleted }: { r: PayrollRunDetail; onDeleted: () => void 
 export function LineItems({ l, currency }: { l: Pick<PayLine, 'items' | 'payMethod' | 'bankName' | 'ibanMasked' | 'payStart' | 'payEnd'>; currency: string }) {
   return (
     <div className="grid gap-3 sm:grid-cols-2">
-      {(['earning', 'deduction', 'employer'] as const).map((t) => {
+      {(['earning', 'deduction', 'reimbursement', 'employer'] as const).map((t) => {
         const items = l.items.filter((i) => i.type === t)
         if (!items.length) return null
         return (
           <div key={t}>
-            <p className="mb-1 text-xs font-medium text-muted">{t === 'earning' ? 'Earnings' : t === 'deduction' ? 'Deductions' : 'Employer contributions'}</p>
+            <p className="mb-1 text-xs font-medium text-muted">{t === 'earning' ? 'Earnings' : t === 'deduction' ? 'Deductions' : t === 'reimbursement' ? 'Reimbursements (not taxable)' : 'Employer contributions'}</p>
             <ul className="space-y-0.5">
               {items.map((i) => (
                 <li key={i.code} className="flex justify-between gap-3 text-xs">

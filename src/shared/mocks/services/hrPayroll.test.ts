@@ -90,8 +90,11 @@ describe('a monthly run (Apex)', () => {
     expect(lineOf(res.body, 'EMP-X3').warnings.map((w: { code: string }) => w.code)).toContain('no_person_id')
     expect(lineOf(res.body, 'EMP-X1').warnings).toEqual([])
     // Totals add up.
-    const lines = res.body.lines as { gross: number; total_deductions: number; net: number }[]
-    for (const l of lines) expect(r2(l.gross - l.total_deductions)).toBe(l.net)
+    const lines = res.body.lines as { gross: number; total_deductions: number; net: number; items: { type: string; amount: number }[] }[]
+    // Expense claim reimbursements (Accounts & finance › Expenses) are paid with the net, outside gross.
+    const reimbursed = (l: (typeof lines)[number]) => l.items.filter((i) => i.type === 'reimbursement').reduce((s, i) => s + i.amount, 0)
+    for (const l of lines) expect(r2(l.gross - l.total_deductions + reimbursed(l))).toBe(l.net)
+    expect(lines.some((l) => reimbursed(l) > 0)).toBe(true)
     expect(res.body.totals.net).toBe(r2(lines.reduce((s, l) => s + l.net, 0)))
   })
 

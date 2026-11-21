@@ -92,7 +92,8 @@ export const FINANCE_LEDGER_ENDPOINTS: Endpoint[] = [
   },
 
   /* chart of accounts */
-  { method: 'GET', path: '/finance/accounts', kind: 'company-list', module: M, sample: () => ({}), count: { of: len, expected: (co) => financeAccounts.filter((a) => a.companyId === co).length } },
+  // Finance hooks first: the banking seed adds ledger accounts for new bank accounts.
+  { method: 'GET', path: '/finance/accounts', kind: 'company-list', module: M, sample: (co) => (runFinanceHooks(co), {}), count: { of: len, expected: (co) => financeAccounts.filter((a) => a.companyId === co).length } },
   { method: 'POST', path: '/finance/accounts/import-template', kind: 'company-write', module: M, sample: () => ({ expect: [200, 409] }) },
   { method: 'POST', path: '/finance/accounts', kind: 'company-write', module: M, sample: () => ({ body: { code: '6970', name: 'Isolation expense', type: 'expense', parent_id: 'ACC-6000' }, expect: [200, 409] }) },
   { method: 'PATCH', path: '/finance/accounts/:id', kind: 'company-item', module: M, sample: (co) => ({ params: { id: ownAccount(co).id }, body: { description: 'Checked' } }) },

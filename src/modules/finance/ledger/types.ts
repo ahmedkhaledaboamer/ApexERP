@@ -240,6 +240,9 @@ export const SOURCE_TYPE_LABEL: Record<JournalSourceType, string> = {
   bill: 'Bill',
   expense: 'Expense',
   bank: 'Bank',
+  vat_return: 'VAT return',
+  tax_provision: 'Tax provision',
+  year_end_close: 'Year-end close',
 }
 
 export const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']

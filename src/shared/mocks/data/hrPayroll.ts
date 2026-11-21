@@ -78,6 +78,8 @@ export interface AdjustmentRecord {
   paidRunIds: string[]
   createdAt: string
   createdBy: string | null
+  /** Set when another section created it (e.g. `commission:<statement id>`): one adjustment per source (idempotent). */
+  sourceRef?: string | null
 }
 
 export interface LoanRecord {

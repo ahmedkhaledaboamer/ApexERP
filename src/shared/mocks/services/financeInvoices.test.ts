@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
+import { isHistoryInvoiceId } from '@/shared/mocks/data/financeHistorySeed'
 import { users } from '@/shared/mocks/db'
 import { APEX_ID, CREST_ID } from '@/shared/mocks/data/tenancy'
 import { financeJournal } from '@/shared/mocks/data/finance'
@@ -311,8 +312,11 @@ describe('seed', () => {
   it('each company has drafts, issued, overdue, void, a credit note, a recurring schedule and a USD invoice', () => {
     for (const co of [APEX_ID, CREST_ID]) {
       const mine = invoiceRecords.filter((i) => i.companyId === co) as InvoiceRecord[]
-      expect(mine.length).toBeGreaterThanOrEqual(10)
-      expect(mine.length).toBeLessThanOrEqual(14)
+      // The showcase rows; the year's trading invoices (financeHistorySeed) come on top.
+      const showcase = mine.filter((i) => !isHistoryInvoiceId(i.id))
+      expect(showcase.length).toBeGreaterThanOrEqual(10)
+      expect(showcase.length).toBeLessThanOrEqual(14)
+      expect(mine.length - showcase.length).toBeGreaterThan(30)
       for (const s of ['draft', 'issued', 'void', 'partially_paid']) expect(mine.some((i) => i.status === s), `${co} ${s}`).toBe(true)
       expect(mine.some((i) => i.status === 'issued' && i.dueDate! < today(co))).toBe(true)
       expect(mine.some((i) => i.currency === 'USD' && i.exchangeRate > 1)).toBe(true)

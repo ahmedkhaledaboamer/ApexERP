@@ -11,6 +11,7 @@ import { Button } from '@/shared/components/ui/Button'
 import { ErrorState, Skeleton } from '@/shared/components/ui/Feedback'
 import { Checkbox, Field, SelectInput, TextArea, TextInput } from '@/shared/components/form/Field'
 import { useToast } from '@/shared/components/ui/Toast'
+import { ApprovalRulesCard } from '@/modules/finance/purchases/components/ApprovalRulesCard'
 
 /**
  * `/finance/settings`: Finance settings — base currency (from the company), fiscal year, VAT registration (TRN / KSA VAT
@@ -30,6 +31,7 @@ export default function FinanceSettingsPage() {
               <RatesCard s={q.data} />
               <LockDateCard s={q.data} />
             </div>
+            <ApprovalRulesCard />
           </>
         )}
       </PageBody>

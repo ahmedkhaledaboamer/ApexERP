@@ -29,6 +29,8 @@ import { quotations } from '@/shared/mocks/data/quotations'
 import { creativeStorageBytes } from '@/shared/mocks/data/marketingCreative'
 import { talentStorageBytes } from '@/shared/mocks/data/hrTalent'
 import { hrStorageBytes } from '@/shared/mocks/data/hrPeople'
+import { purchasesStorageBytes } from '@/shared/mocks/data/financePurchases'
+import { expenseStorageBytes } from '@/shared/mocks/data/financeExpenses'
 import { companyById } from '@/shared/mocks/data/tenancy'
 import { recordActorAudit, recordAudit, recordSystemAudit, type AuditActor } from '@/shared/mocks/data/audit'
 import { activePlans, billingSettings, enabledModulesFrom, planAt, planById, planOf, trialConversionPlan } from '@/shared/mocks/data/plans'
@@ -288,6 +290,10 @@ function realUsage(companyId: string, key: LimitKey, sub: BillingSubscription): 
       bytes += talentStorageBytes(companyId)
       // HR document scans and contract files (data/hrPeople.ts).
       bytes += hrStorageBytes(companyId)
+      // Accounts & finance supplier-bill attachments (data/financePurchases.ts).
+      bytes += purchasesStorageBytes(companyId)
+      // Accounts & finance receipts (expenses, claim lines, petty cash: data/financeExpenses.ts).
+      bytes += expenseStorageBytes(companyId)
       return round2(bytes / (1024 * 1024))
     }
     case 'emailsPerMonth':

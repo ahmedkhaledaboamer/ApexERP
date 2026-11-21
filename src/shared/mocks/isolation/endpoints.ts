@@ -32,6 +32,12 @@ import { HR_PERFORMANCE_ENDPOINTS } from './hrPerformanceEndpoints'
 import { FINANCE_LEDGER_ENDPOINTS } from './financeLedgerEndpoints'
 import { FINANCE_INVOICES_ENDPOINTS } from './financeInvoicesEndpoints'
 import { FINANCE_COLLECTIONS_ENDPOINTS } from './financeCollectionsEndpoints'
+import { FINANCE_PURCHASES_ENDPOINTS } from './financePurchasesEndpoints'
+import { FINANCE_EXPENSES_ENDPOINTS } from './financeExpensesEndpoints'
+import { FINANCE_BANKING_ENDPOINTS, FINANCE_COMMISSIONS_ENDPOINTS } from './financeBankingEndpoints'
+import { FINANCE_STATEMENTS_ENDPOINTS } from './financeStatementsEndpoints'
+import { FINANCE_BUDGETS_ENDPOINTS, FINANCE_TAX_ENDPOINTS } from './financeTaxEndpoints'
+import { PERFORMANCE_ENDPOINTS, PROFITABILITY_ENDPOINTS } from './profitabilityEndpoints'
 
 /**
  * THE COVERAGE TABLE of the isolation suite: one entry per registered MSW handler (method + path as
@@ -580,6 +586,21 @@ export const ENDPOINTS: Endpoint[] = [
   ...FINANCE_INVOICES_ENDPOINTS,
   /* ---- Accounts & finance › collections: payments, PDC, payment links, receivables, dunning (isolation/financeCollectionsEndpoints.ts) ---- */
   ...FINANCE_COLLECTIONS_ENDPOINTS,
+  /* ---- Accounts & finance › purchases & payables: suppliers, POs, bills, debit notes, bill payments, payables, approval rules (isolation/financePurchasesEndpoints.ts) ---- */
+  ...FINANCE_PURCHASES_ENDPOINTS,
+  /* ---- Accounts & finance › expenses, expense claims, petty cash (isolation/financeExpensesEndpoints.ts) ---- */
+  ...FINANCE_EXPENSES_ENDPOINTS,
+  /* ---- Accounts & finance › banking, reconciliation, payroll posting; sales commissions (isolation/financeBankingEndpoints.ts) ---- */
+  ...FINANCE_BANKING_ENDPOINTS,
+  ...FINANCE_COMMISSIONS_ENDPOINTS,
+  /* ---- Accounts & finance › financial statements and year-end close (isolation/financeStatementsEndpoints.ts) ---- */
+  ...FINANCE_STATEMENTS_ENDPOINTS,
+  /* ---- Accounts & finance › tax (VAT returns, corporate tax / zakat), budgets, cash-flow forecast (isolation/financeTaxEndpoints.ts) ---- */
+  ...FINANCE_TAX_ENDPOINTS,
+  ...FINANCE_BUDGETS_ENDPOINTS,
+  /* ---- Accounts & finance › profitability; Reports › company performance, reports hub (isolation/profitabilityEndpoints.ts) ---- */
+  ...PROFITABILITY_ENDPOINTS,
+  ...PERFORMANCE_ENDPOINTS,
   { method: 'GET', path: '/public/events/:token', kind: 'public', module: 'events', reason: PUBLIC_EVENT },
   { method: 'POST', path: '/public/events/:token/register', kind: 'public', module: 'events', reason: PUBLIC_EVENT + ' Rate-limited per client and email, honeypot; the attendee and its lead land in the event’s company only.' },
 

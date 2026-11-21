@@ -107,6 +107,17 @@ export function PayslipScreen({ q, backTo, backLabel }: { q: UseQueryResult<Pays
             })}
           </div>
 
+          {p.items.some((i) => i.type === 'reimbursement') && (
+            <section aria-label="Reimbursements" className="border-t border-line py-4">
+              <h2 className="mb-2 text-[0.8125rem] font-semibold text-ink">Reimbursements (expense claims, not taxable)</h2>
+              <ul className="space-y-1 text-[0.8125rem]">
+                {p.items.filter((i) => i.type === 'reimbursement').map((i) => (
+                  <li key={i.code} className="flex justify-between gap-3"><span className="text-ink-2">{i.label}</span><span className="num">{fmt2(i.amount)}</span></li>
+                ))}
+              </ul>
+            </section>
+          )}
+
           <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4 text-xs text-muted">
             <span>Employer social insurance contribution (not deducted): {p.currency} {fmt2(p.employerSocialInsurance)}</span>
             <span className="num">{p.id} · {p.runId}</span>

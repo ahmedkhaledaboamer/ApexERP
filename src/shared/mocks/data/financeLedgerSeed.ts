@@ -5,11 +5,12 @@ import { postJournal, reverseJournal } from '@/shared/mocks/services/ledger'
 import { todayIsoIn } from '@/shared/lib/companyDay'
 import { monthRange } from '@/modules/finance/ledger/calc'
 import { now } from '@/shared/mocks/clock'
+import { historyLedgerEntriesOf } from './financeHistorySeed'
 
 /**
  * Ledger seed (both companies, different data), posted through `postJournal` like any entry: opening balances at the
- * start of the fiscal year (the difference to opening balance equity) and a few manual entries in the last months
- * (one of them reversed). Dates are relative to the company's today. Runs once, when the ledger services load.
+ * start of the fiscal year (the difference to opening balance equity), the year's earlier payroll, cost of sales and
+ * overheads (financeHistorySeed.ts) and a few manual entries in the last months (one of them reversed). Dates are relative to the company's today. Runs once, when the ledger services load.
  * Synthetic data only.
  */
 
@@ -29,6 +30,11 @@ function opening(companyId: string, date: string, createdBy: string, lines: Jour
   postJournal(companyId, { date, memo: `Opening balances at ${date}`, sourceType: 'opening_balance', sourceId: null, lines: all, createdBy })
 }
 
+/** The year's earlier payroll (bureau summaries), cost of sales and overheads (data/financeHistorySeed.ts). */
+function history(companyId: string, today: string, createdBy: string): void {
+  for (const e of historyLedgerEntriesOf(companyId, today)) postJournal(companyId, { ...e, createdBy })
+}
+
 function manual(companyId: string, date: string, memo: string, createdBy: string, lines: JournalLine[]) {
   return postJournal(companyId, { date, memo, sourceType: 'manual', sourceId: null, lines, createdBy })
 }
@@ -46,7 +52,8 @@ export function seedLedgerJournal(): void {
     const today = todayIsoIn(companyById(co)!.regional.timezone, now())
     const fy = `${today.slice(0, 4)}-01-01`
     opening(co, fy, 'u8', [
-      ln('ACC-1120', 485000, 0, 'Emirates NBD current account'),
+      // Sized so a year of payroll, bills and expenses (finance phase 2 seeds) keeps the bank positive.
+      ln('ACC-1120', 1985000, 0, 'Emirates NBD current account'),
       ln('ACC-1110', 12500, 0, 'Petty cash'),
       ln('ACC-1400', 18000, 0, 'Prepaid office insurance'),
       ln('ACC-1510', 96000, 0, 'Laptops and servers'),
@@ -54,8 +61,9 @@ export function seedLedgerJournal(): void {
       ln('ACC-1590', 0, 21000, 'Accumulated depreciation'),
       ln('ACC-2100', 0, 42300, 'Supplier balances'),
       ln('ACC-2500', 0, 64000, 'End-of-service provision'),
-      ln('ACC-3100', 0, 300000, 'Share capital'),
+      ln('ACC-3100', 0, 1800000, 'Share capital'),
     ])
+    history(co, today, 'u8')
     manual(co, dayIn(today, -1, 4), 'Office rent Q4, Business Bay', 'u8', [
       ln('ACC-6200', 30000, 0, 'Rent October–December', { departmentId: 'd-management' }),
       ln('ACC-1120', 0, 30000, 'Cheque 000418'),
@@ -92,6 +100,7 @@ export function seedLedgerJournal(): void {
       ln('ACC-2700', 0, 32000, 'Zakat 2025'),
       ln('ACC-3100', 0, 1000000, 'Share capital'),
     ])
+    history(co, today, 'u101')
     manual(co, dayIn(today, -2, 12), 'Zakat 2025 paid to ZATCA', 'u101', [ln('ACC-2700', 32000, 0, 'Zakat settlement'), ln('ACC-1120', 0, 32000, 'SADAD payment')])
     manual(co, dayIn(today, -1, 30), 'Fleet depreciation', 'u101', [
       ln('ACC-6850', 7000, 0, 'Vehicles', { departmentId: 'c2-ops' }),

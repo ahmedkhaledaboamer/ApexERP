@@ -7,6 +7,8 @@ import { lazy, type ComponentType } from 'react'
  *
  *   onboarding  "My onboarding tasks" — HR › Onboarding & offboarding: MyOnboardingTasksCard (GET /hr/journeys/my-tasks).
  *   reviews     "My reviews"          — HR › Performance reviews: MyPerformanceCard (GET /hr/performance/my).
+ *   expenses    "My expense claims"   — Accounts & finance › Expenses: MyExpenseClaimsCard (GET /finance/expense-claims).
+ *   budget      "My department budget" — Accounts & finance › Budgets: MyDepartmentBudgetCard (department heads; GET /finance/budgets/:id/vs-actual).
  *
  * Plug-in contract: a one-line edit of this object (a lazy component without required props); nothing else changes.
  */
@@ -16,7 +18,7 @@ export interface PortalSlot {
   component: ComponentType | null
 }
 
-export type PortalSlotId = 'onboarding' | 'reviews'
+export type PortalSlotId = 'onboarding' | 'reviews' | 'expenses' | 'budget'
 
 export const MY_HR_SLOTS: Record<PortalSlotId, PortalSlot> = {
   onboarding: {
@@ -27,6 +29,14 @@ export const MY_HR_SLOTS: Record<PortalSlotId, PortalSlot> = {
     label: 'My reviews',
     component: lazy(() => import('@/modules/hr/performance/components/MyPerformanceCard').then((m) => ({ default: () => <m.MyPerformanceCard /> }))),
   },
+  expenses: {
+    label: 'My expense claims',
+    component: lazy(() => import('@/modules/finance/expenses/components/MyExpenseClaimsCard').then((m) => ({ default: () => <m.MyExpenseClaimsCard /> }))),
+  },
+  budget: {
+    label: 'My department budget',
+    component: lazy(() => import('@/modules/finance/planning/components/MyDepartmentBudgetCard').then((m) => ({ default: () => <m.MyDepartmentBudgetCard /> }))),
+  },
 }
 
-export const PORTAL_SLOT_ORDER: PortalSlotId[] = ['onboarding', 'reviews']
+export const PORTAL_SLOT_ORDER: PortalSlotId[] = ['onboarding', 'reviews', 'expenses', 'budget']

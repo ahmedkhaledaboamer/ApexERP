@@ -51,6 +51,7 @@ import { delay } from '@/shared/mocks/server'
 import { CodedApiError, tenantOf, type Tenant } from '@/shared/mocks/tenant'
 import { companyModules, isReadOnly, onLifecycleTick } from './billing'
 import { applyToInvoice } from './financeInvoiceBalance'
+import { historyInvoicesOf, isHistoryInvoiceId } from '@/shared/mocks/data/financeHistorySeed'
 import { docNumber, nextId, onFinanceAccess, reverseJournal, round2, systemAccount } from './ledger'
 import { hitRateLimit } from './rateLimit'
 import {
@@ -1146,13 +1147,26 @@ export async function updateCollectionsSettings(user: User, input: CollectionsSe
  */
 export function ensureCollectionsSeed(co: string): void {
   if (finCollectionsMeta.seeded.includes(co)) return
-  const issued = financeInvoicesOf(co)
-  if (!issued.length) return
+  if (!financeInvoicesOf(co).length) return
   finCollectionsMeta.seeded.push(co)
   const actor = accountantIds(co)[0] ?? null
   const today = todayOf(co)
   // Never on or before the ledger's lock date (Crest's seed locks 2025).
   const lock = financeSettings.get(co).lockDate
+  // The year's trading invoices (data/financeHistorySeed.ts) are paid by transfer each customer's usual number of
+  // days after issue; the recent ones are still open (receivables, a few overdue). They are not the examples below.
+  for (const h of historyInvoicesOf(co, today)) {
+    const inv = financeInvoices.find((i) => i.companyId === co && i.id === h.id)
+    if (!inv || inv.status !== 'issued' || inv.amountPaid !== 0 || !inv.issueDate) continue
+    const date = addDays(inv.issueDate, h.paidAfter)
+    if (date >= today || (lock && date <= lock)) continue
+    try {
+      recordPaymentFor(co, actor, { customerId: inv.customerId, date, method: 'bank_transfer', amount: inv.balanceDue, currency: inv.currency, exchangeRate: inv.exchangeRate, allocationMode: 'manual', allocations: [{ invoiceId: inv.id, amount: inv.balanceDue }], reference: h.reference })
+    } catch {
+      /* a lock date or a chart change: leave it open */
+    }
+  }
+  const issued = financeInvoicesOf(co)
   const at = (inv: Invoice, days: number) => {
     let d = addDays(inv.issueDate ?? today, days)
     if (lock && d <= lock) d = addDays(lock, 1)
@@ -1191,13 +1205,15 @@ export function ensureCollectionsSeed(co: string): void {
   const open = financeInvoicesOf(co).find((i) => i.balanceDue > 0)
   if (open) {
     const cr0 = creditRecord(co, open.customerId)
-    cr0.creditLimit = round2(Math.max(1000, open.balanceDue * open.exchangeRate * 1.5))
+    // Above the customer's whole open balance (its trading invoices included), so the check shows the headroom.
+    const exposure = financeInvoices.filter((i) => i.companyId === co && i.customerId === open.customerId && i.balanceDue > 0 && (i.status === 'issued' || i.status === 'partially_paid')).reduce((s, i) => s + i.balanceDue * i.exchangeRate, 0)
+    cr0.creditLimit = round2(Math.max(1000, exposure * 1.25, open.balanceDue * open.exchangeRate * 1.5))
   }
 }
 /** Issued invoices untouched by payments yet (the seed's candidates), by number. */
 function financeInvoicesOf(co: string): Tenant<Invoice>[] {
   return financeInvoices
-    .filter((i) => i.companyId === co && i.status === 'issued' && i.amountPaid === 0 && i.amountCredited === 0 && i.balanceDue > 0)
+    .filter((i) => i.companyId === co && i.status === 'issued' && i.amountPaid === 0 && i.amountCredited === 0 && i.balanceDue > 0 && !isHistoryInvoiceId(i.id))
     .sort((x, y) => x.number.localeCompare(y.number))
 }
 

@@ -612,6 +612,12 @@ export function listJournal(user: User, f: JournalFilters = {}): JournalRow[] {
 
 const REVERSIBLE: JournalSourceType[] = ['manual', 'opening_balance']
 
+/** Other sections may veto a reversal (banking: a line in a finished bank reconciliation → 409 `reconciled`). */
+const reverseGuards: ((companyId: string, entryId: string) => void)[] = []
+export function registerReverseGuard(fn: (companyId: string, entryId: string) => void): void {
+  if (!reverseGuards.includes(fn)) reverseGuards.push(fn)
+}
+
 function detailOf(user: User, co: string, e: Tenant<JournalEntry>): JournalDetail {
   const acc = (id: string) => financeAccounts.find((a) => a.companyId === co && a.id === id)
   const nameIn = <T extends { companyId: string; id: string; name: string }>(rows: readonly T[], id: string | null | undefined) => (id ? (rows.find((r) => r.companyId === co && r.id === id)?.name ?? null) : null)
@@ -693,6 +699,7 @@ export function reverseManualJournal(user: User, id: string, input: { date?: unk
   if (!isIsoDate(date)) bad('Enter the reversal date as yyyy-MM-dd.', 'validation_failed', { field: 'date' })
   if ((date as string) < e.date) bad('The reversal can’t be dated before the entry.', 'validation_failed', { field: 'date' })
   const memo = str(input?.memo, 300, 'Memo') || `Reversal of ${e.number}`
+  for (const guard of reverseGuards) guard(co, e.id)
   const rev = reverseJournal(co, e.id, date as string, memo, user.id)
   recordAudit(user, { action: 'update', entity: 'journal_entry', entityId: e.id, summary: `Reversed journal ${e.number} with ${rev.number}` })
   return detailOf(user, co, rev)

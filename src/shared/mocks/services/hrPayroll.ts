@@ -129,6 +129,29 @@ const notFound = (): never => {
 export const PAYROLL_LINK = '/hr/salary'
 export const PAYROLL_ALERT_TYPE = 'hr-payroll'
 
+/**
+ * Payroll events for other sections (Accounts & finance posts runs, loans and settlements to the ledger:
+ * services/financePayrollGl.ts). Emitted after the state change; a listener must not throw (errors are swallowed so
+ * a ledger problem never blocks payroll — the listener re-syncs on the next finance access).
+ */
+export type PayrollEvent =
+  | { type: 'run_approved' | 'run_reopened' | 'run_paid'; companyId: string; runId: string; userId: string }
+  | { type: 'loan_created' | 'loan_cancelled'; companyId: string; loanId: string; userId: string }
+  | { type: 'settlement_paid'; companyId: string; settlementId: string; userId: string }
+const payrollListeners = new Map<string, (e: PayrollEvent) => void>()
+export function onPayrollEvent(name: string, listener: (e: PayrollEvent) => void): void {
+  payrollListeners.set(name, listener)
+}
+function emitPayroll(e: PayrollEvent): void {
+  for (const fn of payrollListeners.values()) {
+    try {
+      fn(e)
+    } catch {
+      /* a listener never blocks payroll */
+    }
+  }
+}
+
 const nameOfUser = (co: string, id: string | null) => (id ? (users.find((u) => u.id === id && u.companyId === co)?.name ?? null) : null)
 const deptName = (co: string, id: string | null) => (id ? (departments.find((d) => d.companyId === co && d.id === id)?.name ?? null) : null)
 const strip = <T extends { companyId: string }>(r: T): Omit<T, 'companyId'> => {
@@ -484,9 +507,50 @@ export async function createAdjustment(user: User, input: AdjustmentInput | null
   return delay(adjustmentView(a))
 }
 
+/**
+ * An adjustment created by another section (Accounts & finance › Commissions), no HR session needed. Idempotent per
+ * `sourceRef`: the existing one is returned (amount / label refreshed while it's unpaid). One-off, in `month` or — when
+ * that month is already paid — the month after the latest paid run.
+ */
+export function upsertSystemAdjustment(
+  co: string,
+  input: { employeeId: string; kind: AdjustmentKind; label: string; amount: number; month: string; notes?: string; sourceRef: string },
+  by: string | null,
+): Tenant<AdjustmentRecord> {
+  const found = hrPayAdjustments.find((a) => a.companyId === co && a.sourceRef === input.sourceRef)
+  if (found) {
+    if (!found.paidRunIds.length) Object.assign(found, { label: input.label.slice(0, 80), amount: r2(input.amount) })
+    return found
+  }
+  if (!employeeById(co, input.employeeId)) return notFound()
+  const paid = latestPaidMonth(co)
+  const month = paid && input.month <= paid ? addMonths(paid, 1) : input.month
+  const a: Tenant<AdjustmentRecord> = {
+    companyId: co,
+    id: nextPayId('PADJ-', hrPayAdjustments.map((x) => x.id)),
+    employeeId: input.employeeId,
+    kind: input.kind,
+    label: input.label.slice(0, 80),
+    amount: r2(input.amount),
+    recurrence: 'once',
+    month,
+    endMonth: null,
+    notes: (input.notes ?? '').slice(0, 500),
+    paidRunIds: [],
+    createdAt: nowIso(),
+    createdBy: by,
+    sourceRef: input.sourceRef,
+  }
+  hrPayAdjustments.push(a)
+  return a
+}
+
 function ownAdjustment(user: User, id: string): Tenant<AdjustmentRecord> {
   assertHrFull(user)
-  return hrPayAdjustments.find((a) => a.companyId === tenantOf(user) && a.id === id) ?? notFound()
+  const a = hrPayAdjustments.find((x) => x.companyId === tenantOf(user) && x.id === id) ?? notFound()
+  // An expense claim reimbursement belongs to its claim (Accounts & finance › Expenses): HR can't change or remove it.
+  if (a.kind === 'reimbursement') conflict('This reimbursement comes from an approved expense claim: Accounts & finance manages it.', 'managed_by_finance')
+  return a
 }
 
 export async function updateAdjustment(user: User, id: string, input: AdjustmentInput | null): Promise<PayAdjustment> {
@@ -567,6 +631,7 @@ export async function createLoan(user: User, input: LoanInput | null): Promise<P
   }
   hrPayLoans.push(l)
   logHr(co, e.id, user, 'payroll', `${l.kind === 'advance' ? 'Salary advance' : 'Loan'} of ${l.principal} ${settingsFor(co).currency} (${l.installmentAmount} a month from ${l.startMonth})`)
+  emitPayroll({ type: 'loan_created', companyId: co, loanId: l.id, userId: user.id })
   return delay(loanView(l))
 }
 
@@ -579,6 +644,7 @@ export async function updateLoan(user: User, id: string, input: LoanInput | null
     if (i.status !== 'cancelled') bad('A loan can only be cancelled here (repayment happens in the payroll runs).')
     if (l.repayments.length) conflict('Part of this loan is repaid: it can’t be cancelled; change the installment instead.', 'loan_repaying')
     l.status = 'cancelled'
+    emitPayroll({ type: 'loan_cancelled', companyId: l.companyId, loanId: l.id, userId: user.id })
   }
   if (i.installmentAmount !== undefined) {
     const n = Number(i.installmentAmount)
@@ -927,6 +993,7 @@ export async function approveRun(user: User, id: string): Promise<PayrollRunDeta
   r.approvedAt = nowIso()
   r.approvedBy = user.id
   recordAudit(user, { action: 'update', entity: 'payroll_run', entityId: r.id, summary: `Approved the payroll of ${monthLabel(r.month)}`, changes: [] })
+  emitPayroll({ type: 'run_approved', companyId: r.companyId, runId: r.id, userId: user.id })
   return delay(runDetail(user, r))
 }
 
@@ -938,6 +1005,7 @@ export async function reopenRun(user: User, id: string): Promise<PayrollRunDetai
   r.approvedAt = null
   r.approvedBy = null
   r.alertMarks = r.alertMarks.filter((m) => m !== 'awaiting')
+  emitPayroll({ type: 'run_reopened', companyId: r.companyId, runId: r.id, userId: user.id })
   return delay(runDetail(user, r))
 }
 
@@ -976,6 +1044,7 @@ export async function payRun(user: User, id: string): Promise<PayrollRunDetail> 
   r.paidBy = user.id
   applyPaid(r, true)
   recordAudit(user, { action: 'update', entity: 'payroll_run', entityId: r.id, summary: `Marked the payroll of ${monthLabel(r.month)} paid`, changes: [] })
+  emitPayroll({ type: 'run_paid', companyId: r.companyId, runId: r.id, userId: user.id })
   return delay(runDetail(user, r))
 }
 
@@ -1345,6 +1414,7 @@ export async function paySettlement(user: User, id: string): Promise<FinalSettle
   f.paidBy = user.id
   logHr(f.companyId, e.id, user, 'payroll', `Final settlement ${f.id} paid (${f.total} ${f.currency})`, now)
   recordAudit(user, { action: 'update', entity: 'final_settlement', entityId: f.id, summary: `Paid the final settlement of ${e.fullName}`, changes: [] })
+  emitPayroll({ type: 'settlement_paid', companyId: f.companyId, settlementId: f.id, userId: user.id })
   return delay(settlementView(f))
 }
 

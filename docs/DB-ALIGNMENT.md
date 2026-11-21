@@ -1834,3 +1834,122 @@ Collections section (`data/financeCollections.ts`; services `financeCollections.
 | F-C10 | Credit-note excess usage | — | `credit_note_uses (credit_note_id, kind apply · refund, invoice_id null, amount, date, account_id null, journal_entry_id)` | New table, or one `customer_credit_movements` ledger for payments and credit notes |
 | F-C11 | Customer timeline | `activities` (lead) | payment / reminder / statement lines are `activities` of the customer's Won lead (type email · system) | Fine as is; a backend may add `activities.customer_id` |
 | F-C12 | Card data | — | none stored (brand + last 4 only) | Keep it that way: hosted checkout + webhook (PCI SAQ-A) |
+
+### Design gaps › Finance (expenses, expense claims, petty cash)
+
+| # | Area | Current DB | Mock (frontend) | Proposal |
+|---|---|---|---|---|
+| F-E1 | `expense_categories` | — | `id, name, account_id, description, monthly_limit null, active, timestamps` | New table; UNIQUE `(company_id, lower(name))`; FK account same company, type expense, not header |
+| F-E2 | Expense policy | — | per company `receipt_required_above, receipt_mode (warn · block), claim_max_age_days, age_mode, limit_mode` | Columns on `finance_settings` or a 1:1 `expense_policies` |
+| F-E3 | `expenses` | `expenses` (amount, category text, date) | `id, number (<PREFIX>-EXP-yyyy-nnnn), status (pending · approved · rejected · void), date, vendor_id null, payee_name, payee_vat_number, category_id, account_id, description, amount, currency, exchange_rate, tax_code_id, tax_rate, vat_amount, net_amount, vat_recoverable, vat_note, payment_method (card · bank_transfer · cash · petty_cash), petty_fund_id null, paid_from_account_id, reference, department_id, project_id, event_id, campaign_id, notes, journal_entry_id, void_journal_entry_id, created_by, approved_at, reject_reason, voided_at, void_reason` | Extend; category becomes an FK; UNIQUE `(company_id, number)` from `document_sequences` (F-L3); index `(company_id, payee, amount, date)` for the duplicate check |
+| F-E4 | Receipts | — | `{name, size_bytes, mime_type, url}` inline on expense / claim line / petty expense | `attachments (owner_type, owner_id, file_key, name, size_bytes, mime_type)` in object storage; counted in plan storage |
+| F-E5 | Approvals | — | `approval.steps [{approver, min_amount}]` frozen at submit + `approvals [{user_id, at}]` | Shared `document_approvals (doc_type, doc_id, step_index, approver_kind, approved_by, approved_at)` with the purchases section; rules in `approval_rules` (owned by purchases) |
+| F-E6 | `expense_claims` | — | `id, number (<PREFIX>-ECL-…), status (draft · pending · approved · in_payroll · reimbursed · rejected), title, notes, employee_id, requester_id, department_id, journal_entry_id, reject_reason, submitted_at, approved_at, history` | New table; FKs same company |
+| F-E7 | `expense_claim_lines` | — | `id, claim_id, date, category_id, description, merchant, merchant_vat_number, amount, currency, exchange_rate, base_amount, vat_base, project_id, customer_id, event_id` | New table (receipt via F-E4) |
+| F-E8 | Claim reimbursement | — | `{method payment · payroll, account_id, date, journal_entry_id, payroll_adjustment_id, payroll_month, reimbursed_at, by}` | Columns on `expense_claims`; `payroll_adjustments.source_ref` (`claim:<id>`) UNIQUE for idempotency |
+| F-E9 | Payroll adjustment kind | `payroll_adjustments.kind` (allowance · bonus · deduction · commission) | adds `reimbursement`; pay item type `reimbursement` (net, not gross, not SI base) | Extend the enum; payslip lines of type reimbursement; the payroll GL posting clears 2450 for them |
+| F-E10 | `petty_cash_funds` | — | `id, name, custodian_employee_id, account_id (default 1115), float_limit, active, low_alerted` | New table |
+| F-E11 | `petty_cash_expenses` | — | `id, number (<PREFIX>-PCE-…), fund_id, date, category_id, description, payee_name, payee_vat_number, amount, vat_amount, status (pending · approved · rejected), replenishment_id, reject_reason, created_by` | New table |
+| F-E12 | `petty_cash_movements` | — | `id, number (PCT · PCR · PCC series), fund_id, kind (top_up · replenishment · count), date, amount (signed), expenses_total, top_up, counted, expected, difference, reason, from_account_id, journal_entry_id, expense_ids` | New table (or `replenishment_id` on F-E11 + a movements table without `expense_ids`) |
+| F-E13 | Marketing campaign dimension | `journal_lines` has department / project / event | `expenses.campaign_id` only | Add `campaign_id` to `journal_lines` if campaign P&L is reported from the ledger |
+| F-E14 | Notification marks | — | `alert_marks` on expenses / claims (once-only keys) | `notification_marks (owner_type, owner_id, key)` UNIQUE |
+
+### Design gaps › Finance (purchases & payables: suppliers, POs, bills, payments, approval rules)
+
+Purchases section (`data/financePurchases.ts`; services `financePurchases.ts`, `financePurchasesCore.ts`,
+`financeBillBalance.ts`, `financeApprovals.ts`). The design has `vendors` (events) and nothing for AP; the rest is a
+proposal. Amounts `decimal(14,2)`, quantities `decimal(14,3)`, rates `decimal(18,6)`, company-scoped, FKs to the same
+company.
+
+| # | Table / column | Design | Mock / API | Proposal |
+|---|---|---|---|---|
+| F-P1 | Supplier master | `vendors` (events) | the event vendor directory IS the supplier list; finance adds a profile `(vendor_id, vat_number, payment_terms_days, default_expense_account_id, default_tax_code_id, currency, bank_name, iban, notes, updated_by)` | `supplier_profiles` 1:1 with `vendors` (or columns on `vendors`); UNIQUE `(company_id, vendor_id)`; `iban` encrypted at rest, served masked, reveal audited |
+| F-P2 | `purchase_orders` | — | `id, number (<PREFIX>-PO-yyyy-nnnn), status (draft · pending_approval · rejected · approved · partially_received · received · closed · cancelled), vendor_id, requester_id, department_id, order_date, expected_date, currency, exchange_rate, subtotal, tax_total, total, notes, delivery_address, rejection_reason, cancel_reason, submitted_at, approved_at, closed_at, timestamps` | New table; number from `document_sequences` (F-L3) |
+| F-P3 | `purchase_order_items` | — | `description, quantity, unit_price, tax_code_id, account_id, department_id, project_id, event_id, budget_line_id, net, tax_amount, total, received_qty` (billed qty derived from bill lines) | New table; FKs same company; `budget_line_id → event_budget_lines` |
+| F-P4 | Goods / service receipts | — | `receipts[] (date, by, note, lines [{line_id, quantity}])` on the PO | `goods_receipts (po_id, date, received_by, note)` + `goods_receipt_items (receipt_id, po_item_id, quantity)` |
+| F-P5 | Approvals | — | frozen `chain[]` + `decisions[] (index, decision, by, at, reason)` + `approved_by[]` on POs and bills | One polymorphic `approval_steps (approvable_type, approvable_id, index, approver_kind, min_amount, decision, decided_by, decided_at, reason)` shared with expenses / claims |
+| F-P6 | Approval rules | — | perTenant `fin.approvalRules {rules: [{doc_type, min_amount, approver}]}` + `fin.purchasesSettings.match_tolerance_pct` | `approval_rules (company_id, doc_type, min_amount, approver_kind)`; tolerance on `finance_settings` |
+| F-P7 | `bills` | — | `id, number (<PREFIX>-BILL-yyyy-nnnn), supplier_invoice_number, status (draft · pending_approval · rejected · open · partially_paid · paid · void), vendor_id, po_id, bill_date, due_date, terms_days, currency, exchange_rate, vendor_vat_number, subtotal, tax_total, total, amount_paid, amount_credited, balance_due, notes, journal_entry_id, void_journal_entry_id, rejection_reason, void_reason, due_soon_notified_at, posted_at, voided_at, timestamps` | New table; UNIQUE `(company_id, vendor_id, lower(supplier_invoice_number))` where status ≠ void |
+| F-P8 | `bill_items` | — | `po_line_id, description, quantity, unit_price, tax_code_id, account_id, department_id, project_id, event_id, budget_line_id, net, tax_amount, total, vat_recoverable` | New table |
+| F-P9 | Bill attachments | — | `{name, mime_type, size_bytes, data_url}` on the bill (≤ 512 KB, counted in storageMb) | Polymorphic `attachments` with object-storage keys (no data URLs) |
+| F-P10 | `debit_notes` | — | `id, number (<PREFIX>-DN-yyyy-nnnn), bill_id, vendor_id, date, reason, currency, exchange_rate, net, tax_amount, total, account_id, journal_entry_id` | New table (supplier credit); the mock has no debit-note void (gap) |
+| F-P11 | `bill_payments` | — | `id, number (<PREFIX>-PV-yyyy-nnnn), status (posted · void), vendor_id, date, method, reference, payment_account_id, currency, exchange_rate, amount, bank_charges, fx_difference, run_id, notes, journal_entry_id, void_journal_entry_id, void_reason` + `allocations [{bill_id, amount}]` | `bill_payments` + `bill_payment_allocations (payment_id, bill_id, amount)`; supplier advances / unapplied payments not supported yet (gap) |
+| F-P12 | Payment runs | — | `payment_runs (id, number <PREFIX>-PRUN-yyyy-nnnn, date, payment_account_id, payment_ids[])` | New table; a bank payment file (SWIFT / local formats) later |
+| F-P13 | Journal source | `journal_entries.source_type` | bills, debit notes and bill payments all post as source `bill` (the contract enum has no `bill_payment` / `debit_note`) | Add `bill_payment`, `debit_note` to the enum when the ledger contract allows |
+| F-P14 | Event cost link | `event_budget_lines.actual` | SEAM: `GET /finance/event-costs` shows billed cost per budget line next to `actual`; events data unchanged | Keep `budget_line_id` on bill items (already in the mock) and show a computed "billed" column on the Events budget screen |
+
+### Design gaps › Finance (banking, reconciliation, payroll posting, commissions)
+
+Banking section (`data/financeBanking.ts`, `data/financeCommissions.ts`; services `financeBanking.ts`,
+`financePayrollGl.ts`, `financeCommissions.ts`). Proposal; company-scoped, FKs to the same company.
+
+| # | Table / column | Design | Mock / API | Proposal |
+|---|---|---|---|---|
+| F-B1 | `bank_accounts` | — | `id, name, bank_name, kind, account_number, iban (stored full, served masked, reveal audited), currency, ledger_account_id, active, opening_balance, opening_date, opening_entry_id, reconcile_from, notes` | New table; UNIQUE `(company_id, ledger_account_id)`; number / IBAN encrypted at rest |
+| F-B2 | Foreign amounts on journal lines | `journal_lines` base only | side table `bank_line_fx (entry_id, line_index, amount)` for lines banking posts; other lines on a foreign bank account = base ÷ the day's rate | Add `amount_currency, currency` to `journal_lines`, filled by every section |
+| F-B3 | Journal line id | lines have no id | `<entry id>:L<index>` | `journal_lines.id` (PK), referenced by matches |
+| F-B4 | `bank_statements`, `bank_statement_lines` | — | statement `(bank_account_id, file_name, start_date, end_date, closing_balance, skipped_duplicates, imported_by)`, lines `(statement_id, date, description, reference, amount signed, balance, dedupe_key)` | Two tables; index `(bank_account_id, dedupe_key)` |
+| F-B5 | EOSB provision | account 2500 | gratuity expensed at settlement (Dr 6120); no monthly accrual | Monthly `Dr 6120 / Cr 2500` from the gratuity formula; settlement then Dr 2500 |
+| F-B6 | `bank_matches` | — | `(bank_account_id, statement_line_ids[], journal_line_ids[], kind manual · auto · created, amount, reconciliation_id)` | `bank_matches` + `bank_match_lines` |
+| F-B7 | `bank_reconciliations` | — | `(bank_account_id, statement_date, statement_balance, cleared_balance, difference, status finished · undone, match_ids, journal_line_ids, finished_by/at, undone_by/at)` | New table; `journal_lines.reconciliation_id` for the reversal lock |
+| F-B8 | `bank_rules` | — | `(name, contains, direction any · in · out, account_id, bank_account_id null, active)` | New table |
+| F-B9 | `bank_transfers` | — | `(number, date, from/to bank_account_id, amount_from, amount_to, fee, fx_difference, reference, memo, status, journal_entry_id, void_journal_entry_id)`; source `bank` | New table; add `bank_transfer` to the journal source enum |
+| F-B10 | Payroll postings | — | `payroll_postings (kind run · loan · settlement, source_id, status, entry_id, payment_entry_id, reversed / reversal entry ids, paid_from_account_id, note)` | Columns on `payroll_runs` (`accrual_entry_id, payment_entry_id, paid_from_account_id`), `payroll_loans.disbursement_entry_id`, `final_settlements.journal_entry_id` |
+| F-B11 | Payroll adjustment source | `payroll_adjustments` | `source_ref` (`commission:<id>`, `claim:<id>`), kind `commission` | `source_type, source_id` with a UNIQUE index (idempotent push) |
+| F-B12 | `commission_plans` | — | `(name, basis, rate, tiers jsonb, cap_per_month, clawback, roles[], user_ids[], effective_from, active)` | New table (+ `commission_plan_members`) |
+| F-B13 | `commission_statements` | — | `(number, user_id, month, plan_id, basis, currency, achievement, rate, base_total, gross, capped, clawback, total, status, lines jsonb, approvals jsonb, rejected_reason, journal_entry_id, payroll_adjustment_id, payroll_month)` | + `commission_statement_lines`; UNIQUE `(company_id, user_id, month)` among non-rejected |
+| F-B14 | Journal source of commissions | enum has no `commission` | posted as source `payroll` (`source_id` CST-) | Add `commission` to the enum |
+| F-B15 | Invoice paid date | — | latest active payment allocation date | `invoices.paid_at` |
+| F-B16 | Reverse lock scope | — | enforced on manual reversal, transfer void and payroll reopen; payment / bill voids of other sections don't check it yet | Enforce in the ledger's `reverseJournal` for every source |
+
+### Design gaps › Finance (financial statements, year-end close)
+
+Statements section (`data/financeStatements.ts`; services `financeStatements.ts`, pure `modules/finance/statements/calc.ts`).
+Statements are computed from `journal_entries` / `journal_lines` only; nothing is stored except the close records.
+Proposal; company-scoped, FKs to the same company.
+
+| # | Table / column | Design | Mock / API | Proposal |
+|---|---|---|---|---|
+| F-S1 | `fiscal_year_closes` | — | `fin.yearEndCloses`: `id (YEC-<n>), fiscal_year_start, fiscal_year_end, status (closed · reopened), net_profit, journal_entry_id (null when nothing to close), previous_lock_date, note, closed_at, closed_by, reopened_at, reopened_by, reopen_reason, reversal_entry_id` | New table; partial UNIQUE `(company_id, fiscal_year_end) WHERE status = 'closed'`; FKs to `journal_entries` |
+| F-S2 | Journal source `year_end_close` | `journal_entries.source_type` enum | added to `JournalSourceType` (contract `modules/finance/types.ts`); `source_id` = the close id; the re-open reversal keeps the same source | Add `year_end_close` to the enum; statements exclude it from P&L by source type |
+| F-S3 | Statement line classification | `accounts.subtype` free text | P&L / balance sheet / cash flow sections come from `subtype` (`operating_income`, `other_income`, `cost_of_sales`, `operating_expense`, `other_expense`, `current_asset`, `fixed_asset`, `current_liability`, `non_current_liability`, `equity`); cash-flow adjustments are recognised by account **name** (accumulated depreciation / amortisation, end-of-service / gratuity / provision) | CHECK constraint on `subtype` + a `cash_flow_class` column (`cash · adjustment · working_capital · investing · financing`) instead of name matching |
+| F-S4 | Cash accounts | — | accounts under the header of the cash / default bank account + the cash roles (as the overview) | `accounts.is_cash` flag (or `bank_accounts.ledger_account_id`) |
+| F-S5 | Fiscal year changes | `fiscal_year_start_month` editable | not blocked after a close (closed years keep their dates in `fiscal_year_closes`) | Refuse a start-month change while a closed year exists after the new boundary, or keep a `fiscal_years` table |
+| F-S6 | Opening balances in the cash flow | — | `opening_balance` entries count in the opening cash, not as flows | Same rule in the reporting views |
+| F-S7 | Report snapshots | — | statements are computed on request (no stored copies); exports are client-side (CSV / Excel / print) | Optional `report_snapshots` (frozen statements per closed year) for audit |
+
+### Design gaps › Finance (profitability) and Reports (company performance, hub)
+
+Profitability is computed from `journal_lines` dimensions, `time_entries`, contracts and invoices; only settings and hub
+preferences are stored. Proposal; company-scoped.
+
+| # | Table / column | Design | Mock / API | Proposal |
+|---|---|---|---|---|
+| F-PR1 | `profitability_settings` | — | `fin.profitSettings`: `standard_hours_per_month (default 176), cash_alert_threshold (null = 3 months' avg expenses), overdue_receivables_alert_pct (default 30), updated_at, updated_by` | One row per company |
+| F-PR2 | `invoices.department_id` / `journal_lines.department_id` on sales | missing | income lines without a department count for the project manager's department | Add `department_id` to invoices (default: the project's / owner's department) |
+| F-PR3 | labour cost | — | allocation at read time (hours × contract pay ÷ standard hours), never stored | Optional `project_cost_snapshots (project_id, month, hours, labour_cost)` if month-end freezing is needed |
+| F-PR4 | `bill_lines.budget_line_id` → `event_budget_lines` | design has no link | used to avoid double counting event costs | Keep the FK (nullable) |
+| F-PR5 | `projects.value` / budget | missing | contract value → quotation net → won lead value | Add `projects.budget_amount` |
+| R-H1 | `report_hub_prefs` | — | `reports.hubPrefs`: `(company_id, user_id), favourites text[], recent jsonb [{report_id, at}] (≤ 8)` | One row per user; report ids are catalog keys |
+| R-P1 | scheduled e-mail of Company performance / profitability | — | `report_schedules.report_type` only accepts Sales reports | Extend `report_type` when the backend renders these reports |
+
+### Design gaps › Finance (tax, budgets, cash-flow forecast)
+
+Tax and planning sections (`data/financeTax.ts`, `data/financeBudgets.ts`; services `financeTax.ts`, `financeBudgets.ts`,
+`financeForecast.ts`; pure `modules/finance/tax/calc.ts`, `modules/finance/planning/calc.ts`). VAT returns are computed
+from `journal_entries` / `journal_lines` (+ document lines for categories); only filed snapshots, settings, budgets and
+forecast assumptions are stored. Proposal; company-scoped, FKs to the same company.
+
+| # | Table / column | Design | Mock / API | Proposal |
+|---|---|---|---|---|
+| F-T1 | `vat_returns` | — | `fin.vatReturns`: `id (VATR-<n>), period_key, label, frequency, from, to, status (draft · filed · paid), snapshot jsonb (boxes, totals, items, warnings, assumptions), counted_entry_ids[], filing_reference, filed_date, filed_at, filed_by, settlement_entry_id, credit_used_by, credit_from, paid_date, paid_at, paid_by, payment_account_id, payment_reference, payment_entry_id` | New table; UNIQUE `(company_id, from, to)`; `vat_return_entries (vat_return_id, journal_entry_id)` instead of the id array; snapshot as jsonb (immutable once filed) |
+| F-T2 | `tax_settings` | — | `perTenant:fin.taxSettings`: `vat_frequency (monthly · quarterly), tracking_from, adjustments [{kind, year, lines[{label, amount}]}], updated_at, updated_by` | Columns on `finance_settings` + `tax_estimate_adjustments (kind, fiscal_year, label, amount)` |
+| F-T3 | Journal sources `vat_return`, `tax_provision` | `journal_entries.source_type` enum | added to `JournalSourceType`; provisions use `source_id = '<kind>:<year>'` (not a row id) | Extend the enum; a `tax_provisions` table if provisions need their own rows |
+| F-T4 | Accounts 2210 / 6960 | chart template | "VAT payable to tax authority" (2210) and "Corporate tax / Zakat expense" (6960) are created on first use, not seeded | Add both to the UAE / KSA chart templates and give them system roles (`vat_payable`, `tax_expense`) |
+| F-T5 | Tax category per journal line | `journal_lines.tax_code` only on VAT lines | revenue / expense lines carry no tax code (bill lines do); categories come from the document lines | Set `tax_code` on every taxable line (and `tax_base`) so returns can be computed from the ledger alone |
+| F-T6 | Customer / supplier tax location | `customers.emirate`; no country | UAE emirate falls back to the company's; KSA exports = zero-rated sales in a foreign currency | Add `customers.country` (+ `place_of_supply` on invoices); `bills.is_import`, `reverse_charge` flags for boxes 3 / 6 / 10 (UAE) and 8 / 9 (KSA) |
+| F-T7 | `budgets` | — | `fin.budgets`: `id (BUD-<n>), fiscal_year, name, status (draft · approved), approved_by, approved_at, alert_marks[], history jsonb, created_by, created_at, updated_at` | New table; UNIQUE `(company_id, fiscal_year)`; `budget_alerts_sent (budget_id, key)` for the once-only marks |
+| F-T8 | `budget_lines` | — | embedded `lines[{id (BL-<n>), department_id, account_id, months[12]}]` | New table `budget_lines (budget_id, department_id, account_id, month, amount)` (one row per month) or `amounts numeric[12]`; UNIQUE `(budget_id, department_id, account_id)`; FKs to `departments`, `accounts` |
+| F-T9 | Department on revenue | `journal_lines.department_id` | invoices post revenue without a department, so revenue budgets show actual 0 | Same as F-PR2 (department on invoices) |
+| F-T10 | `cash_forecast_settings` | — | `perTenant:fin.forecastSettings`: `probabilities {current, d1_30, d31_60, d61_90, d90_plus}, bounced_pdc_pct, inflow_adjust_pct, outflow_adjust_pct, minimum_cash, lines[{id (FCL-<n>), label, date, amount, recurrence}]` | Settings row + `cash_forecast_lines` table |
+| F-T11 | Forecast inputs | — | payroll from the last run, expenses from a 3-month average, VAT from draft returns — computed at read time | No storage; optional `cash_forecast_snapshots` to compare forecast vs actual later |

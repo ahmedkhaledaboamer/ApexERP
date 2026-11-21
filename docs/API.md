@@ -368,6 +368,41 @@ Scoped to the narrower of the caller's `reports` and `sales` scopes.
 | POST | `/reports/schedules` | `{report: ReportId\|'all', frequency: weekly\|monthly, day, time 'HH:mm', recipients: string[1..10], format: excel\|pdf}` | `ReportSchedule` | `422` on validation; recipients lowercased and de-duplicated. The backend sends the e-mails. |
 | DELETE | `/reports/schedules/:id` | | `{ id }` | `404`; `403` unless creator or full scope. |
 
+### Company performance
+
+`GET /reports/performance?from=&to=` (company-local `yyyy-MM-dd`; default this year up to the company's today; `422` bad
+range). Services `services/reportsPerformance.ts`, formulas `modules/reports/performance/calc.ts`. Reports is in every
+plan; `reports` hidden (Employee) → `403`. One payload; a section the caller can't see is `null` (hidden, never zeroed):
+
+| Section | Who | Content |
+|---|---|---|
+| `financial` | `accounting` full / view + plan `accounting` (Company Admin, Management, Accountant, Sales Manager) | revenue (period, vs the same dates last year), revenue MTD / YTD vs last year (as of min(to, today), fiscal year start from Finance settings), cost of sales, gross margin %, net profit (period, YTD), cash and bank (cash accounts of the Finance overview), receivables open / overdue / overdue %, DSO, payables open / overdue / due this week, payroll cost and % of revenue, events revenue / cost / ROI, 12 months of revenue, expenses and month-end cash. Revenue / costs come from the Financial statements reader `profitAndLoss` (closing entries excluded; revenue = operating + other income). |
+| `sales` | `sales` not hidden | the caller's visible leads (no synthetic baseline): pipeline value, open leads, won / lost closed in the period, win rate = won ÷ (won + lost), leads created this / last month (company timezone), open leads by stage |
+| `delivery` | `tasks` not hidden | active projects, open / overdue tasks, completion % of tasks due in the period, created vs completed by month (the caller's task scope) |
+| `people` | `hr` full / team + plan `hr` | headcount, joiners, leavers, turnover %, open positions (HR overview; never pay) |
+| `departments` | `reports` ≠ own | scorecard: full / finance / hr → every active department; team / marketing → departments they head (+ sub-departments; else their own). headcount (active users), overdue tasks (of the caller's visible tasks); revenue / cost / margin only with `financial` (`financial_columns`); budget variance (expense actual − approved budget for the period's months, + = over) when an approved budget covers the period (`budget_column`) |
+| `alerts` | per section | cash below the threshold (Profitability settings; default 3 months' average expenses), overdue receivables above X % (default 30), departments over budget, projects with a negative margin (financial only); overdue tasks (delivery) |
+
+### Reports hub
+
+The library of every report (catalog `modules/reports/hub/catalog.ts`, shared by API and page), filtered per role and
+plan exactly like the screens' guards. Favourites and recently viewed are stored per company + user
+(`reports.hubPrefs`). `reports` hidden → `403`. A report id outside the catalog or not open to the caller → `404`
+(same body). The phase-1 sales report items are the ready-made Sales reports (linked, not duplicated); schedulable
+entries carry `schedule` (a Sales report id) for the existing `POST /reports/schedules`.
+
+| Method | Path | Body | Returns |
+|---|---|---|---|
+| GET | `/reports/hub` | | `{reports:[{id, area, title, description, path, schedule, favourite, last_viewed_at}], favourites:[id], recent:[{report_id, at}] (≤ 8), can_schedule}` |
+| PUT | `/reports/hub/favourites/:reportId` | | the hub (idempotent) |
+| DELETE | `/reports/hub/favourites/:reportId` | | the hub |
+| POST | `/reports/hub/recent` | `{report_id}` | the hub (moves it first) |
+
+**Tests.** `src/shared/mocks/isolation/profitabilityEndpoints.ts` (`PERFORMANCE_ENDPOINTS`); roles × both companies,
+plan gate, hidden-not-zeroed, recomputed revenue and pipeline, per-user favourites in
+`src/app/isolation/performance.isolation.test.ts`; formulas and company-timezone periods in
+`src/modules/reports/performance/calc.test.ts`; browser `e2e/company-performance.spec.ts`.
+
 ## Lookups & automation
 
 **Wire format:** snake_case design columns; field table in docs/DB-ALIGNMENT.md §11 for automation (`workflow_settings`: `first_contact_reminder_days`, `no_response_followup_days`, `max_attempts_before_cold`, `interested_stalled_days`, `reopen_lost_after_days`); lookups in DB-ALIGNMENT.md (Part A).
@@ -3031,8 +3066,8 @@ account / dimension ids in bodies and the account filter in `REFS` of `scoped.is
 shared by design, so item samples use a company-unique `ACC-N…` account); roles × both companies, plan gate and
 recomputed numbers in `src/app/isolation/financeLedger.isolation.test.ts`; rules in
 `src/modules/finance/ledger/calc.test.ts` and `src/shared/mocks/services/financeLedger.test.ts`; browser
-`e2e/finance-ledger.spec.ts`. Persisted dev DB: `VERSION` 27. Not built: P&L / balance sheet screens, foreign-currency
-manual entries (lines are base currency), bank accounts as records (IBAN), year-end close to retained earnings, a
+`e2e/finance-ledger.spec.ts`. Persisted dev DB: `VERSION` 27. Statements and the year-end close: see Financial statements and Year-end close below. Not built: foreign-currency
+manual entries (lines are base currency), bank accounts as records (IBAN), a
 tax-code screen, attachments on entries.
 
 ### Invoices
@@ -3253,3 +3288,539 @@ the hosted page (card data never touches our servers: PCI SAQ-A) and records the
 company's invoice" in `src/app/isolation/financeCollections.isolation.test.ts`; rules in
 `src/shared/mocks/services/financeCollections.test.ts`; browser `e2e/finance-collections.spec.ts`. Persisted dev DB:
 `VERSION` 29.
+
+### Expenses
+
+Accounts & finance › Expenses (`src/modules/finance/expenses/types.ts`, rules in `calc.ts`; services
+`src/shared/mocks/services/financeExpenses.ts`, `financeExpensesClaims.ts`, `financeExpensesPetty.ts`,
+`financeExpensesCore.ts`; stores `data/financeExpenses.ts`, seed `data/financeExpensesSeed.ts`; wire names snake_case via
+`src/shared/api/financeExpensesMappers.ts`). Plan module `accounting` for every path. Company expenses: accounting
+**full** writes, **view** (Sales Manager) reads, hidden → `403 forbidden`. Categories and the policy are readable by
+every role (the claim form needs them); only full edits. Ids in bodies / filters (category, vendor, account, department,
+project, event, campaign, petty fund) must be the caller's company's (`422 <thing>_not_found`, the same answer as a
+missing id). Expense id `EXP-<n>`, number `<PREFIX>-EXP-<yyyy>-<nnnn>`; category id `ECAT-<n>`.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/finance/expense-categories?include_inactive` | `{id, name, account_id, account_code, account_name, description, monthly_limit (base currency, claims; null = none), active}` |
+| POST · PATCH | `/finance/expense-categories` · `/:id` | `{name, account_id (active, postable expense account), description?, monthly_limit?, active?}`; `409 duplicate_name` |
+| GET · PATCH | `/finance/expense-policy` | `{receipt_required_above, receipt_mode (warn · block), claim_max_age_days, age_mode, limit_mode, base_currency, can_edit}` |
+| GET | `/finance/expenses?status&category_id&vendor_id&payment_method&from&to&q` | newest first |
+| GET | `/finance/expenses/meta` | categories, payment accounts (cash / bank under 1100, minus accounts holding petty funds), petty funds, tax codes, vendors (`eventVendors`, read only), departments, projects, events, campaigns, currencies with a rate |
+| POST | `/finance/expenses/check-duplicate` | `{vendor_id? \| payee_name, amount, date, exclude_id?}` → `{duplicates: [...]}` (live expenses, same payee + amount + date) |
+| POST | `/finance/expenses` | `{date (≤ today), vendor_id? \| payee_name, payee_vat_number?, category_id, description?, amount (VAT included), currency?, exchange_rate?, tax_code_id?, payment_method (card · bank_transfer · cash · petty_cash), paid_from_account_id \| petty_fund_id (petty_cash), reference?, department_id?, project_id?, event_id?, campaign_id?, receipt?, notes?}` → the expense (pending, or approved + posted when the chain is empty); `422 receipt_required` above the policy amount; `422 use_petty_fund` for a fund's account |
+| GET · PATCH | `/finance/expenses/:id` | PATCH while pending and nobody approved (`409 expense_locked`); the chain is re-frozen |
+| POST | `/finance/expenses/:id/approve` | the current step (`services/financeApprovals.ts`, chain `expense` by base amount); maker–checker `403 own_request` / `already_approved_step` / `not_your_step`; the last step posts |
+| POST | `/finance/expenses/:id/reject` · `/void` | `{reason}` required; void of an approved expense reverses its entry on the company's today |
+
+**VAT.** Recovered only when the tax code is standard-rated, the company is VAT registered and a **valid tax invoice**
+exists: the payee's TRN (UAE: 15 digits starting `100`) / VAT number (KSA: 15 digits starting and ending with `3`).
+Otherwise VAT = 0 and the whole amount is the expense (`vat_note` says why). **Posting** (base currency, `sourceType
+expense`): Dr category account (net, with department / project / event) · Dr VAT input 1300 (VAT) · Cr paid-from (gross);
+gross and VAT are converted, net is the remainder, so it always balances. Paid by petty cash → Cr the fund's account
+and the fund's book balance drops. **Receipts** are `{name, size_bytes, mime_type (image/* · application/pdf), url (data
+URL ≤ 256 KB, else null)}`, ≤ 10 MB, counted in the plan's `storageMb` (`expenseStorageBytes`, `assertCapacity`).
+
+### Expense claims
+
+Self-service for **every role** with an employee record (like leave): `422 no_employee_record` otherwise. Claim id
+`ECL-<n>` (lines `ECLL-<n>`), number `<PREFIX>-ECL-<yyyy>-<nnnn>`. Status `draft → pending → approved → in_payroll →
+reimbursed`, or `rejected`. **Visibility:** own claims; claims whose current step the user can act on; claims of the
+department the user heads (or steps they approved); accounting full: all. Not visible → `404` (like a foreign id).
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/finance/expense-claims?view=mine\|approvals\|all&status&employee_id` | `mine` (default) own; `approvals` waiting on me; `all` everything I can see |
+| GET | `/finance/expense-claims/meta` | categories, policy, currencies, projects, events, customers (the caller's sales scope), own employee, payment accounts (full), `next_payroll_month` |
+| POST | `/finance/expense-claims` | own draft `{title?, notes?, lines: [{date ≤ today, category_id, description, merchant?, merchant_vat_number?, amount, currency?, exchange_rate?, receipt?, project_id?, customer_id?, event_id?}]}` |
+| GET · PATCH · DELETE | `/finance/expense-claims/:id` | PATCH / DELETE: the owner's draft (`403 not_owner`, `409 claim_locked`) |
+| POST | `/finance/expense-claims/:id/submit` | policy check: blocking warnings → `422 policy_blocked {warnings}`; freezes chain `expense_claim` by total (dept head → Accountant → Management ≥ 5,000) |
+| POST | `/finance/expense-claims/:id/approve` · `/reject` | whoever can act on the current step (any role: a department head with accounting hidden approves their team's); maker–checker; reject needs `{reason}` |
+| POST | `/finance/expense-claims/:id/reimburse` | accounting full: `{method: payment, account_id, date?}` → Dr 2450 / Cr bank, `reimbursed`; `{method: payroll}` → a one-off payroll adjustment of kind `reimbursement` in `next_payroll_month`, `in_payroll`; `409 not_approved` |
+
+**Policy** (`warnings[]` on drafts and pending claims, `blocking` per mode): receipt above `receipt_required_above`, line
+older than `claim_max_age_days`, the employee's per-category monthly total (other live claims included) over
+`monthly_limit`. **Posting on final approval** (company today): Dr category accounts per line (net; department, project,
+event, customer dimensions) · Dr VAT input (lines with a valid merchant TRN / VAT number) · **Cr 2450 Employee
+reimbursements payable** (total).
+**Payroll seam.** The adjustment comes from `upsertSystemAdjustment(co, {kind: 'reimbursement', sourceRef: 'claim:<id>'})`
+(services/hrPayroll.ts). Kind `reimbursement` is not typed in HR (not in `ADJUSTMENT_KINDS`; HR edit / delete →
+`409 managed_by_finance`); the payroll engine pays it as a pay item of type `reimbursement` — added to **net**, outside
+gross and the social-insurance base (not taxable), with the variable part of the WPS split. The claim becomes
+`reimbursed` when the run is paid (payroll event `run_paid`, plus a lazy re-sync on every finance access). The payroll
+→ ledger posting (services/financePayrollGl.ts) clears 2450 for those items: `claimForPayrollAdjustment(co,
+adjustmentId) → {claim_id, number, employee_id, amount, liability_account_id: ACC-2450} | null`.
+
+### Petty cash
+
+Imprest funds per custodian (an employee). Fund `PCF-<n>`; petty expense `PCE-<n>` number `<PREFIX>-PCE-…`;
+movements `PCM-<n>` numbered `<PREFIX>-PCT-…` (top-up), `-PCR-…` (replenishment), `-PCC-…` (count). Accounting **full**:
+every fund and action; the **custodian** (any role): their own fund — read and record expenses; anyone else: an empty
+list and `404` on a fund.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/finance/petty-cash/meta` | categories, employees / fund accounts / bank accounts (full only), receipt threshold |
+| GET | `/finance/petty-cash/funds` | `{float_limit, book_balance, pending_total, pending_count, cash_expected, replenish_amount, low_balance, account_id, custodian_*, is_mine, can}` |
+| POST | `/finance/petty-cash/funds` | full: `{name, custodian_employee_id, float_limit, account_id? (default ACC-1115), fund_from_account_id?, date?}` (funding = a top-up of the float) |
+| GET · PATCH | `/finance/petty-cash/funds/:id` | detail with `expenses[]` and `movements[]`; PATCH name / custodian / float / active (`409 fund_has_pending` on close; `409 fund_account_locked`) |
+| POST | `/finance/petty-cash/funds/:id/top-up` | full: `{amount, from_account_id, date?}` → Dr fund account / Cr bank |
+| POST | `/finance/petty-cash/funds/:id/expenses` | custodian or full: `{date, category_id, payee_name, payee_vat_number?, description?, amount, receipt?}` (not posted; `422 insufficient_cash` above the cash expected; receipt per policy) |
+| POST | `/finance/petty-cash/funds/:id/replenish` | full, **not the custodian** (`403 own_fund`): `{approve_ids? (default all pending), reject?: [{id, reason}], from_account_id, date?}` |
+| POST | `/finance/petty-cash/funds/:id/count` | full: `{counted, reason (required when different), date?}` |
+
+**Math and postings.** Book balance = Σ movements − approved company expenses paid from the fund; cash expected = book −
+pending petty expenses; low balance = cash expected < 20% of the float (notification once to the custodian and the
+accountants until it is back above). Replenishment (one entry): Dr expense accounts (+ VAT input) / Cr fund account
+(the approved expenses) · Dr fund account / Cr bank (top-up = max(0, float − (book − approved))) → back to the float.
+Count: difference = counted − expected; short → Dr 6950 rounding (over / short) / Cr fund; over → the reverse.
+**Ledger account:** every fund defaults to 1115 Petty cash (funds then share it; 1115 = Σ funds). A company wanting one GL
+account per fund adds a cash sub-account under 1100 and picks it on the fund (1115 itself stays postable, so no header
+change breaks other sections).
+
+**Notifications** (stored, type `finance`, once per record and event): expense / claim needs approval → the current
+step's approvers; approved · rejected · in payroll · reimbursed → the requester; fund low → custodian + accountants;
+fund replenished → custodian.
+
+**Isolation and tests.** Every endpoint is in `src/shared/mocks/isolation/financeExpensesEndpoints.ts` (spread into
+`endpoints.ts`); category / vendor / account / dimension / employee / fund / petty-expense ids are in `REFS`
+(`scoped.isolation.test.ts`); roles × both companies, employee own claims, department head team, custodian own fund
+and the plan gate in `src/app/isolation/financeExpenses.isolation.test.ts`; rules in
+`src/shared/mocks/services/financeExpenses.test.ts`; browser `e2e/finance-expenses.spec.ts`. Persisted dev DB: `VERSION` 32.
+
+### Suppliers
+
+Accounts & finance › Purchases & payables (`src/modules/finance/purchases/types.ts`; services
+`src/shared/mocks/services/financePurchases.ts` (endpoints, access), `financePurchasesCore.ts` (rules, postings),
+`financeBillBalance.ts` (the ONE place a bill's paid / credited / balance / status change: `applyToBill`); stores
+`data/financePurchases.ts`, seed `data/financePurchasesSeed.ts`; wire names snake_case via
+`src/shared/api/financePurchasesMappers.ts`). **Suppliers are the event vendor directory** (`eventVendors`, Events ›
+Vendors) — there is no second vendor table; finance keeps a **profile per vendor id** (VAT number, payment terms days,
+default expense account, default tax code, currency, bank name, IBAN, notes). The IBAN is stored in full and served
+masked `"•••• 1234"` everywhere; only the audited reveal returns it. Reads: accounting **full** and **view**; writes
+and the reveal: **full** only (`403 forbidden`).
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/finance/suppliers` | every vendor of the company + profile fields (`has_profile`, `vat_number`, `payment_terms_days`, `currency`, `bank_name`, `iban_masked`) + `open_bills`, `open_balance_base`, `overdue_base`, `last_bill_date` |
+| POST | `/finance/suppliers` | `{name, category? (VendorCategory, default other), contact_name?, email?, mobile?, vat_number?, payment_terms_days?, default_expense_account_id?, default_tax_code_id?, currency?, bank_name?, iban?, notes?}` → creates the vendor record (validated by the events library's `cleanVendor`) + the profile; `409 vendor_exists`; audited |
+| GET | `/finance/suppliers/:id` | profile + recent bills and POs; `can_edit`, `can_reveal` |
+| PATCH | `/finance/suppliers/:id` | profile fields (omitted = unchanged; `iban: ""` clears); `422 invalid_iban` (mod-97), `invalid_vat_number`, `invalid_terms` (0–365), `invalid_account`, `invalid_tax_code`; audited (the IBAN change shows masked) |
+| POST | `/finance/suppliers/:id/reveal-iban` | `{iban}` — accounting full only, audited (`security`); `409 no_iban` |
+| GET | `/finance/suppliers/:id/statement?from&to` | base currency: opening, lines (bill = credit, payment / debit note = debit, running balance), closing, company block; void documents are left out |
+| GET | `/finance/purchases/meta` | **every employee** (pickers for purchase requests): suppliers (not blacklisted), purchase accounts (expense + non-cash assets), payment accounts (finance only), tax codes, departments, projects, events + budget lines, currencies + today's rates, `scope`, `my_department_id`, `match_tolerance_pct` |
+
+### Purchase orders
+
+PO id `PO-<n>`, number `<PREFIX>-PO-<yyyy>-<nnnn>` (taken on create). Statuses `draft → pending_approval → approved →
+partially_received → received → closed`, plus `rejected` (edit and resubmit) and `cancelled`. **No ledger posting.**
+Lines: `description, quantity, unit_price, tax_code_id, account_id, department_id, project_id, event_id,
+budget_line_id` (+ computed `net, tax_amount, total, received_qty, billed_qty`). Defaults: account from the supplier
+profile (else by vendor category; Events 6450 for an event line), tax from the profile (else standard VAT when the
+supplier has a VAT number, else OOS).
+
+**Access — self-service.** Any employee of the company (accounting hidden too) may create a PO **request for their own
+department** (`403 own_department_only` otherwise; finance may choose any department) and sees, edits (draft /
+rejected), submits, cancels and receives **their own** requests. A **department head** also sees their department's POs.
+Whoever can act on the step waiting (`canApproveStep`, services/financeApprovals.ts) sees that PO and approves /
+rejects it — department heads without accounting access included. Accounting **full / view** see every PO; full may
+close and bill. A PO the caller can't see answers `404` (like a missing id).
+
+**Approvals.** The chain is `approvalChain(co, 'purchase_order', total incl. VAT in base currency)` (default bands:
+department head from 0, + Accountant from 10,000, + Management from 50,000), frozen on submit; an empty chain approves
+at once. Steps are decided in order; maker–checker (`403 own_request`), one step per user (`403 already_approved_step`),
+`403 not_your_step`. Notifications (type `finance`, stored, once per step): "Approval needed" to the step's approvers;
+"approved" / "rejected" to the requester.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/finance/purchase-orders?status (… · open)&vendor_id&view (mine · awaiting)` | rows with `pending_step`, `awaiting_me`, `mine` |
+| POST | `/finance/purchase-orders` | `{vendor_id, department_id?, order_date?, expected_date?, currency?, exchange_rate?, notes?, delivery_address?, lines}`; `422 vendor_blacklisted` |
+| GET · PATCH · DELETE | `/finance/purchase-orders/:id` | detail: lines, approvals timeline, receipts, bills, history, company + supplier blocks (printable PO), `can.*`; PATCH draft / rejected only (`409 not_editable`); DELETE draft only |
+| POST | `/finance/purchase-orders/:id/submit` · `/approve` · `/reject` | reject `{reason}` (`422 reason_required`); `409 not_draft` / `not_pending` |
+| POST | `/finance/purchase-orders/:id/cancel` | `{reason}`; not after receipts or bills (`409 has_activity`) |
+| POST | `/finance/purchase-orders/:id/receive` | goods / service receipt `{date?, note?, lines: [{line_id, quantity}]}`; ≤ ordered − received (`422 over_received`); status → partially_received / received; closed when fully received and billed |
+| POST | `/finance/purchase-orders/:id/close` | finance: no further receipts or bills |
+
+### Bills
+
+Bill id `BILL-<n>`, number `<PREFIX>-BILL-<yyyy>-<nnnn>`; `supplier_invoice_number` is required and **unique per
+supplier** among non-void bills (`409 duplicate_supplier_invoice`). Due date = bill date + the supplier's terms unless
+given. Statuses `draft · pending_approval · rejected · open · partially_paid · paid · void`; "overdue" is derived (open
+with a balance, due before the company's today). Writes: accounting **full**; reads: full / view; approvers without
+accounting access see only the bills waiting for (or decided by) them (list filtered, other ids 404).
+
+**From a PO** (`po_id`; the PO must be approved / partially received / received): lines prefilled with what is received
+(3-way, once the PO has receipts) or ordered (2-way) minus already billed (`409 nothing_to_bill`). **Matching**: unit
+price within `match_tolerance_pct` (default 2 %, Approval rules screen) of the PO; billed quantity ≤ received (3-way) or
+ordered (2-way); the bill's `match` = `{kind none · two_way · three_way, ok, tolerance_pct, issues[]}`.
+
+**Posting** (base currency = amount × rate; a rounding difference → `rounding`): Dr each line's account (net, **plus
+VAT when not recoverable**) with department / project / event dimensions · Dr VAT input (1300) the recoverable VAT —
+only when the supplier has a VAT number **and** the line's tax code is standard · Cr AP (2100) the total. Journal source
+type `bill` (bills, debit notes and payments; registered with the ledger for number + link). Lock date → `423
+period_locked`, nothing changes (an approval that would post is undone).
+
+**Approval / post.** `submit` runs `approvalChain(co, 'bill', total base)` (default: Accountant from 0, + Management
+from 50,000); the final approval posts. `post` (accounting full) skips the chain only when the bill is **matched to an
+approved PO without exceptions** or the chain is empty (`409 approval_required` otherwise).
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/finance/bills?status (… · open · awaiting)&vendor_id&po_id&overdue=true&q` | rows with `base_total`, `base_balance_due`, `overdue`, `match_ok`, `awaiting_me` |
+| POST | `/finance/bills` | `{vendor_id or po_id, supplier_invoice_number, bill_date? (≤ today), due_date?, currency?, exchange_rate?, notes?, lines? (with po_line_id)}` |
+| GET · PATCH · DELETE | `/finance/bills/:id` | detail: lines (`vat_recoverable`), totals, `recoverable_tax`, match, approvals, journal / void journal, payments, debit notes, attachments, history, `can.*`; PATCH / DELETE draft or rejected, never posted |
+| POST | `/finance/bills/:id/submit` · `/post` · `/approve` · `/reject` | see above; reject `{reason}` |
+| POST | `/finance/bills/:id/void` | `{reason}`; reverses the entry on today; `409 has_settlements` with payments or debit notes |
+| POST | `/finance/bills/:id/attachments` | `{name, mime_type (pdf · png · jpeg · webp), data_url}` ≤ 512 KB, ≤ 10 per bill; counts toward the plan's `storageMb` (`402` when full) |
+| DELETE | `/finance/bills/:id/attachments/:attachmentId` | |
+| GET | `/finance/debit-notes?bill_id&vendor_id` | |
+| POST | `/finance/debit-notes` | `{bill_id, date?, reason, amount (gross, ≤ balance), account_id?}` → id `DN-<n>`, number `<PREFIX>-DN-<yyyy>-<nnnn>`; Dr AP · Cr the bill's (or given) account (net share) · Cr VAT input (the bill's recoverable VAT share); reduces the bill (`amount_credited`) |
+| GET | `/finance/bill-payments?vendor_id&bill_id&run_id` · `/finance/bill-payments/:id` | voucher data: supplier bank name + masked IBAN, allocations, journal, company block |
+| POST | `/finance/bill-payments` | `{vendor_id, date?, payment_account_id (paymentAccountsOf), method (bank_transfer · cheque · cash), reference?, exchange_rate?, bank_charges? (base), allocations: [{bill_id, amount}], notes?}`; same supplier and currency; each ≤ balance; partial payments allowed. Dr AP Σ allocᵢ × billRateᵢ · Cr payment account amount × payRate · the difference → `fx_gain_loss` · Dr Bank charges (6800) / Cr payment account. Id `BPAY-<n>`, number `<PREFIX>-PV-<yyyy>-<nnnn>` |
+| POST | `/finance/bill-payments/run` | payment run `{date?, payment_account_id, method?, reference?, items: [{bill_id, amount}]}` → one payment (voucher) per supplier and currency, all validated before anything posts; id `PRUN-<n>` |
+| GET | `/finance/payment-runs` | |
+| POST | `/finance/bill-payments/:id/void` | `{reason}`; reverses the entry; the bills re-open (`applyToBill`) |
+| GET | `/finance/payables/aging?as_of` | by supplier: current, 1–30, 31–60, 61–90, 90+ (days past due at the date, company timezone), base currency at each bill's rate; an earlier date rebuilds balances from payments / debit notes dated on or before it |
+| GET | `/finance/payables/due?days=7` | open bills due within `days` (and overdue) |
+| GET | `/finance/payables/overview` | tile data (also exported as `payablesOverview(co)`): open, overdue, due this week, approvals waiting, open POs |
+| GET | `/finance/event-costs?event_id` | SEAM with Events › budget: what posted bills charged to the event per budget line (`billed`, base cost incl. non-recoverable VAT) next to the line's `planned` / `actual` |
+
+Notifications (type `finance`, stored, once only): approvals as for POs; **"Bill due soon"** to the accounting-full
+users once per bill when it is due within 3 days (lifecycle tick `finance.bill-due-reminders`).
+
+### Approval rules
+
+One settings screen (Finance settings › Approval rules card) for the shared contract in
+`src/shared/mocks/services/financeApprovals.ts` (bands per document type: `purchase_order`, `bill`, `expense`,
+`expense_claim`). Read: accounting full / view; edit: **Company Admin and Accountant** (`403` otherwise); audited.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/finance/approval-rules` | `{base_currency, rules: [{doc_type, min_amount, approver}], doc_types, match_tolerance_pct, can_edit, updated_at, updated_by_name}` |
+| PUT | `/finance/approval-rules` | `{doc_type, rules: [{min_amount ≥ 0, approver (department_head · Accountant · Management · Company Admin)}], match_tolerance_pct? (0–25)}` replaces that document type's bands (≤ 8; each approver once: `422 duplicate_approver`; `[]` = no approval needed). Documents already submitted keep their frozen chain |
+
+### Bank accounts
+
+`/finance/banking`. A bank account is a record on top of the ledger: it points at one postable account under
+`1100 Cash and bank` (`ledger_account_id`; when none is chosen a new one `ACC-NB-<n>` is created with the next free
+code from 1121). Balances come from the journal lines on that account (account currency: for a foreign-currency account
+the amount banking posted, else base ÷ the day's rate). Account number / IBAN are stored full and served masked
+(`account_number_masked`, `iban_masked`: `•••• 1234`). Read: accounting full / view (Sales Manager); write: accounting
+full. Ids `BNK-` (Apex from 1001, Crest from 5001). Seeds: Apex "Main bank account" (1120, Emirates NBD), Cash on hand
+(1110), ADCB savings (1121), Mashreq **USD** (1122); Crest Main (1120, Al Rajhi), Cash on hand, Riyad Bank (1121).
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/finance/bank-accounts?include_inactive=` | `[{id, name, bank_name, kind (current · savings · deposit · cash · card), account_number_masked, iban_masked, currency, ledger_account_id/code/name, active, is_default, book_balance, book_balance_base, statement_balance, statement_balance_date, last_reconciled_date, last_reconciled_balance, unmatched_lines, reconcile_from, opening_balance, opening_date, notes}]` |
+| GET | `/finance/bank-accounts/ledger-options` | postable cash / bank accounts not linked yet `[{id, code, name, currency}]` |
+| POST | `/finance/bank-accounts` | `{name, bank_name?, kind?, currency? (base), account_number?, iban? (validated), ledger_account_id? (an unlinked account under 1100 in the same currency: else 422 invalid_account / 409 ledger_account_in_use), opening_balance?, opening_date?, reconcile_from?}`; a non-zero opening balance posts the account vs `opening_balance_equity` (source `opening_balance`, `source_id` = the bank account). Audited |
+| GET | `/finance/bank-accounts/:id` | one row |
+| PATCH | `/finance/bank-accounts/:id` | name, bank_name, kind, account_number, iban, active, notes, reconcile_from (`409 has_reconciliations` once reconciled); currency and ledger account are fixed |
+| POST | `/finance/bank-accounts/:id/reveal` | accounting full: `{id, account_number, iban}` in full — audited (`security`), the only response carrying them |
+| GET | `/finance/bank-transfers?bank_account_id=` | `[{id, number <PREFIX>-TRF-yyyy-nnnn, date, from_bank_account_id, from_name, to_bank_account_id, to_name, amount_from, from_currency, amount_to, to_currency, fee, fx_difference, reference, memo, status (posted · void), journal_entry_id, journal_number, void_journal_entry_id}]` |
+| POST | `/finance/bank-transfers` | `{from_bank_account_id, to_bank_account_id, amount_from, amount_to? (required when the currencies differ; equal to amount_from otherwise), fee?, date?, reference?, memo?}` → source `bank`: Dr to (amount_to at its rate) / Cr from (amount_from + fee at its rate) / Dr 6800 bank charges (fee) / the base difference to `fx_gain_loss` (Dr loss, Cr gain) |
+| POST | `/finance/bank-transfers/:id/void` | reverses the entry (`409 reconciled` when a line is in a finished reconciliation) |
+
+### Reconciliation
+
+Statements are imported per bank account and matched to the **journal lines posted to the account's ledger account**
+(every money movement — customer payments, PDC clearing, bill payments, expenses, payroll — lands there). A journal line
+is named `<entry id>:L<index>`. Amounts are signed in the account currency (+ money in, − money out).
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/finance/bank-accounts/:id/statements` | `[{id STM-, bank_account_id, file_name, start_date, end_date, line_count, matched_count, skipped_duplicates, closing_balance, imported_by_name, imported_at}]` |
+| POST | `/finance/bank-accounts/:id/statements/preview` | `{csv, mapping?}` → `{columns, sample, suggested_mapping, lines [{row, date, description, reference, amount, balance, duplicate, error}], errors, duplicates, total_in, total_out, start_date, end_date, closing_balance}`; nothing stored. Mapping (0-based column indexes, guessed from the header): `{date, description, reference?, amount? or debit + credit, balance?, date_format (yyyy-MM-dd · dd/MM/yyyy · MM/dd/yyyy · dd-MM-yyyy · dd.MM.yyyy · d MMM yyyy), has_header, invert_sign?, delimiter?}`. ≤ 1 MB, ≤ 5000 rows |
+| POST | `/finance/bank-accounts/:id/statements` | `{csv, file_name?, mapping?, include_duplicates? (false)}` → the statement with its lines. Duplicate = same date, amount, description and reference as a line already imported for the account (or earlier in the file): skipped unless included. `422 invalid_lines`, `422 empty_statement` |
+| GET | `/finance/bank-statements/:id` | with `lines [{id SL-, date, description, reference, amount, balance, match_id, reconciled, rule_id, rule_account_id}]`, `can_delete` |
+| DELETE | `/finance/bank-statements/:id` | only without matched lines (`409 has_matches`) |
+| GET | `/finance/bank-accounts/:id/reconcile?to=` | `{bank_account, statement_lines (unmatched), book_lines (unmatched, from reconcile_from: [{id, entry_id, entry_number, date, memo, description, source_type, source_number, amount, match_id, reconciled}]), matches (open session), suggestions [{statement_line_id, journal_line_ids, score, reasons}], statement_date, statement_balance, cleared_balance, difference, last_reconciliation}` |
+| POST | `/finance/bank-accounts/:id/matches` | `{statement_line_ids, journal_line_ids}` — 1-to-1, 1-to-many, many-to-1; sums must be equal (`422 amounts_differ`); `409 already_matched`; lines before `reconcile_from` are the opening position (`422 before_reconcile_from`) |
+| POST | `/finance/bank-accounts/:id/auto-match` | accepts every suggestion — same amount (required, 50) · date within ±3 days (required, 30 − 5 a day) · the statement description / reference contains a document number of the entry (journal number, payment / transfer number, a `XXX-YYY-2026-0001` number in the memo: 20); best first, each line once; `auto_matched` |
+| DELETE | `/finance/bank-matches/:id` | unmatch (`409 reconciled` inside a finished reconciliation) |
+| POST | `/finance/bank-statement-lines/:id/create-entry` | `{account_id? (default: the bank rule's), memo?, description?, save_rule?, rule_contains?}` → posts bank vs account (source `bank`, `source_id` = the line) and matches it (kind `created`) |
+| POST | `/finance/bank-accounts/:id/reconciliations` | finish `{statement_date? (last line), statement_balance? (running balance)}`; needs **statement balance − cleared book balance = 0** (`422 difference_not_zero`); cleared = book lines before `reconcile_from` + book lines matched to statement lines dated ≤ the statement date; those matches become reconciled. `409 already_reconciled` for a date not after the last one |
+| GET | `/finance/bank-reconciliations?bank_account_id=` | `[{id REC-, bank_account_id, bank_account_name, statement_date, statement_balance, cleared_balance, difference, status (finished · undone), match_count, journal_line_count, finished_by_name, finished_at, undone_at}]` |
+| GET | `/finance/bank-reconciliations/:id` | the report: `+ currency, book_balance, outstanding_deposits, outstanding_payments, unmatched_statement_lines, adjusted_book_balance (= book − outstanding), can_undo` |
+| POST | `/finance/bank-reconciliations/:id/undo` | the latest finished one of the account only (`409 not_latest`) |
+| GET · POST | `/finance/bank-rules` | `[{id BR-, name, contains, direction (any · in · out), account_id, account_code, account_name, bank_account_id, active}]`; POST `{contains, account_id, direction?, bank_account_id?, name?}` |
+| PATCH · DELETE | `/finance/bank-rules/:id` | edit / delete |
+
+**Reconciled lines are locked:** reversing an entry with a line in a finished reconciliation answers `409 reconciled`
+(`POST /finance/journal/:id/reverse` via the ledger's reverse guard, transfer voids, payroll reopen) until it is undone.
+**Alert** (`finance`, once per account and statement): a statement line still unmatched 30 days after its date → accountants.
+
+### Payroll posting
+
+HR payroll posts itself (services/financePayrollGl.ts: `onPayrollEvent` in services/hrPayroll.ts + an idempotent sync on
+every finance access). Source `payroll`, `source_id` = the run / loan / settlement; the journal links to `/hr/salary?run=…`.
+
+| Event | Entry |
+|---|---|
+| run **approved** (dated the period end) | Dr 6100 basic, overtime, bonuses · Dr 6110 allowances · Dr 6130 employer social insurance · Dr 2400 commission earnings (already accrued on the statement) · Dr 2450 reimbursement items (owed through the claim) / Cr 2400 net pay · Cr 2410 employee + employer social insurance · Cr 1410 loan installments · Cr 6100 unpaid leave / absence · Cr 4900 other deductions. Department dimension per employee |
+| run **paid** (dated the paid day) | Dr 2400 / Cr the paid-from account (default bank): one line = the WPS / Mudad total (bank and cheque lines with a positive net), one line = cash withdrawn for cash-paid employees |
+| run **reopened** | the accrual is reversed (posted again on the next approval) |
+| loan / advance created · cancelled | Dr 1410 / Cr default bank · reversed |
+| final settlement **paid** | Dr 6120 gratuity (EOSB expensed at settlement — no monthly provision, 2500 untouched) · Dr 6100 unpaid salary and leave encashment · Dr 6110 / Cr 4900 adjustments · Cr 1410 open loans · Cr bank (total) |
+
+Dated on or before the lock date → skipped (`skipped_locked`), never shifted; a failure stays on the posting (`error`)
+and is retried on the next finance access — payroll is never blocked.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/finance/payroll-postings` | per run `{run_id, month, run_status, currency, status (not_posted · accrued · paid · reversed · skipped_locked · error), accrual_entry_id/number, payment_entry_id/number, reversal_entry_ids, paid_from_account_id/name, totals {gross, net, employee_social_insurance, employer_social_insurance, loan_repayments, other_deductions, bank_paid, cash_paid}, note, run_link}` (accounting full / view) |
+| GET | `/finance/payroll-postings/:runId` | one run (HR's run drawer shows the entry links to users who can see accounting) |
+| PUT | `/finance/payroll-postings/:runId/paid-from` | `{account_id}` a cash / bank account (accounting full; `409 run_paid` once paid) |
+
+### Commissions
+
+`/finance/commissions` and `/sales/my-commissions`. Plans: read accounting full + Sales Manager; write Company Admin,
+Management, Accountant. Statements: accounting full all; Sales Manager every sales agent + their team; Department Head
+their team; everyone else **their own** only (another rep's statement answers 404). Ids `CPL-`, `CST-`.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/finance/commission-plans` | `[{id, name, basis (collected_revenue · won_deals), rate, tiers [{min_achievement, rate}], cap_per_month, clawback, roles, user_ids, user_names, effective_from (yyyy-MM), active}]` |
+| POST · PATCH | `/finance/commission-plans` · `/:id` | those fields (rates 0–100; at least one role or user; company users only: `422 invalid_user`). Audited |
+| GET | `/finance/commissions/mine` | `{plan, statements}` of the caller (any role; Sales Agents included) |
+| GET | `/finance/commission-statements?month=&user_id=&status=` | `[{id, number <PREFIX>-COM-yyyy-nnnn, user_id, user_name, month, plan_id, plan_name, basis, currency, achievement (sales-target completion %), rate, base_total, gross, capped, clawback, total, status (pending_manager · pending_accountant · approved · rejected), lines [{kind invoice · deal · clawback, ref_id, ref_number, customer_name, date, base_amount, rate, commission, note}], approvals, rejected_reason, journal_entry_id (null without accounting access), journal_number, payroll_adjustment_id, payroll_month, payroll_note, can_approve, approve_blocked_reason}]` |
+| POST | `/finance/commission-statements/generate` | `{month}` (accounting full): one statement per rep with a plan (pending ones without approvals are recalculated; nothing to pay → none). **Collected revenue** = net before VAT (base currency, less credit notes) of invoices fully paid in the month (latest allocation date) whose customer the rep owns (`customers.owner_id`); **won deals** = `leads.value` of the rep's leads won in the month. Rate = the highest tier reached by the month's target completion (services/targets.ts `rowFor`), else the base rate; monthly cap; each invoice / deal once. **Clawback**: a commissioned invoice later credited / refunded / voided adds a `clawback` line (commission paid − rate × still earned) |
+| GET | `/finance/commission-statements/:id` | one statement |
+| POST | `/finance/commission-statements/:id/approve` | step 1 Sales Manager, step 2 Accountant (Company Admin / Management stand in for either); never the rep (`403 own_request`), never one user for both (`403 not_your_step`). Final approval: **Dr 6150 / Cr 2400** (source `payroll`, `source_id` the statement) and an HR adjustment of kind `commission` in the next open run (`upsertSystemAdjustment`, `source_ref commission:<id>`, once per statement); not an employee → `payroll_note` |
+| POST | `/finance/commission-statements/:id/reject` | `{reason}` by whoever may approve the current step |
+
+Notifications (`finance`, once): statement awaiting approval → Sales Managers (step 1) / accountants (step 2); approved → the rep.
+
+### Financial statements
+
+`/finance/statements?tab=pnl|balance-sheet|cash-flow|general-ledger|trial-balance|year-end`. Every number comes **only
+from the journal** (every finance section posts there), in the company's base currency. Services
+`src/shared/mocks/services/financeStatements.ts`, pure math `src/modules/finance/statements/calc.ts`, types
+`src/modules/finance/statements/types.ts`, wire `src/shared/api/financeStatementsMappers.ts` (plain snake_case at any
+depth), exports `src/modules/finance/statements/exports.ts` (one table per statement → CSV and Excel through
+`reports/lib/exportExcel`; print / PDF through the browser with the company letterhead: legal name, address, tax number).
+
+**Who.** Every read: accounting **full** and **view** (Sales Manager); hidden → `403 forbidden`. Plan gate `/finance/*`
+→ `accounting`. Query ids that aren't the company's (department / project / event / customer / account) match nothing:
+the answer equals the one for a missing id (never echoed back).
+
+**Periods** (P&L, cash flow): `period=month|quarter|ytd|fiscal_year|custom` around `date` (default the company's today;
+quarters are fiscal quarters from `fiscal_year_start_month`), or `period=custom&from=&to=` (`422` without `from`, `from`
+after `to`, more than ten years). Default `ytd` (fiscal year start → today). Dates `yyyy-MM-dd` (`422` otherwise).
+
+| Method | Path | Query | Answer |
+|---|---|---|---|
+| GET | `/finance/statements/meta` | — | `currency, today, fiscal_year_start_month, fiscal_year_start, lock_date, letterhead {legal_name, name, logo_url, monogram, address_lines, tax_label, tax_number}, accounts[{id, code, name, type, is_header}], departments, projects, events, customers` (`[{id, name}]` of the company, for the filters; view roles included), `can_close, can_reopen` |
+| GET | `/finance/statements/profit-and-loss` | period (above), `compare=previous_period,last_year`, `view=period\|monthly`, `department_id, project_id, event_id, customer_id` | `currency, view, period, columns[{key (current · previous_period · last_year · yyyy-MM · total), label, from, to}], sections[{id (revenue · cost_of_sales · operating_expenses · other_income · other_expenses), label, lines[{account_id, code, name, amounts[]}], totals[]}], totals {revenue, cost_of_sales, gross_profit, operating_expenses, operating_profit, other_income, other_expenses, net_profit}` (one number per column), `dims {department_id, project_id, event_id, customer_id}, dim_names {department, project, event, customer}`. Sections by account subtype: `operating_income` → revenue (other income subtypes too, except `other_income`), `cost_of_sales`, `operating_expense` (and unknown expense subtypes), `other_income`, `other_expense`; amounts on the natural side (a debit balance on revenue, e.g. sales discounts, is negative). Gross = revenue − cost of sales; operating = gross − operating expenses; net = operating + other income − other expenses. **Closing entries (`year_end_close`) are excluded**, so a closed year still shows its activity. Dimension filter: only the lines carrying every given value. `previous_period` = the range right before (as many whole months for a month-aligned range, else days); `last_year` = the same dates a year earlier. `view=monthly`: the 12 months ending with the period's last month + a `total` column (comparisons ignored) |
+| GET | `/finance/statements/balance-sheet` | `as_of` (default today), `compare_to` | `currency, columns[{key current · compare, label, to}], sections[{id (current_assets · fixed_assets · other_assets · current_liabilities · non_current_liabilities · equity), group (assets · liabilities · equity), label, lines[{key, kind (account · current_year_earnings · prior_years_earnings), account_id, code, name, amounts[]}], totals[]}], totals {assets, liabilities, equity, liabilities_and_equity, difference}, balanced`. Equity = equity accounts + **current-year earnings** (income − expenses from the fiscal-year start to `as_of`, closing entries included, so after a close it is 0 and the result sits in retained earnings) + **prior years' earnings (not closed)** when non-zero. Assets = Liabilities + Equity whenever the journal balances (`difference` 0). Accumulated depreciation shows as a negative fixed asset |
+| GET | `/finance/statements/cash-flow` | period (above) | `currency, from, to, operating {net_profit, adjustments[], working_capital[], total}, investing {lines[], total}, financing {lines[], total}, net_change, opening_cash, closing_cash, check, reconciles, cash_accounts[{account_id, code, name, opening, closing}]`; lines `{kind, account_id, code, name, amount}` (cash effect, + = in). **Indirect method** from the period's entries except closing and opening-balance entries (an opening balance is brought forward: it counts in `opening_cash`). Adjustments: accumulated depreciation (fixed-asset account named …depreciation / amortisation) and end-of-service / gratuity / provision non-current liabilities; working capital: other current assets (AR, PDC, VAT input, prepaid, advances) and current liabilities (AP, VAT output, payroll, accruals, customer advances); investing: other fixed and other assets; financing: equity and other non-current liabilities (loans). Cash = the accounts under the cash / bank header + the cash roles (as the overview). `check = net_change − (closing_cash − opening_cash)` is 0 when it reconciles |
+| GET | `/finance/statements/general-ledger` | `from, to` (default fiscal year to date), `account_id` (a header: its descendants), `account_from, account_to` (codes, inclusive), `exclude_closing=true`, the four dimension ids | `currency, from, to, accounts[]` (the `/accounts/:id/ledger` shape per postable account with an opening balance or lines: `opening_balance, rows[], totals, closing_balance`), `totals {debit, credit}, exclude_closing`. Used for the P&L drill-down (`exclude_closing=true` + the P&L's filters) |
+| GET | `/finance/statements/trial-balance` | `as_of` (default today), `compare_to` | `currency, columns[], rows[{account_id, code, name, type, debit[], credit[]}], totals {debit[], credit[]}, balanced[]` (one value per column). The Journal page keeps its own single-date trial balance (`/finance/reports/trial-balance`) |
+
+**Reusable readers** (server side, for profitability / company performance; they run the finance hooks first):
+`profitAndLoss(companyId: string, from: string, to: string, dims?: StatementDims): PnlPeriod`,
+`balanceSheet(companyId: string, asOf: string): BalanceSheetPeriod`,
+`cashFlow(companyId: string, from: string, to: string): CashFlowStatement` in `services/financeStatements.ts`; the pure
+`profitAndLossOf(accounts, entries, from, to, dims?)`, `balanceSheetOf(accounts, entries, asOf, fiscalYearStartMonth)`,
+`cashFlowOf(accounts, entries, from, to, currency)`, `combinePnl`, `sumPnl`, `generalLedgerOf`, `trialBalanceCompare`,
+`closingLinesOf`, `fiscalYearOf`, `periodRange`, `comparisonRange`, `monthsEnding`, `pctChange` in `statements/calc.ts`.
+
+### Year-end close
+
+Closing a fiscal year posts **one closing entry** dated its last day (source type **`year_end_close`**, added to
+`JournalSourceType`; `source_id` the close record `YEC-<n>`): every income and expense account's net for the year
+(closing entries excluded) to zero, the difference to the `retained_earnings` account (3200). Then the lock date moves
+to that day through the audited lock-date service (`setLockDate`, audit entity `finance_lock_date`), unless the books
+are already locked later. The close itself is audited (entity `year_end_close`). Store `fin.yearEndCloses`
+(`data/financeStatements.ts`); a re-open keeps the row (`reopened`) and a new close adds a new one. Closing entries
+can't be reversed from the Journal (`409 source_document`): re-open the year.
+
+**Who.** Lists and previews: full and view. **Close**: Company Admin and Accountant (it moves the lock date):
+Management → `403 year_end_forbidden`, Sales Manager → `403 forbidden`. **Re-open**: Company Admin only
+(`403 reopen_forbidden`), with a reason.
+
+| Method | Path | Body / query | Answer |
+|---|---|---|---|
+| GET | `/finance/year-end` | — | `currency, today, fiscal_year_start_month, lock_date, retained_earnings {account_id, code, name}, years[{start, end, label (FY 2026 · FY 2025/26), status (open · closed · in_progress), net_profit, close_id, closed_at, closed_by_name, entry_id, entry_number, can_close, close_blocked_reason, can_reopen, reopen_blocked_reason}]` (newest first, from the year of the first journal entry to the current one), `history[]` (closes incl. re-opened: `id, fiscal_year_start, fiscal_year_end, status, net_profit, entry_id, entry_number, reversal_entry_id, reversal_entry_number, previous_lock_date, note, closed_at, closed_by_name, reopened_at, reopened_by_name, reopen_reason`), `can_close, can_reopen` |
+| GET | `/finance/year-end/preview` | `fiscal_year_end` (default: the oldest ended open year with activity, else the latest ended year, else the current one) | `currency, start, end, label, retained_earnings, lines[{account_id, code, name, type, debit, credit}], totals, net_profit, lock_date, new_lock_date, can_close, blocked_reason`. `422 invalid_fiscal_year` when the date isn't a fiscal-year end |
+| POST | `/finance/year-end/close` | `{ fiscal_year_end*, note }` | `{ close, lock_date }`. `409 year_not_ended`, `409 already_closed`, `409 earlier_year_open` (an earlier year with income / expense is still open), `409 missing_system_account`, `423 period_locked` (books locked on or after the year end: move the lock date first), `422 invalid_fiscal_year` |
+| POST | `/finance/year-end/closes/:id/reopen` | `{ reason* }` | `{ close, lock_date }`: the lock date goes back to the one before the close (audited, only when it covers the year end), then the closing entry is reversed (dated the year end, same source type). `409 already_reopened`, `409 later_year_closed` (re-open the later year first), `422` without a reason. A foreign / missing id → `404` |
+
+A closed year's P&L still shows its activity (closing entries are excluded); the balance sheet after the close shows
+the result in retained earnings and 0 current-year earnings at the year end. Changing the fiscal year start month after
+a close isn't blocked (gap F-S5).
+
+**Tests.** Endpoints in `src/shared/mocks/isolation/financeStatementsEndpoints.ts` (both directions, spoofing; the
+dimension / account filters in `REFS` of `scoped.isolation.test.ts`); roles × both companies, plan gate, foreign close
+id, spoofed company and recomputed numbers in `src/app/isolation/financeStatements.isolation.test.ts`; math in
+`src/modules/finance/statements/calc.test.ts` (sections, comparisons, dimension filters, A = L + E, cash flow
+reconciliation, closing lines, April fiscal year) and `src/shared/mocks/services/financeStatements.test.ts` (full seeded
+books of both companies, close / re-open with a non-January fiscal year, refusals); browser
+`e2e/finance-statements.spec.ts`. Persisted dev DB: `VERSION` 34.
+
+### Profitability
+
+Read-only analysis over the journal (`services/financeProfitability.ts`, rules in `modules/finance/profitability/calc.ts`).
+Plan gate `/finance/*` → `accounting`. **Who:** `accounting` full and view read every report; hidden → `403`. Labour cost
+only for **full** — view (Sales Manager) gets `labour_cost: null` and margins before labour (`meta.labour_visible`).
+No response carries a rate, a salary or a cost per employee: labour is aggregated per project / customer / month.
+Query of every report: `from`, `to` (company-local, default this year, ≤ 36 months, `422`), `department_id`
+(subtree), and per report `project_id`, `event_id`, `customer_id`; a foreign or missing id → `404` (same body).
+
+| Method | Path | Returns / rules |
+|---|---|---|
+| GET | `/finance/profitability/options` | `{meta, settings, can_edit_settings, departments, reports}` |
+| PUT | `/finance/profitability/settings` | `{standard_hours_per_month (40–320, default 176), cash_alert_threshold (≥ 0 or null), overdue_receivables_alert_pct (0–100, default 30)}`; accounting full only (`403`), `422` out of range |
+| GET | `/finance/profitability/projects` | rows: revenue (income lines tagged `project_id`), direct costs (expense lines tagged `project_id`: bills, expenses, claims), labour hours / cost, unrated hours, margin, margin %, budget (contract value → quotation net → won deal value) and billed-of-budget %; totals; negative-margin count. Department = the project manager's department. |
+| GET | `/finance/profitability/projects/:id` | the row + monthly trend (revenue, direct costs, labour, margin) + the ledger lines behind it |
+| GET | `/finance/profitability/events` | events starting in the period (owner's department): revenue, costs, profit, ROI, attendees, leads, cost per attendee / lead |
+| GET | `/finance/profitability/customers` | revenue net of credit notes, credit notes, direct costs (customer- or customer-project-tagged, each line once), labour on their projects, gross margin, invoiced / collected (invoices issued in the period), outstanding / overdue (today), DSO, lifetime revenue |
+| GET | `/finance/profitability/departments` | department P&L: `profitAndLoss(co, from, to, {department_id})` of Financial statements per department + project-tagged lines without a department (project manager's department); Unassigned = company P&L − departments; payroll part from the lines; `source: statements` (ledger fallback) |
+| GET | `/finance/profitability/:report/export` | `{file_name, headers, rows}` (CSV / Excel built by the client); labour column only for full; unknown report `404` |
+
+**Labour allocation (not a ledger posting):** hours of time entries on the project's tasks (the entry's project, else its
+task's) × monthly pay of the employee's contract in force that month (basic + allowances) ÷ standard hours per month.
+Hours of users without an employee record / contract are `unrated_hours` (no cost).
+
+**Events — no double counting:** revenue = event-tagged income in the ledger + max(0, signed / paid sponsor deals −
+that income) (sponsor invoices carry the event). Costs = event-tagged expenses in the ledger + Σ max(0, budget-line
+actual − bills linked to that line via `budget_line_id`); bills linked to a line replace its typed actual; unlinked
+ledger costs count fully. ROI = (revenue − cost) ÷ cost.
+
+**DSO** = open receivables ÷ invoices issued in the period (incl. VAT) × days of the period (up to today).
+
+**Tests.** `src/shared/mocks/isolation/profitabilityEndpoints.ts` (both directions, spoofing; filters in `REFS` of
+`scoped.isolation.test.ts`); roles × both companies, labour hidden for view, no per-employee data, recomputed revenue
+and labour, plan gate in `src/app/isolation/profitability.isolation.test.ts`; `modules/finance/profitability/calc.test.ts`
+and `services/financeProfitability.test.ts` (department split, labour, event rule). Persisted dev DB: `VERSION` 36.
+
+### VAT returns
+
+VAT returns per filing period, in the authority's layout: **UAE (Apex) — FTA VAT 201**, **KSA (Crest) — ZATCA VAT
+return**. Services `src/shared/mocks/services/financeTax.ts`, stores `fin.vatReturns`, `perTenant:fin.taxSettings`
+(`data/financeTax.ts`), pure rules `src/modules/finance/tax/calc.ts`, wire `src/shared/api/financeTaxMappers.ts` (plain
+snake_case at any depth). Screens: `/finance/tax` (`?tab=vat|estimate`, `?return=`, `?box=`), printable
+`/finance/tax/vat-returns/:id/print`. Plan gate `/finance/*` → `accounting`. **Who:** full (Company Admin, Management,
+Accountant) reads and writes; view (Sales Manager) reads (`can.file` / `can.pay` false, writes `403`); hidden `403`. A
+foreign return id answers `404` like a missing one; a foreign payment account the same `422 invalid_account` as a
+missing one.
+
+**How a return is computed (from the journal).** Every posted entry dated in the period is classified, so every finance
+section counts (invoices, credit notes, bills, debit notes, expenses, claims, petty cash, manual entries). For entries
+of invoices, credit notes, bills, debit notes and company expenses the **document lines** give the category (tax code
+→ standard / zero-rated / exempt / out of scope) and the net amount; the entry's own **VAT-account lines** (2200 output,
+1300 input) give the VAT (a rounding difference goes on the document's first standard line), so the return always
+agrees with the ledger. Any other entry touching 2200 / 1300 gives one standard-rated item per VAT line (net = VAT ÷ the
+line's tax-code rate). Reversals (voids) are entries of the period they are posted in, with the opposite sign; credit
+notes reduce sales, debit notes reduce purchases. **Non-recoverable VAT** (bill lines / expenses without a valid tax
+invoice: not on 1300) is listed as `excluded`. Entries of source `vat_return`, `tax_provision`, `year_end_close` are
+never classified. The documents only give the drill-down detail (which invoice / bill feeds which box).
+
+**Boxes.** UAE: standard-rated sales by the customer's emirate (`customers.emirate`; empty → the company's emirate from
+Settings › Company profile, flagged `emirate_assumed` and listed in `assumptions`) 1a–1g; 2 tourist refunds, 3 reverse
+charge, 6 imports, 7 import adjustments, 10 reverse-charge expenses: 0 (not tracked); 4 zero-rated; 5 exempt; 8 totals;
+9 recoverable standard-rated expenses; 11 totals; 12 = 8 VAT + adjustment; 13 = 11 VAT + adjustment; 14 = 12 − 13.
+Late corrections go to the VAT **Adjustment** column of their box. KSA: 1 standard sales 15 %; 2 sales to citizens 0;
+3 zero-rated domestic; 4 exports (zero-rated sales invoiced in a foreign currency — an assumption); 5 exempt; 6 total;
+7 standard purchases; 8–9 imports 0; 10 zero-rated purchases; 11 exempt purchases; 12 total; 13 = 6 − 12 VAT; 14
+corrections from previous periods (warning above SAR 5,000: voluntary disclosure); 15 credit carried forward; 16 net
+VAT due. Credit / debit notes go to the KSA **Adjustment** (amount) column.
+
+**Workflow.** Periods (calendar months or quarters, `vat_frequency` per company; seed Apex quarterly, Crest monthly)
+from the start of the fiscal year the module was first opened; a row (`VATR-<n>`) per period is created when the list
+is read. **draft** (computed live) → **filed** (`POST …/file`: the snapshot — boxes, totals, items, warnings — is
+frozen with the ids of the entries it counted; the settlement entry **Dr 2200 output VAT / Cr 1300 input VAT / Cr (or
+Dr for a credit) 2210 VAT payable to tax authority** is posted on the filing date, source `vat_return`) → **paid**
+(`POST …/pay`: Dr 2210 / Cr the bank or cash account). Account **2210 "VAT payable to tax authority"** is not in the
+seeded chart: it is created (additively, `ACC-2210` under Liabilities) on the first filing. A filed return is never
+recomputed: an entry later dated inside a filed period is reported as a **correction** in the next unfiled return. A
+negative payable (credit) is **carried forward** into the next return (`credit_brought_forward`; KSA box 15). Due date:
+UAE period end + 28 days; KSA end of the following month. The CSV export and the printable page are client-side.
+
+| Method | Path | Who | Body / query | Answer |
+|---|---|---|---|---|
+| GET | `/finance/tax/settings` | view | — | `country, layout (uae_vat201 · ksa_zatca), currency, vat_frequency, tracking_from, company_emirate, vat_number, vat_registered, can_edit, payment_accounts[{id, code, name}], fiscal_year_start_month, fiscal_years[]` |
+| PATCH | `/finance/tax/settings` | full | `{ vat_frequency: monthly · quarterly }` | the settings; drafts of the old frequency are regenerated, filed returns stay. `409 frequency_misaligned` (quarterly after a filed month that doesn't end a quarter). Audited |
+| GET | `/finance/vat-returns` | view | — | rows newest first: `id, period_key, label, frequency, from, to, due_date, status (draft · filed · paid), in_progress, overdue, payable, filing_reference, filed_date, paid_date` |
+| GET | `/finance/vat-returns/:id` | view | — | row + `layout, currency, adjustment_label, boxes[{key, label, amount, adjustment, vat, kind (line · total · result), drill, note}], totals {output_vat, input_vat, corrections, net_vat, credit_brought_forward, payable}, item_count, excluded_count, correction_count, warnings[], assumptions[], seller, settlement_entry, payment_entry, filed_at, filed_by_name, paid_by_name, payment_reference, frozen, can {file, pay}, file_blocked_reason` |
+| GET | `/finance/vat-returns/:id/boxes/:box` | view | `box`: a drillable box (UAE `1` = 1a–1g, `1a`…`1g`, `4`, `5`, `9`; KSA `1, 3, 4, 5, 7, 10, 11, 14`), `corrections`, `excluded` | `{ return_id, box, label, items[{entry_id, entry_number, date, side, kind, doc_id, doc_number, link, counterparty, category, tax_code, net, vat, recoverable, emirate, emirate_assumed, export, correction, box}] }`; another key `404` |
+| POST | `/finance/vat-returns/:id/file` | full | `filing_reference*` (3–40), `filed_date` (after the period, not future; default today) | the detail (frozen). `409 already_filed`, `409 period_open` (period not ended), `422`, `423 period_locked`. Audited |
+| POST | `/finance/vat-returns/:id/pay` | full | `date` (filing date … today), `account_id` (cash / bank; default bank), `reference` | the detail. `409 not_filed`, `already_paid`, `nothing_to_pay` (credit), `422 invalid_account`, `423`. Audited |
+
+### Corporate tax & zakat
+
+Estimates only, clearly labelled ("consult your advisor"). Same service / screen (`/finance/tax?tab=estimate`).
+**UAE corporate tax** (`GET /finance/tax/corporate-tax?year=`; KSA → `409 not_applicable`): accounting profit of the
+fiscal year to date from the ledger (income credit − debit, expense debit − credit; `tax_provision` and
+`year_end_close` entries left out, so the figure is **before tax**) + automatic adjustments (50 % of entertainment 6560
+added back; expense accounts named "fine" / "penalty" added back; income accounts named "dividend" / "capital gain"
+deducted) ± manual adjustments → taxable income; **0 % up to AED 375,000, 9 % above**; a straight-line 12-month
+projection. SEAM: the statements section's `profitAndLoss` includes the provision (after tax), so the estimate keeps
+its own pre-tax ledger sum. **KSA zakat** (`GET /finance/tax/zakat?year=`; UAE → `409`): simplified base = equity +
+profit not yet closed + long-term liabilities (`non_current_liability`) − net fixed assets (`fixed_asset`) ± manual
+adjustments, or the adjusted net profit of the year when higher, never below 0; zakat 2.5 %. **Provision** (`POST
+/finance/tax/provisions {kind: corporate_tax · zakat, year, date?}`, full): posts the difference between the estimate
+and what is already provided for that year — Dr **6960** (Corporate tax / Zakat expense; created additively on first
+use) / Cr **2700** payable (or the reverse to release an over-provision), source `tax_provision`, source id
+`<kind>:<year>`; `409 nothing_to_post` when equal. `PUT /finance/tax/adjustments {kind, year, lines[{label, amount}]}`
+(full) replaces the year's manual adjustments (≤ 30) and returns the estimate.
+
+### Budgets
+
+One budget per company and fiscal year (`BUD-<n>`), lines per **department × income / expense account** with 12
+monthly amounts (fiscal months). Services `src/shared/mocks/services/financeBudgets.ts`, store `fin.budgets`
+(`data/financeBudgets.ts`; seed: an approved budget of the current year for Apex and Crest), pure rules
+`src/modules/finance/planning/calc.ts`, wire `src/shared/api/financeBudgetsMappers.ts`. Screen `/finance/planning`
+(`?tab=budgets|vs-actual|forecast`, `?budget=`, `?department=`, `?month=`; plan gate only) and the My HR card "My
+department budget". **Who:** full edits (create, lines, copy actuals, delete drafts); **approve / reopen: Management and
+Company Admin** (`403 approve_forbidden` for an Accountant); view (Sales Manager) reads everything; **department heads**
+(`departments.head_id`, any role, no accounting access needed) read budgets and budget vs actual of **their own
+department(s) only** — other lines are never served, history is hidden, another department in the filter answers `404`
+like a missing one; everyone else `403`. Approval locks the budget (`409 budget_locked` on edits until reopened).
+Actuals: journal lines carrying `department_id` on income / expense accounts by entry month (`year_end_close` entries
+left out). Variance is favourable when positive (expense budget − actual; income actual − budget). **Alerts** (stored,
+once only, type `finance`): when a department's expense actuals reach **90 % / 100 %** of the current month's or the
+year-to-date budget of the current year's approved budget, its head and the Accountants (Company Admins when there are
+none) get a notification; marks `<department>:month:<level>:<yyyy-MM>` / `<department>:ytd:<level>:<year>` on the
+budget. The check runs on budget reads and on the bell's tick (`GET /alerts`).
+
+| Method | Path | Who | Body / query | Answer |
+|---|---|---|---|---|
+| GET | `/finance/budgets` | view · head | — | `[{id, fiscal_year, name, status (draft · approved), from, to, currency, expense_total, revenue_total, line_count, department_count, approved_by_name, approved_at, department_scoped, updated_at}]` (heads: totals of their lines) |
+| POST | `/finance/budgets` | full | `fiscal_year*` (current − 5 … + 2), `name`, `copy_from_year`, `adjust_pct` (−100…500) | the detail (draft). `409 duplicate_budget` |
+| GET | `/finance/budgets/:id` | view · head | — | row + `months[]` (yyyy-MM), `lines[{id, department_id, department_name, account_id, account_code, account_name, account_type, months[12], annual}]`, `departments[]`, `accounts[]` (full only), `history[]`, `can {edit, approve, reopen, delete}` |
+| PUT | `/finance/budgets/:id/lines` | full | `lines*[{department_id*, account_id*, months[12]` or `annual + pattern (even · front_loaded · back_loaded · last_year)}]` (upsert by department × account; all-zero removes) | the detail. `409 budget_locked`, `422 invalid_department`, `invalid_account` (foreign = missing) |
+| POST | `/finance/budgets/:id/copy-actuals` | full | `from_year*`, `adjust_pct`, `department_id` | replaces the lines (of the department) with that year's actuals × (1 + %) |
+| POST | `/finance/budgets/:id/approve` | Company Admin, Management | — | approved + locked. `422 empty_budget`, `409 budget_locked`. Audited |
+| POST | `/finance/budgets/:id/reopen` | Company Admin, Management | — | back to draft. `409 not_approved`. Audited |
+| DELETE | `/finance/budgets/:id` | full | — | `{ id }`; drafts only (`409 not_draft`) |
+| GET | `/finance/budgets/:id/vs-actual` | view · head | `department_id`, `month` (yyyy-MM of the year; default the current month) | `{budget_id, fiscal_year, status, currency, months, month, month_index, department_id, department_scoped, departments[{department_id, department_name, month_budget, month_actual, month_pct, ytd_budget, ytd_actual, ytd_pct, status (ok · warning · over)}], rows[{department, account, budget[12], actual[12], month_budget, month_actual, month_variance, month_used_pct, ytd_budget, ytd_actual, annual_budget, variance, variance_pct, used_pct}], totals, unassigned_expense_ytd}` (unbudgeted actuals show with budget 0) |
+
+### Cash-flow forecast
+
+`GET /finance/forecast` (view): 13 weeks and 6 months from the company's today (its timezone). Opening cash = ledger
+balances of the cash and bank accounts. **Inflows:** open invoices (balance due in base currency, minus amounts held as
+undeposited PDCs) × the collection probability of their aging bucket (default not due 95 %, 1–30 days 85 %, 31–60 70 %,
+61–90 50 %, 90+ 20 %; overdue ones expected 1–4 weeks from today by bucket); PDCs held (received / deposited) at
+maturity, 100 % (70 % when the customer has bounced a cheque); active recurring invoices (each occurrence + its payment
+terms, "not due" probability). **Outflows:** open bills by due date; payroll (the last run's net + employee and
+employer social insurance) on each month's pay day (HR pay settings) not yet paid; recurring expenses (3 full months'
+average of approved company expenses by category, spread weekly); VAT (filed unpaid returns and the estimate of unfiled
+periods) on their due dates. Then manual lines (once / weekly / monthly, as entered) and the scenario % on inflows /
+outflows. Answer: `currency, today, opening_cash, cash_accounts[], weeks[] / months[] {key, label, from, to, opening,
+inflows, outflows, net, closing, by_category[{category, amount}]}, lowest_week {key, label, closing, below_minimum,
+negative}, items[{id, date, category, label, ref, link, amount, gross, probability}], settings, assumptions[], can_edit`.
+Writes (full): `PUT /finance/forecast/settings {probabilities[{bucket, pct}], bounced_pdc_pct, inflow_adjust_pct,
+outflow_adjust_pct, minimum_cash}`, `POST /finance/forecast/lines {label*, date* (today … +400 days), amount* (≠ 0),
+recurrence}` (`FCL-<n>`, ≤ 100), `DELETE /finance/forecast/lines/:id` (foreign = missing → `404`); each returns the
+forecast. Store `perTenant:fin.forecastSettings`. Chart (recharts) + table + CSV export on the screen.
+
+**Tests (tax & planning).** Endpoints in `src/shared/mocks/isolation/financeTaxEndpoints.ts` (both tables spread into
+`endpoints.ts`; foreign departments / accounts in bodies and filters in `REFS` of `scoped.isolation.test.ts`); roles ×
+both companies, department heads, plan gate and VAT recomputed from the ledger in
+`src/app/isolation/financeTax.isolation.test.ts` and `financeBudgets.isolation.test.ts`; rules in
+`src/shared/mocks/services/financeTax.test.ts` and `financeBudgets.test.ts`; browser `e2e/finance-tax.spec.ts`.
+Persisted dev DB: `VERSION` 35. Not built: VAT refund requests, reverse charge / imports / tourist refunds, a VAT
+return amendment flow (corrections go to the next return), corporate-tax return filing, zakat return, budget versions,
+forecast by bank account.

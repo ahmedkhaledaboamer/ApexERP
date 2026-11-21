@@ -10,8 +10,10 @@ import { users } from '@/shared/mocks/db'
 import { APEX_ID, CREST_ID } from '@/shared/mocks/data/tenancy'
 import { resetClock } from '@/shared/mocks/clock'
 import { hrProfiles } from '@/shared/mocks/data/hrPeople'
+import { finBankAccounts } from '@/shared/mocks/data/financeBanking'
 import { pendingIbans } from '@/shared/mocks/data/hrSelfService'
 import { hrPayrollProfiles } from '@/shared/mocks/data/hrPayroll'
+import { finSupplierProfiles } from '@/shared/mocks/data/financePurchases'
 import { platformTokenFor, tokenFor } from '@/shared/mocks/server'
 
 /**
@@ -235,6 +237,10 @@ export const REVEAL_PATHS: RegExp[] = [
   /^POST \/hr\/payroll\/runs\/[^/]+\/bank-file$/,
   // HR full: the proposed IBAN of a pending self-service bank account change (audited).
   /^POST \/hr\/profile-changes\/[^/]+\/reveal$/,
+  // Accounts & finance full: a supplier's IBAN (audited; Finance › Suppliers).
+  /^POST \/finance\/suppliers\/[^/]+\/reveal-iban$/,
+  // Accounts & finance full: a company bank account's full number / IBAN (audited; Finance › Banking).
+  /^POST \/finance\/bank-accounts\/[^/]+\/reveal$/,
 ]
 
 export function hrSensitiveValues(): string[] {
@@ -243,6 +249,13 @@ export function hrSensitiveValues(): string[] {
   for (const p of hrPayrollProfiles) if (p.personId && p.personId.length >= 10) out.add(p.personId)
   // Proposed IBANs of pending self-service changes (served masked like the profile's).
   for (const iban of pendingIbans()) out.add(iban)
+  // Supplier IBANs (Accounts & finance › Suppliers; served masked, revealed only by the audited POST).
+  for (const p of finSupplierProfiles) if (p.iban && p.iban.length >= 15) out.add(p.iban)
+  // Company bank accounts (Accounts & finance › Banking): number and IBAN stored full, served masked.
+  for (const b of finBankAccounts) {
+    if (b.iban && b.iban.length >= 15) out.add(b.iban)
+    if (b.accountNumber && b.accountNumber.length >= 10) out.add(b.accountNumber)
+  }
   return [...out]
 }
 
