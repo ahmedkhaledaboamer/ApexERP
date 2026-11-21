@@ -2302,3 +2302,655 @@ foreign ids in bodies (`campaign_id` of a mapping, `account_id` of a connect) ar
 the `integrations` gate): `src/app/isolation/marketingAds.isolation.test.ts`; rules:
 `src/shared/mocks/services/ads.test.ts`, `marketingAnalytics.test.ts` (numbers recomputed from the raw tables in both
 companies); masked tokens: `secrets.isolation.test.ts`. Persisted dev DB: `VERSION` 10 added the ads stores.
+
+## HR
+
+Plan module `hr` (Enterprise; another plan through a platform module override): every `/hr/*` path answers
+`403 module_not_in_plan` without it (central request policy). Roles follow the `hr` column of `PERMISSION_MATRIX`:
+**full** (Company Admin, Management, HR Manager), **team** (Department Head: the departments they head and their
+sub-departments, plus direct reports), **own** (Employee), **hidden** (everyone else: `403` on every HR endpoint).
+Employees are `EMP-<userId>` / `EMP-X<n>` (`src/modules/hr/types.ts`). Snake_case on the wire
+(`src/shared/api/hrTalentMappers.ts`); error envelopes are not mapped (`{ message, code, …details }`).
+
+### Employees
+
+The HR record of a person (with or without a login). Services: `src/shared/mocks/services/hrEmployees.ts` (scope in
+`hrAccess.ts`), stores `src/shared/mocks/data/hrEmployees.ts` (core) + `hrPeople.ts` (profiles, documents, contracts,
+assets, activity); wire `src/shared/api/hrMappers.ts` (plain snake_case at any depth). Only **full** writes; **team** and
+**own** read. A record outside the caller's scope (or of another company) answers `404 Not found.`
+
+| Method | Path | Who | Body / query | Answer |
+|---|---|---|---|---|
+| GET | `/hr/employees` | full / team / own | — | rows: `id, user_id, employee_no, full_name, job_title, department_id, department_name, manager_id, manager_name, email, mobile, nationality, gender, date_of_birth, hire_date, employment_type, status, exit_date, has_login, doc_alert (expiring\|expired\|null), doc_alert_count`. Runs the HR reminder tick first. |
+| GET | `/hr/employees/export` | full | — | rows for CSV / Excel: `employee_no, full_name, job_title, department, manager, nationality, hire_date, status, employment_type, email, mobile, documents` (document **state** only: never numbers, bank or pay) |
+| POST | `/hr/employees` | full | `full_name*, job_title*, hire_date*, department_id, manager_id (employee id), email, mobile, nationality (ISO-2), gender, date_of_birth, employment_type, status, exit_date, user_id, emergency_contact {name, relation, phone}, address {line1, city, country}, bank {bank_name, account_name, iban}` | the detail. **No login is created.** `422` invalid / duplicate email in the company / `status` notice or terminated without `exit_date`; foreign `department_id` / `manager_id` → `422` like a missing one; foreign `user_id` → `404` |
+| GET | `/hr/employees/:id` | in scope | — | row + `emergency_contact, address, bank {bank_name, account_name, iban_masked}` (null for team viewers), `documents[]`, `contracts[]`, `assets[]` (held now), `activity[]`, `offboarding {started_at, completed_at, steps[{key: assets\|login\|settlement, label, done, detail, blocking}], can_complete}`, `linked_user {id, name, email, role, active}`, `access`, `can_manage` |
+| PATCH | `/hr/employees/:id` | full | any field of the create (except `user_id`); `bank.iban` omitted = keep, `''` = remove | the detail. Status `notice` / `terminated` (with `exit_date`) starts the offboarding; back to active clears an unfinished one |
+| POST | `/hr/employees/:id/reveal` | full | `{ field: 'iban' }` | `{ field, value }` — the full IBAN, audited (activity + audit log) |
+| GET | `/hr/users/unlinked` | full | — | active users of the company no employee links (`id, name, email, role`) |
+| POST | `/hr/employees/:id/link-user` | full | `{ user_id }` or `{ user_id: null }` | the detail. `422` when the user is linked to another employee; foreign / missing user → `404` |
+| POST | `/hr/employees/:id/offboarding/complete` | full | — | the detail (status `terminated`). `422` while assets are still assigned (message lists the tags) or no offboarding is running |
+| POST | `/hr/employees/:id/documents` | full | `type* (passport · residence_visa · emirates_id · iqama · labour_card · work_permit · medical_insurance · driving_license · other), number*, issue_date, expiry_date, issuing_country, notes, file {name, size_bytes, mime_type, url}` | the document: `id, employee_id, type, number_masked ("•••• 1234"), issue_date, expiry_date, issuing_country, file, notes, status (valid\|expiring\|expired), days_to_expiry` |
+| PATCH | `/hr/documents/:id` | full | same fields; `number` omitted / blank = keep | the document. A new `expiry_date` re-arms its reminders |
+| DELETE | `/hr/documents/:id` | full | — | `{ id }` |
+| POST | `/hr/documents/:id/reveal` | full | — | `{ id, number }` — the full number, audited |
+
+**Sensitive values.** Document numbers and the IBAN are stored in full and **served masked to everyone** (last 4,
+`number_masked`, `bank.iban_masked`); only HR full can reveal one (the POST endpoints above, audited). No list,
+detail or export carries them in full (`hrPeople.test.ts` sweeps every HR GET for every role). Files are mocked
+uploads (metadata + a small data URL) counted against the plan's `storageMb` (`402 LIMIT_REACHED` when full).
+
+**Document status and alerts.** Status uses the company's calendar day (regional timezone, mock clock): `expired`
+past the expiry date, `expiring` within 60 days, else `valid`. Stored notifications (type `hr-people`, bell group
+**HR**) go to every active HR-full user and the employee's manager: once 60 days before the expiry date and once on
+/ after it, keyed by threshold **and date** (`alert_marks`), so a changed expiry date re-arms them. Runs lazily on the
+company's lifecycle tick (every authenticated request) and before the HR reads; only with the `hr` module.
+
+### Employee contracts
+
+Services: `src/shared/mocks/services/hrContracts.ts`. History is kept; one `active` contract per employee.
+
+| Method | Path | Who | Body / query | Answer |
+|---|---|---|---|---|
+| GET | `/hr/contracts` | full / team / own | `type, status, ending_within (days), employee_id` | contracts of the employees in scope: `id, employee_id, employee_name, employee_no, type (unlimited · limited · part_time · internship · consultancy), start_date, end_date, probation_months, probation_end_date, notice_days, hours_per_week, salary_visible, basic_salary, housing_allowance, transport_allowance, other_allowance, total_salary, currency, status (draft · active · ended · terminated · renewed), signed_date, file, notes, renewed_from_id, renewed_to_id, in_probation, days_to_end` |
+| GET | `/hr/contracts/:id` | in scope | — | the contract |
+| POST | `/hr/contracts` | full | `employee_id*, type*, start_date*, end_date (required for limited), probation_months (0–6), notice_days, hours_per_week, basic_salary, housing_allowance, transport_allowance, other_allowance, currency, status (draft\|active), signed_date, file, notes` | the contract. `422` second active contract / limited without end / end before start; foreign `employee_id` → `404` |
+| PATCH | `/hr/contracts/:id` | full | same fields; `status`: draft → active, active → ended \| terminated | the contract |
+| POST | `/hr/contracts/:id/renew` | full | optional overrides of the terms (`start_date` default = old end + 1 day; `end_date` default = same length) | the new **active** contract (`renewed_from_id`); the old one (active or ended) becomes `renewed`. `422` otherwise |
+
+**Pay** (basic + allowances, total) is visible to HR full and to the employee themself; team viewers get
+`salary_visible: false` and `null` amounts (the screens show "•••"). **Reminders** (`hr-people`, HR full + the
+manager, once per contract and date): probation ending within 14 days; contract end within 60 and within 30 days.
+Active contracts past their end date become `ended` on the tick.
+
+### Company assets
+
+Services: `src/shared/mocks/services/hrAssets.ts`. HR full manages the register; team / own see the assets their
+people hold now (and only those hand-overs in the history).
+
+| Method | Path | Who | Body / query | Answer |
+|---|---|---|---|---|
+| GET | `/hr/assets` | full / team / own | `status, category, employee_id` | rows: `id, tag, name, category (laptop · phone · tablet · vehicle · sim · access_card · furniture · other), brand, model, serial, purchase_date, cost, currency, condition (new · good · fair · poor · damaged), status (in_stock · assigned · in_repair · retired · lost), warranty_end, assigned_to_id, assigned_to_name, assigned_date, notes` |
+| GET | `/hr/assets/:id` | in scope | — | row + `history[] {id, employee_id, employee_name, assigned_date, assigned_condition, handover_note, returned_date, returned_condition, return_note, lost}`, `can_manage` |
+| POST | `/hr/assets` | full | `tag*, name*, category*, brand, model, serial, purchase_date, cost, currency, condition, status (in_stock\|in_repair\|retired), warranty_end, notes` | the row. `422` tag already used **in the company** (another company may use it) |
+| PATCH | `/hr/assets/:id` | full | same fields (status not while assigned) | the detail |
+| POST | `/hr/assets/:id/assign` | full | `employee_id*, date, condition, note` | the detail (`assigned`). `422` not in stock / employee has left; foreign employee → `404` |
+| POST | `/hr/assets/:id/return` | full | `date, condition, note` | the detail (`in_stock`, or `in_repair` when returned damaged) |
+| POST | `/hr/assets/:id/lost` | full | `note*` | the detail (`lost`; closes the open assignment) |
+
+**Offboarding** completes only when the employee holds no asset (returned, or marked lost with a note). **Warranty**
+reminder (`hr-people`, HR full): once, 30 days before `warranty_end` (re-armed when it changes).
+
+**Isolation (employees, contracts, assets).** Every endpoint is in the coverage table
+(`src/shared/mocks/isolation/hrPeopleEndpoints.ts`, spread into `endpoints.ts`; the samples turn `hr` on for Crest
+with a platform module override so both directions run on real answers). Foreign ids in bodies / queries
+(`employee_id`, `manager_id`, `department_id`, `user_id`) behave like missing ones and spoofed company fields are
+ignored: `src/app/isolation/hrPeople.isolation.test.ts`, which also checks every role of the matrix (full / team /
+own / hidden) and the plan gate. Rules, masking, alerts: `src/shared/mocks/services/hrPeople.test.ts`. Persisted dev
+DB: `VERSION` 17 added the stores. Shared entry point for other sections: `createEmployee(companyId, input, actor)`
+(`services/hrEmployees.ts`), used by Recruitment's hire.
+
+### Recruitment
+
+Openings (job requisitions), candidates, applications (one candidate may apply to several openings), interviews with
+per-interviewer scorecards, offers. Services: `src/shared/mocks/services/hrRecruitment.ts`.
+
+**Who sees what.** HR full: everything. Department Head: openings of their departments, or where they are the hiring
+manager / requester (`404` otherwise), the candidates applying to those, interviews of those openings; may **request**
+openings for their own departments (`draft` → `pending_approval`; HR approves). Employee: no openings / candidates
+(`403` on the lists, `404` on items) — only `GET /my-interviews`. **Salary range and offers**: HR full + the opening's
+hiring manager (`salary_min`/`salary_max`/`salary_currency` null and `salary_visible: false` for anyone else; offers
+omitted). **Scorecards**: HR full and the hiring manager see all; anyone else sees their own only. Stage moves,
+candidates, interviews and offers are HR full writes (`403` for others); a scorecard is written by its interviewer only.
+
+| Endpoint | Roles | Body / query | Notes |
+|---|---|---|---|
+| `GET /hr/recruitment/options` | any HR | — | departments (team: headed ones), `people` (active users whose role sees HR: hiring managers / interviewers), `currency`, `manage`, `default_criteria` |
+| `GET /hr/recruitment/openings` | full, team | — | `stage_counts`, `hired_count`, `remaining` (= headcount − hired), `salary_visible` |
+| `POST /hr/recruitment/openings` | full, team | `title, department_id, hiring_manager_id?` (default caller), `headcount, employment_type, location, salary_min?, salary_max?, salary_currency?, description, requirements, criteria[]?, status?` | full: `draft` / `pending_approval` / `open`; team: `draft` / `pending_approval`, own departments only (422) |
+| `GET /hr/recruitment/openings/:id` | full, team | — | + `applications`, `interviews`, `offers` (salary-visible only), `can { edit, approve, manage_candidates, move_stages, make_offers }` |
+| `PATCH /hr/recruitment/openings/:id` | full (not closed), team (draft / pending) | as POST | headcount can't go below hired (422) |
+| `POST /hr/recruitment/openings/:id/status` | full; team: draft → pending_approval, own pending → draft | `{ status }` | flow: draft → pending_approval / open / closed; pending_approval → open (approve: `approved_by/at`) / draft / closed; open ⇄ on_hold; → closed; filled → open (needs a free position, else `409 opening_filled`) / closed. Other moves `409 invalid_transition` |
+| `GET /hr/recruitment/candidates` | full (all), team (of visible openings) | — | `applications[]` limited to what the caller sees |
+| `POST /hr/recruitment/candidates` | full | `full_name, email?, mobile?` (one of them), `current_company, current_title, source` (`referral, linkedin, job_board, website, agency, other`), `notes, tags[], opening_id?` | mobile: the company country's rules or the international form (+ country code) → stored `+<digits>`. **Duplicate** email (case-insensitive) or mobile (digits) **in the caller's company** → `409 duplicate_candidate` `{ candidateId, matchedOn }`. With `opening_id` (must be `open`, `409 opening_not_open`) the application is created |
+| `GET /hr/recruitment/candidates/check?email&mobile&exclude` | full | — | `{ matches: [{ id, full_name, email, mobile, matched_on }] }`, caller's company only |
+| `GET /hr/recruitment/candidates/:id` | full, team | — | + `interviews`, `offers` (visibility as above) |
+| `PATCH /hr/recruitment/candidates/:id` | full | as POST | duplicate rule applies |
+| `POST /hr/recruitment/candidates/:id/cv` | full | `{ name, size_bytes, mime_type }` (PDF / Word, ≤ 10 MB) | metadata only; the size counts against `storageMb` (`402 LIMIT_REACHED`); replaces the previous CV |
+| `POST /hr/recruitment/applications` | full | `{ candidate_id, opening_id }` | opening `open`; same pair twice `409 duplicate_application` |
+| `POST /hr/recruitment/applications/:id/stage` | full | `{ stage, reason? }` | `applied → screening → interview → assessment → offer`, `rejected` (reason required), `withdrawn`. Hired only by accepting an offer; hired is final; `offer` only from interview / assessment; leaving `offer` with a sent offer refused; on a filled / closed opening only reject / withdraw. Refusals `409 invalid_stage_move` (`src/modules/hr/lib/talent.ts › moveError`) |
+| `POST /hr/recruitment/applications/:id/interviews` | full | `{ date, time, duration_minutes, type (phone, video, onsite), location, interviewer_ids[] }` | `date`/`time` are **company-local** (regional timezone) → `scheduled_at` UTC. Interviewers: active users whose role sees HR (else 422). From applied / screening the candidate moves to interview |
+| `PATCH /hr/recruitment/interviews/:id` | full | as POST + `status` (scheduled, completed, cancelled) | |
+| `PUT /hr/recruitment/interviews/:id/scorecard` | the interviewer | `{ scores: [{ criterion, score 1–5 }] (every criterion of the opening), recommendation (strong_yes, yes, no, strong_no), notes }` | replaces the caller's card; `average` per card, interview `overall_score` = mean of the cards; all panelists scored → completed. Not on the panel `403` (or `404` when the interview isn't visible) |
+| `GET /hr/recruitment/my-interviews` | any HR | — | interview **cards** of the caller (candidate name / current title, opening, time, type, `my_scorecard`): no contact data, no other scorecards |
+| `POST /hr/recruitment/applications/:id/offers` | full | `{ salary, currency?, start_date, expiry_date }` (expiry ≤ start) | stage interview / assessment / offer (moves to offer); one open (draft / sent) offer per application `409 offer_exists` |
+| `PATCH /hr/recruitment/offers/:id` | full | as POST | draft only (`409 offer_locked`) |
+| `POST /hr/recruitment/offers/:id/status` | full | `{ status: sent \| accepted \| declined }` | draft → sent / declined; sent → accepted / declined. **Accepted = hire**: past expiry `409 offer_expired`; no free position `409 opening_filled`; creates the employee through the Employees section's `createEmployee` (candidate name / email / mobile, opening title + department, manager = the hiring manager's employee, hire date = start date, status onboarding, **no login**), marks the application `hired` with `employee_id`, fills the opening when `hired_count` reaches `headcount`. **Idempotent**: accepting again answers the same offer, no second employee |
+
+### Training
+
+Courses (company catalogue), sessions, enrollments, certificates, the mandatory training matrix and the budget.
+Services: `src/shared/mocks/services/hrTraining.ts`, alerts `trainingReminders.ts`. Dates are company calendar days.
+Every HR role reads the catalogue; enrollments, certificates and the matrix are limited to the employees the caller may
+see (full: all; team: their team; own: themselves). Writes are HR full, except an employee rating their own attended
+enrollment.
+
+| Endpoint | Roles | Body / query | Notes |
+|---|---|---|---|
+| `GET /hr/training/options` | any HR | — | visible employees, departments, currency, `manage` |
+| `GET /hr/training/courses` | any HR | — | `session_count`, `completed_count` |
+| `POST /hr/training/courses` | full | `{ title, category (safety, compliance, technical, soft_skills, leadership, onboarding, other), provider (internal, external), provider_name, duration_hours, cost, currency, mandatory, validity_months (null = never expires, 0 = no certificate), description, active }` | |
+| `GET /hr/training/courses/:id` | any HR | — | + `sessions`, `enrollments` (visible employees) |
+| `PATCH /hr/training/courses/:id` | full | as POST | |
+| `POST /hr/training/courses/:id/sessions` | full | `{ start_date, end_date, location, online_link, trainer, capacity, extra_cost, status? }` | location or link required |
+| `PATCH /hr/training/sessions/:id` | full | as POST | capacity ≥ seated |
+| `POST /hr/training/sessions/:id/enrollments` | full | `{ employee_ids[], status: invited \| enrolled }` | own-company employees (foreign / missing `404`), not left; already all on it `409 already_enrolled`; seats `409 session_full`; cancelled `409 session_cancelled` |
+| `PATCH /hr/training/enrollments/:id` | full; the employee (own, attended: `feedback_rating`, `feedback` only) | `{ status (invited, enrolled, attended, no_show, completed, failed), score 0–100, feedback_rating 1–5, feedback }` | attended / completed / failed / no-show only once the session started (`409 session_not_started`). **Completed issues one certificate** (issue date = company today, expiry = issue + `validity_months`, number `<prefix>-<year>-<seq>`); leaving completed withdraws it |
+| `GET /hr/training/certificates` | any HR (scoped) | — | `state` valid / expiring (≤ 30 days) / expired, `days_left` |
+| `PATCH /hr/training/certificates/:id` | full | `{ issue_date?, expiry_date?, file_url? }` | a new issue date without an expiry recomputes it; any date change **re-arms** the expiry alert |
+| `GET /hr/training/matrix` | any HR (scoped) | — | active mandatory courses × visible employees: `compliant`, `expiring`, `expired`, `missing`, `overdue` (no completion 30 days after the hire date). `compliance_pct` = compliant + expiring over all cells; `overdue_count` = overdue + expired. `cells` are keyed by course id |
+| `GET /hr/training/budget?year` | full | — | per department: participants (seated, not just invited), course fees (cost × participant), session costs (extra cost split over participants); sessions starting in the year, not cancelled |
+| `GET /hr/training/my` | any HR | — | the caller's enrollments, certificates and mandatory course states |
+
+**Expiry alerts.** Stored notifications (type `hr`), sent **once** per expiry date from 30 days before it (company
+calendar day): to the employee (when they have a login), their manager and every HR full user. Run lazily for the
+caller's company by `GET /alerts` and the training lists; only for companies with the HR module.
+
+**Isolation (recruitment, training).** Every endpoint is in `endpoints.ts` (`isolation/hrTalentEndpoints.ts`, module
+`hr`; Crest's samples turn HR on with a platform module override); ids in bodies (`department_id`,
+`hiring_manager_id`, `opening_id`, `candidate_id`, `interviewer_ids`, `employee_ids`) are in `REFS`. Roles per the
+matrix (+ the interviewer case): `src/app/isolation/hrTalent.isolation.test.ts`; rules:
+`src/shared/mocks/services/hrTalent.test.ts`. Not built: a public careers page (suggested next step).
+
+### Attendance
+
+Mappers `src/shared/api/hrTimeMappers.ts` (deep, mechanical: `work_date`, `check_in_at`, `check_out_at`,
+`minutes_worked` …); services `src/shared/mocks/services/attendance.ts`, pure rules `src/modules/hr/time/calc.ts`.
+All dates are **company-local** (regional timezone; `shared/lib/zonedTime.ts`): an entry's `work_date` is the
+company date of its clock-in, so the same instant can be 20 Nov in Dubai and 19 Nov in Riyadh.
+
+**Self-service (deliberate exception to the hidden scope).** Every user with an active employee record
+(`EMP-<userId>`, not terminated) may clock in / out, read their own attendance, ask for corrections and request /
+cancel their own leave, whatever their `hr` scope (a Sales Agent too). No employee record → `403 no_employee_record`.
+Other employees' data stays per the matrix; an employee outside the caller's scope answers `404` like a foreign one.
+The `/hr/attendance` and `/hr/leave` screens are therefore plan-gated only (the sidebar items follow the matrix; the
+user menu has "Clock in / out" and "Request leave" for everyone while the plan has `hr`).
+
+Shifts (work schedules): `{ id, name, start_time, end_time (HH:mm, same day), break_minutes, grace_minutes,
+working_days (0 = Sun … 6 = Sat; default = the company's working week from the regional weekend), is_default,
+is_active }`; one default per company; employees without an assignment follow the default.
+
+Daily record (computed, never stored): `status` present | late | absent | on_leave | holiday | weekend | half_day,
+`check_in_local`, `check_out_local`, `minutes_worked` (closed entries; the break is deducted once the day reaches 5 h),
+`late_minutes` (first clock-in after start + grace, counted from the start), `early_leave_minutes`,
+`overtime_minutes` (beyond the scheduled minutes; everything on a weekend / holiday), `missing_check_out` (an entry of
+a past day without a clock-out; not counted), `open` (clocked in now), `in_progress` (today before the shift end, or
+a future date: "not in yet", not counted as absent). Approved full-day leave → `on_leave`; half day → `half_day`.
+
+| Method | Path | Who | Notes |
+|---|---|---|---|
+| GET | `/hr/attendance/me?month=yyyy-MM` | self | `{ employee, timezone, today, open_entry, shift, month, days[], entries[], summary }` |
+| POST | `/hr/attendance/clock-in` | self | `{ note?, location? }`, source `web`; `409 already_clocked_in` (one open entry per employee) |
+| POST | `/hr/attendance/clock-out` | self | closes today's open entry; `409 not_clocked_in` |
+| GET | `/hr/attendance/today` | full / team | `{ date, rows[{ employee, record }], counts { in, late, absent, on_leave, not_expected, total } }`; others `403` |
+| GET | `/hr/attendance/sheet?month&department_id&employee_id&status` | full / team | monthly grid `{ dates[], rows[{ employee, days[], summary }] }`; Excel export is built client-side from it |
+| GET | `/hr/attendance/employees/:employeeId?month` | in scope | one employee's month; out of scope / foreign → `404` |
+| POST | `/hr/attendance/entries` | full | manual entry `{ employee_id, work_date, check_in, check_out?, note }` (company-local HH:mm), audited |
+| POST | `/hr/attendance/import` | full | `{ csv, dry_run }`, lines `employee_no,timestamp` (`yyyy-MM-dd HH:mm` company time, or ISO 8601 with an offset); report `{ rows[{ line, ok, error, … }], valid, invalid, entries_created }`; row errors: unknown employee, employee has left, invalid / future timestamp, duplicate punch; punches pair in / out per employee and day (source `import`); max 5000 rows |
+| GET | `/hr/attendance/shifts` | full / team | `{ shifts[] (+ employee_count), assignments[], weekend, timezone }` |
+| POST / PATCH / DELETE | `/hr/attendance/shifts`, `/hr/attendance/shifts/:id` | full | validation `422`; the default can't be deleted (`409 default_shift`) or un-defaulted |
+| PUT | `/hr/attendance/assignments` | full | `{ employee_id, shift_id \| null }` (null = default) |
+| GET | `/hr/attendance/corrections?status` | any | own requests + the ones the caller may decide |
+| POST | `/hr/attendance/corrections` | self | `{ work_date, entry_id?, check_in, check_out?, reason }`; at most 60 days back; `409 duplicate_correction` |
+| POST | `/hr/attendance/corrections/:id/decide` | the employee's manager / head, a team head of their team, or HR full | `{ decision: approve \| reject, comment }`; approve rewrites (or adds) the entry as `manual`; audited, employee notified; never one's own (`403`) |
+
+### Leave
+
+Services `src/shared/mocks/services/leave.ts`. Leave types per company, seeded from **synthetic country defaults**
+(`src/modules/hr/time/defaults.ts`: UAE-like for AE, KSA-like for SA; labelled "defaults, review with HR"):
+`{ code (annual, sick, unpaid, maternity, paternity, hajj, compassionate, emergency, other), name, is_paid,
+days_per_year, accrual (monthly | yearly), carry_over_max, document_after_days, min_notice_days, gender,
+allow_negative, is_active, color }`. Types are deactivated, never deleted.
+
+Balances (computed per employee, type, year): `entitled_days` (prorated by month in the hire year), `accrued_days`
+(yearly: upfront; monthly: days / 12 at the start of each month of service, the hire month counting up to the 15th),
+`carried_days` (last year's full accrual minus what was taken, capped by `carry_over_max`), `used_days` (approved),
+`pending_days` (in approval), `remaining_days = accrued + carried − used − pending`. All in company-local dates.
+
+Request rules (create and `/preview`; the preview returns the first problem instead of failing): working days = the
+range minus the company weekend and public holidays (0.5 for a half day; 0 → `422 no_working_days`); `409 overlap`
+with the employee's own pending / approved leave (two different halves of one day don't overlap);
+`422 insufficient_balance` for a paid type without `allow_negative`; `422 notice_too_short` (`min_notice_days`, own
+requests); `422 past_date` (more than 30 days back); `422 gender_restricted`; `422 document_required` (longer than
+`document_after_days`). HR full may file for another employee (`employee_id`; notice not applied).
+
+Approval (spec, two steps; `leave_request_approvals`): **step 1 `department_head`** = the employee's manager and the
+head of their department (the parent's head when they head it themselves), fixed at submission; with none, the
+request starts at HR. **Step 2 `hr`** = every active HR-full user except the employee. Status `pending_head →
+pending_hr → approved`, or `rejected` at either step (a comment is required). The balance is re-checked at the final
+approval. Step-1 approvers see the requests they must decide even with a hidden `hr` scope (approver inbox, e.g. a
+Sales Manager for their agents). Cancel: the employee before the start date; after the start, HR only. Stored
+notifications (`type: hr`): approvers on submit; the employee + HR after step 1; the employee (+ the step-1
+approver) after HR; the pending approvers on cancel. Approved leave makes those working days `on_leave` in attendance.
+
+| Method | Path | Who | Notes |
+|---|---|---|---|
+| GET | `/hr/leave/me?year` | self | `{ employee, year, timezone, today, balances[], requests[], types[] }` |
+| GET | `/hr/leave/types` | any | `{ types[], settings { conflict_threshold_pct }, country }` |
+| POST / PATCH | `/hr/leave/types`, `/hr/leave/types/:id` | full | validation `422`, `409 duplicate_name` |
+| PUT | `/hr/leave/settings` | full | `{ conflict_threshold_pct }` (1–100) |
+| GET | `/hr/leave/balances?year&employee_id` | full / team | `[{ employee, balances[] }]` |
+| GET | `/hr/leave/calendar?month` | any | approved + pending leave in the month (full: all; team: team; others: own), holidays, `conflicts[{ date, department_id, off, size, pct }]` when more than the threshold of a department (2+ people) is off |
+| GET | `/hr/leave/requests?status&employee_id&view=mine\|approvals\|all` | any | own ∪ scope ∪ approver inbox; each with `can_decide`, `can_cancel` |
+| POST | `/hr/leave/requests/preview` | self (HR: any) | `{ days, dates[], excluded_holidays[], balance, problem, document_required }` |
+| POST | `/hr/leave/requests` | self (HR: any) | `{ leave_type_id, start_date, end_date, half_day?: am \| pm, reason?, document_name? }` |
+| GET | `/hr/leave/requests/:id` | visible | otherwise `404` |
+| POST | `/hr/leave/requests/:id/decide` | the current step's approvers | `{ decision, comment }`; another user `403`; not pending `409 not_pending` |
+| POST | `/hr/leave/requests/:id/cancel` | employee before start / HR | `409 not_cancellable` when closed |
+
+### Public holidays
+
+Per company, seeded for the current and next year from the country (UAE / KSA, approximate Islamic dates; synthetic,
+"review with HR"). `GET /hr/holidays?year` (any company user: working-day counts depend on them); `POST /hr/holidays`
+`{ date, name }`, `PATCH /hr/holidays/:id`, `DELETE /hr/holidays/:id` (HR full; one holiday per date →
+`409 duplicate_date`). A company created later gets the defaults (types, holidays, one shift) on first use.
+
+**Isolation (attendance, leave, holidays).** Every endpoint is in `endpoints.ts` (`isolation/hrTimeEndpoints.ts`,
+module `hr`; Crest's samples turn HR on with a platform module override). Ids are globally unique (`SHF-`, `ATT-`,
+`ATC-`, `LVT-`, `LVR-`, `HOL-`) and every lookup is company-first, so a foreign id answers like a missing one (`404`).
+All nine matrix roles in both companies, self-service and the plan gate: `src/app/isolation/hrTime.isolation.test.ts`;
+rules: `src/shared/mocks/services/hrTime.test.ts`, `src/modules/hr/time/calc.test.ts`; browser: `e2e/hr-time.spec.ts`.
+No client storage (server state through TanStack Query under `['hr', 'time']`).
+
+### Salary management
+
+Monthly payroll, payslips, adjustments, loans and end-of-service settlements. Services
+`src/shared/mocks/services/hrPayroll.ts` (seed included), stores `src/shared/mocks/data/hrPayroll.ts`
+(`hr.paySettings`, `hr.payrollProfiles`, `hr.payAdjustments`, `hr.payLoans`, `hr.payrollRuns`, `hr.finalSettlements`),
+pure rules `src/modules/hr/payroll/calc.ts` (line arithmetic, gratuity, WPS SIF / Mudad builders), wire
+`src/shared/api/hrPayrollMappers.ts` (plain snake_case at any depth; the `by_month` keys of the summary pass through).
+Screens: `/hr/salary` (`?tab=`, `?run=`, `?payslip=`) and the printable `/hr/salary/payslips/:id`.
+
+**Who.** Everything is **HR full** (Company Admin, Management, HR Manager) except the payslips: **team** (Department
+Head) and **own** (Employee) see only **their own** payslips (a Department Head never sees the team's pay, as in the
+contracts); **hidden** roles `403` everywhere. Writes of the wrong scope answer `403`; an id of another company, or
+outside the caller's scope, answers `404 Not found.` like a missing one. Ids: `PR-` runs, `PSL-` lines / payslips,
+`PADJ-` adjustments, `PLN-` loans, `PFS-` settlements (globally unique). Error codes below are in `{ message, code }`.
+
+**Pay components are not stored here**: they come from the employee's **active contract** (`/hr/contracts`), bank
+details from the employee profile (`/hr/employees`). Money: 2 decimals per item (company currency AED / SAR); totals
+are sums of the rounded items.
+
+| Method | Path | Who | Body / query | Answer |
+|---|---|---|---|---|
+| GET | `/hr/payroll/settings` | full | — | `country, currency, pay_day, cutoff_day, wps_employer_id, wps_routing_code, mudad_establishment_no, social_insurance {national_employee_rate, national_employer_rate, expat_employee_rate, expat_employer_rate, base (basic_housing · basic · gross), cap}, deduct_absences, overtime_enabled, overtime_multiplier, gratuity_basis, defaults_confirmed, defaults_confirmed_at, defaults_confirmed_by_name, country_defaults, updated_at`. Created on first use with the country defaults |
+| PATCH | `/hr/payroll/settings` | full | any field above (`social_insurance` partial); `defaults_confirmed: true` stamps who confirmed | the settings. `422`: pay day 1–28, cut-off 1–31, WPS employer id 13 digits, routing code 9 digits, rates 0–50 %, multiplier 1–3 |
+| GET | `/hr/payroll/profiles` | full | — | per employee: `employee_id, employee_name, employee_no, department_name, nationality, status, pay_method (bank · cash · cheque), person_id_masked, bank_routing_code, bank_name, iban_masked, contract_id, basic_salary, housing_allowance, transport_allowance, other_allowance, total_salary, currency, issues[] (no_contract · no_iban · no_person_id)` |
+| PATCH | `/hr/payroll/profiles/:employeeId` | full | `pay_method, person_id` (write only; `''` removes; UAE WPS person id 14 digits, KSA national id / iqama 10 digits starting 1 or 2), `bank_routing_code` (9 digits) | the profile row (masked) |
+| POST | `/hr/payroll/profiles/:employeeId/reveal` | full | — | `{ employee_id, person_id }`: the full id; activity + audit log |
+| GET | `/hr/payroll/adjustments` | full | `month` (yyyy-MM: those that apply), `employee_id` | `id, employee_id, employee_name, kind (allowance · bonus · deduction), label, amount, recurrence (once · monthly), month, end_month, notes, paid_run_ids[], locked` |
+| POST | `/hr/payroll/adjustments` | full | `employee_id*, kind*, label*, amount* (> 0), recurrence, month*, end_month, notes` | the adjustment. `422 month_paid` for a one-off in a paid month (corrections go to a later month); foreign `employee_id` → `404` |
+| PATCH | `/hr/payroll/adjustments/:id` | full | same fields | `409 run_locked`: a paid one-off; a paid monthly one only accepts `end_month` / `notes` |
+| DELETE | `/hr/payroll/adjustments/:id` | full | — | `{ id }`; `409 run_locked` once in a paid run |
+| GET | `/hr/payroll/loans` | full | `employee_id, status` | `id, employee_id, employee_name, kind (advance · loan), principal, installment_amount, start_month, reason, status (active · repaid · cancelled · settled), repaid, remaining, repayments[{run_id, month, amount, source (run · settlement)}], schedule[{month, amount, status (paid · planned)}]` |
+| POST | `/hr/payroll/loans` | full | `employee_id*, kind, principal*, installment_amount* (≤ principal), start_month*` (after the last paid month), `reason` | the loan |
+| PATCH | `/hr/payroll/loans/:id` | full | `installment_amount, reason, status: cancelled` | `409 loan_repaying` (cancel after a repayment), `409 loan_closed` |
+| GET | `/hr/payroll/runs` | full | — | rows: `id, month, status (draft · calculated · approved · paid), currency, period_start, period_end, pay_date, totals {headcount, gross, deductions, net, employer_social_insurance, employer_cost}, open_warnings, calculated_at, calculated_by_name, approved_at, approved_by_name, paid_at, paid_by_name` |
+| POST | `/hr/payroll/runs` | full | `{ month }` (up to next month) | the run (draft, no lines). `409 run_exists`; `422 month_paid` before the latest paid month |
+| GET | `/hr/payroll/runs/:id` | full | — | row + `lines[]` (below), `calculated_by, can_calculate, can_approve, approve_blocked_reason, can_pay, can_reopen, can_export, exports[{at, by_name, format, count}], notes` |
+| DELETE | `/hr/payroll/runs/:id` | full | — | draft / calculated only (`409 run_locked`) |
+| POST | `/hr/payroll/runs/:id/calculate` | full | — | the run, `calculated`: every line rebuilt from live data (line ids and acknowledged warnings kept). `409 run_locked` when approved / paid. Notifies the approvers |
+| POST | `/hr/payroll/runs/:id/acknowledge` | full | `{ all: true }` or `{ warnings: [{employee_id, code}] }` | the run. `409 run_not_calculated` |
+| POST | `/hr/payroll/runs/:id/approve` | full, **not the user who calculated** | — | the run, `approved`. `403 maker_checker`, `409 unresolved_warnings`, `409 run_not_calculated` |
+| POST | `/hr/payroll/runs/:id/reopen` | full | — | back to `draft` (from calculated / approved); `409 run_locked` when paid |
+| POST | `/hr/payroll/runs/:id/pay` | full | — | `paid` (immutable): loan installments recorded, one-off adjustments locked, "payslip available" to each employee. `409 run_not_approved`, `409 earlier_run_unpaid` |
+| POST | `/hr/payroll/runs/:id/bank-file` | full | `{ format: wps \| mudad }` | **the file**: `{ format, file_name, mime_type, content, count, total, skipped[{employee_id, employee_name, reason}] }`. Approved or paid runs only (`409 run_not_approved`); `wps` for AE companies, `mudad` for SA (`422`); `422 settings_incomplete` without the WPS ids / Mudad number. Audit-logged |
+| GET | `/hr/payroll/payslips` | full / team / own | `employee_id, month` | paid lines in scope: `id, run_id, month, employee_id, employee_name, employee_no, department_name, gross, total_deductions, net, currency, pay_date, paid_at` |
+| GET | `/hr/payroll/payslips/:id` | in scope | — | row + `company {name, country}, job_title, nationality, pay_method, bank_name, iban_masked, period_start, period_end, pay_start, pay_end, days_in_month, paid_days, unpaid_leave_days, absence_days, overtime_hours, items[]` (earnings, deductions), `employer_social_insurance` |
+| GET | `/hr/payroll/summary` | full | `months` (1–24, default 12) | approved / paid runs: `currency, months[{month, run_id, status, headcount, gross, deductions, net, employer_cost}], departments[{department_id, department_name, by_month {yyyy-MM: employer cost}, total, headcount}], totals` |
+| GET | `/hr/payroll/settlements` | full | — | settlements (below) |
+| POST | `/hr/payroll/settlements/preview` | full | `employee_id*, reason (resignation · termination · contract_end), exit_date` (default: the employee's), `adjustments[{label, amount (±)}]` | a settlement computed, not saved. `422 no_contract` |
+| POST | `/hr/payroll/settlements` | full | same + `notes` | the draft: `id, employee_id, employee_name, employee_no, hire_date, exit_date, reason, currency, basic_salary, housing_allowance, gratuity {country, service_days, excluded_days, years, monthly_wage, daily_wage, first_period_units, later_period_units, full_amount, factor, capped, amount, eligible, explanation[]}, unpaid_salary_from, unpaid_salary_days, unpaid_salary, leave_days, leave_encashment, loan_balance, adjustments[], total, status, notes, created_at, created_by_name, paid_at, paid_by_name`. `422 not_leaving` (status must be notice / terminated), `409 settlement_exists` |
+| GET | `/hr/payroll/settlements/:id` | full | — | the settlement |
+| PATCH | `/hr/payroll/settlements/:id` | full | `reason, exit_date, adjustments, notes` | recomputed; `409 settlement_paid` |
+| DELETE | `/hr/payroll/settlements/:id` | full | — | draft only |
+| POST | `/hr/payroll/settlements/:id/pay` | full | — | recomputed and locked; open loans become `settled`; the employee's offboarding step **Final settlement** is done |
+
+**Run line.** `id, run_id, employee_id, employee_name, employee_no, job_title, department_id, department_name,
+nationality, contract_id, pay_method, bank_name, iban_masked, pay_start, pay_end, days_in_month, paid_days,
+unpaid_leave_days, absence_days, leave_days, overtime_hours, items[{code, label, type (earning · deduction · employer),
+amount, note}], basic, housing, gross, total_deductions, net, employee_social_insurance, employer_social_insurance,
+employer_cost, fixed_pay, variable_pay, warnings[{code (no_contract · no_iban · no_person_id · negative_net), message,
+acknowledged}]`. Eligible: hired by the month end, not left before the month start, no final settlement covering the month.
+
+**Rules.**
+- *Earnings*: the active contract's basic / housing / transport / other × paid calendar days ÷ days in the month, over
+  [max(month start, hire date, contract start), min(month end, exit date, contract end)] (joiners and leavers).
+- *Unpaid leave*: approved requests of a leave type with `is_paid = false`, working days inside the window (half day
+  0.5) × daily rate (monthly fixed pay ÷ calendar days of the month).
+- *Unexcused absence* (`deduct_absences`, on by default): a working day of the employee's shift inside the window, from
+  the employee's **first recorded attendance** on, up to min(cut-off day, yesterday), with no clock-in, no approved
+  leave of any type and no public holiday (the attendance day status `absent`), × the same daily rate. An employee who
+  never clocks in is not tracked (no deduction).
+- *Overtime* (`overtime_enabled`, off by default): overtime minutes of the attendance days × basic ÷ days in month ÷ 8
+  × `overtime_multiplier`.
+- *Social insurance*: nationals vs others, on the contributory base (`base`), capped at `cap`. Defaults (to confirm by
+  HR; **not legal advice**): UAE GPSSA nationals 11 % employee / 12.5 % employer of basic + housing; KSA GOSI Saudis
+  9.75 % / 11.75 %, non-Saudis 0 % / 2 % (occupational hazards), base capped at 45,000 SAR.
+- *Loans*: each active loan's installment from its start month until repaid (the last one is what is left).
+- *Fixed / variable* (WPS): variable = overtime + allowances / bonuses (capped at the net), fixed = net − variable.
+- *Maker–checker*: the approver must be another HR-full user than the one who calculated; every warning must be
+  resolved (fix + recalculate) or acknowledged. Reopen returns to draft; a paid run is never changed again.
+
+**Bank files.** UAE **WPS SIF** (`<employerId><yyMMdd><HHmmss>.SIF`): one
+`EDR,<person id>,<routing code>,<IBAN>,<pay start>,<pay end>,<days>,<fixed>,<variable>,<days on leave>` per
+bank-paid employee with an id, an IBAN and a positive net, then
+`SCR,<employer id>,<routing code>,<file date>,<HHMM>,<MMYYYY>,<EDR count>,<total>,AED,<run id>`. KSA **Mudad** CSV
+(`mudad-<establishment>-<yyyy-MM>.csv`): `Employee ID / Iqama, Name, Bank, IBAN, Basic salary, Housing allowance,
+Other allowances, Deductions, Net salary`. **The exact column specifications must be confirmed with the company's bank /
+Mudad before go-live.** The files carry full IBANs and ids, so the export is a **POST** that answers the file (never a
+GET, never in a list), HR full only, audit-logged; with the reveal endpoints it is the only exception of the HR secrets
+sweep (`REVEAL_PATHS` in `src/shared/mocks/isolation/harness.ts`).
+
+**End-of-service gratuity** (`calc.ts gratuity`; defaults, not legal advice). **UAE** (Federal Decree-Law 33/2021):
+nothing under 1 year of continuous service; 21 days' basic wage per year for the first 5 years, 30 days per year after;
+partial years prorated; daily wage = basic × 12 ÷ 365; capped at 2 years' basic (24 × basic); unpaid leave days are not
+service; a resignation does not reduce it. **KSA** (Labor Law art. 84–85): half a month's wage per year for the first 5
+years, a full month per year after; wage = basic + housing (`gratuity_basis`); partial years prorated; resignation:
+< 2 years nothing, 2–5 one third, 5–10 two thirds, ≥ 10 the full award; termination / end of contract the full award.
+**Final settlement** = gratuity + unpaid salary (from the day after the employee's last paid run to the exit date,
+calendar-day proration) + remaining **annual leave** balance at the exit date × daily wage (basic × 12 ÷ 365; KSA with
+the basic + housing basis) − open loan balance ± adjustments.
+
+**Notifications** (stored, type `hr-payroll`, bell group **HR**): "Payroll <month> awaits your approval" to every other
+active HR-full user, once per run (re-armed by reopen); "Your payslip for <month> is available" to the employee's user,
+once per line, when the run is paid.
+
+**Seed** (both companies, different data): three paid months and a draft for the current month. Apex: a loan in
+repayment (EMP-u14), a monthly allowance, a paid bonus, a one-off fine this month, an approved unpaid leave this month
+(EMP-u6), a joiner on the 10th (EMP-X4, no IBAN yet), a cash-paid driver, an employee without a WPS id, WPS ids set,
+rates not yet confirmed. Crest: a salary advance (EMP-X101) with its last installment due, an unpaid leave last month
+(EMP-X102), a joiner on the 5th (EMP-X104), a cheque-paid contractor, Mudad number set, rates confirmed.
+
+**Tests.** Endpoints in `src/shared/mocks/isolation/hrPayrollEndpoints.ts` (both directions, spoofing; the HR secrets
+sweep in `secrets.isolation.test.ts`); roles from the matrix in `src/app/isolation/hrPayroll.isolation.test.ts`; rules
+in `src/shared/mocks/services/hrPayroll.test.ts` and `src/modules/hr/payroll/gratuity.test.ts`; browser
+`e2e/hr-payroll.spec.ts`.
+
+### HR reports
+
+One page (`/hr/reports`, sidebar: last HR item, **HR full and Department Head only**) with a tab per report, a period
+and a department filter. Services `src/shared/mocks/services/hrReports.ts` (one aggregate per report, computed
+server-side over the caller's scope), pure rules `src/modules/hr/reports/calc.ts` (unit-tested: ranges and the
+company timezone, turnover, nationalisation %, funnel conversion, expiry buckets, committed pay, CSV), wire
+`src/shared/api/hrReportsMappers.ts` (mechanical snake_case, arrays only), setting store `data/hrReports.ts`.
+
+**Scope.** full (Company Admin, Management, HR Manager): the whole company, incl. pay. team (Department Head): the
+employees of the departments they head **and their sub-departments** (department membership only: unlike the
+Employees list, direct reports outside those departments and the head's own record outside them are not counted);
+every report filtered, **never pay** (Payroll cost `403`, `monthly_payroll_cost`, training `spend` / `year_spend` /
+`budget` null). own (Employee) and hidden: `403` on every endpoint (no sidebar item; the route redirects).
+
+**Query (every report and export).** `from`, `to` (company-local `yyyy-MM-dd`; default = 1 Jan – 31 Dec of the
+company's current year in its timezone; at most 36 months; invalid / reversed → `422 validation_failed`) and
+`department_id` (the department and its sub-departments; a department of another company, a missing one, or — for a
+Department Head — one they don't head answers `404 Not found.` like a missing one). `as_of` = min(`to`, today):
+point-in-time figures (headcount, nationalisation, tenure) use it; monthly trends stop there. Every answer starts with
+`from, to, as_of, today, timezone, currency, scope, department_id, department_name`.
+
+| Method | Path | Who | Answer |
+|---|---|---|---|
+| GET | `/hr/reports/options` | full / team | `scope, departments[] (team: headed + sub-departments), reports[] (team: no payroll-cost), default_from, default_to, today, timezone, currency, country, nationalisation_label, can_edit_settings` |
+| GET | `/hr/reports/overview` | full / team | KPIs: `headcount, joiners, leavers, turnover_pct, absence_rate_pct, open_positions, expiring_documents (≤ 60 days), expired_documents, nationalisation_label, nationalisation_pct, nationalisation_target_pct, training_compliance_pct, monthly_payroll_cost (full; null for team), trend[]` |
+| GET | `/hr/reports/headcount` | full / team | `total` (on `as_of`), `by_department[], by_nationality[], by_gender[], by_employment_type[]` (`{key, label, count}`), `trend[{month, headcount}]` (month ends) |
+| GET | `/hr/reports/turnover` | full / team | `months[{month, joiners, leavers, opening, closing, average_headcount, turnover_pct}]`, `joiners, leavers, average_headcount, turnover_pct` (all leavers ÷ mean of the monthly averages), `average_tenure_years`, `leaver_list[]`, `joiner_list[]`, `probation {passed, left_in_probation, in_probation_now}` |
+| GET | `/hr/reports/nationalisation` | full / team | `country, label (Emiratisation · Saudization · Nationalisation), target_pct, can_edit_target, nationals, total, pct, gap_to_target, trend[{month, nationals, total, pct}], by_department[], disclaimer` — an **internal tracker**, not an official MOHRE / Nitaqat calculation |
+| GET | `/hr/reports/attendance` | full / team | `tracked_from` (first recorded attendance day of the company: earlier days never count as absences), `totals`, `by_month[]`, `by_department[]` (`expected_days, present_days, late_arrivals, late_minutes, absences, overtime_minutes, absence_rate_pct`), `top_late[]` (10). Daily records from the Attendance rules (`calc.ts`); today's unfinished shift is skipped |
+| GET | `/hr/reports/leave` | full / team | approved working days in the period `by_type[]`, `by_month[{month, days, by_type[]}]`, `total_days`; `balances[]` (paid types, employees on the payroll, year of `as_of`), `upcoming[]` (approved, next 30 days), `pending_requests` |
+| GET | `/hr/reports/compliance` | full / team | **as of today** (period ignored): `summary[{kind: document · contract · probation, expired, d30, d60, d90}]`, `rows[]` (`id, kind, label` = document / contract type, never a number, `date, days_left, bucket`, employee) — documents with an expiry, active contracts' end dates, probation ends ahead |
+| GET | `/hr/reports/assets` | full / team | `count, value (cost), assigned, available (in stock), by_status[], by_category[] ({key, label, count, value}), warranties[]` (ending within 90 days). full without a department: the whole register; otherwise the assets their people hold |
+| GET | `/hr/reports/recruitment` | full / team | openings of the departments in scope; applications created in the period: `funnel[{stage, label, reached, conversion_pct}]` (an application counts in every stage it reached; interviews / offers prove a rejected one got that far), `rejected, withdrawn, hires, average_time_to_hire_days` (application → offer accepted), `open_positions`, `openings[]`, `offers {sent, accepted, declined, pending, acceptance_rate_pct}`, `by_source[]`. No salaries |
+| GET | `/hr/reports/training` | full / team | `compliance_pct` (mandatory matrix, as Training), `overdue, by_department[], by_course[], certificates_expiring[]` (≤ 30 days), `certificates_expired, completions`; full only: `spend` (sessions starting in the period), `budget_year` (year of `to`), `year_spend, budget, budget_used_pct` |
+| GET | `/hr/reports/payroll-cost` | **full** (team `403 forbidden`) | `source: contracts \| payroll_runs`, `months[{month, amount, employees}]`, `by_department[{key, label, employees, monthly, total}]`, `current_monthly` (month of `as_of`), `total`, `note`. **Committed** cost: basic + housing + transport + other allowances of the contract in force each month (latest start wins in a renewal month), company currency |
+| GET | `/hr/reports/:report/export` | as the report | `{ report, file_name, headers[], rows[][] }`; the screen writes the CSV (formula-safe cells, UTF-8 BOM). Same scope and filters; never document numbers or IBANs, pay only in `payroll-cost` (full). Unknown report `404` |
+| PUT | `/hr/reports/settings` | full | `{ nationalisation_target_pct (0–100 \| null), training_budget: { year, amount (≥ 0 \| null = remove) } }` → `{ nationalisation_target_pct, training_budgets[{year, amount}], currency, updated_at }`. `422` out of range / nothing to change; team `403` |
+
+**Payroll source.** A month with an **approved or paid payroll run** (Salary management) uses the run lines' gross pay
+per employee (prorated pay, overtime, allowances, bonuses; before deductions, without employer social insurance);
+months without one fall back to the committed contract pay. The answer says `source: 'payroll_runs'` as soon as one
+month of the range comes from a run, else `contracts` (same shape, so the screen and the export don't change).
+
+**Rules.** Headcount on a day = hired on or before it and not left before it (`exit_date` is the last working day; a
+terminated record without one counts as leaving on its last update). Turnover per month = leavers ÷ ((opening +
+closing) ÷ 2). Dates of stored instants (applications, offers) are taken in the company timezone.
+
+**Isolation.** Every endpoint is in `endpoints.ts` (`isolation/hrReportsEndpoints.ts`, module `hr`; Crest's samples
+turn HR on with a platform module override; the headcount export's row count is checked against an own
+recomputation); `department_id` is in `REFS` (`scoped.isolation.test.ts`). Every matrix role in both companies, "the
+Department Head never sees pay and only their departments", exports without document numbers / IBANs, per-company
+settings and the plan gate: `src/app/isolation/hrReports.isolation.test.ts`; browser: `e2e/hr-reports.spec.ts`.
+Persisted dev DB: `VERSION` 21 added `hr.reportSettings`. No client storage (TanStack Query under `['hr', uid, 'reports']`).
+
+### Self-service
+
+"My HR" (`/hr/me`): the portal of **every user with an active employee record** (`EMP-<userId>`, not terminated),
+whatever their `hr` scope — like clock-in and leave (a Sales Agent too; a deliberate exception to the hidden scope).
+Without a record → `403 no_employee_record`. Strictly own data: nothing takes an employee id from the request.
+Services `src/shared/mocks/services/hrSelfService.ts` (+ `hrLetters.ts`), stores `src/shared/mocks/data/hrSelfService.ts`
+(`hr.profileChanges`, `hr.letterTypes`, `hr.letterRequests`, `hr.letterSeq`), wire `src/shared/api/hrSelfServiceMappers.ts`
+(plain snake_case at any depth). Screens: `/hr/me` (user menu "My HR" for everyone while the plan has `hr`; first HR
+sidebar item for roles that see HR), `/hr/me/payslips/:id` (printable own payslip), `/hr/letters/:id` (printable
+letter), `/hr/requests` (HR full, sidebar "Employee Requests": Profile changes · Letter requests · Letter templates ·
+Verify a letter).
+
+| Method | Path | Who | Body / query | Answer |
+|---|---|---|---|---|
+| GET | `/hr/me` | self | — | `employee {id, employee_no, full_name, job_title, department_name, manager_name, email, mobile, nationality, hire_date, status, employment_type, exit_date}`, `profile {emergency_contact, address, mobile, bank {bank_name, account_name, iban_masked}}`, `documents[]` (masked numbers, status, days to expiry), `contract` (the active one, own pay visible) or null, `assets[]` (held now), `payslips[]` (paid runs only), `training {enrollments, certificates, mandatory}`, `interviews[]` (panel cards; empty for roles that don't see HR), `profile_changes[]`, `letters[]`, `letter_types[]` (active, `available`, `unavailable_reason`, no template text), `hr_scope`, `today`, `timezone`, `currency` |
+| GET | `/hr/me/payslips/:id` | self | — | the payslip (same shape as `/hr/payroll/payslips/:id`); another employee's / company's → `404` |
+| GET | `/hr/profile-changes` | full: company; others: own | `status` | `id, employee_id, employee_name, employee_no, department_name, fields[] (mobile · emergency_contact · address · bank), current {…}, proposed {…}` (bank as `{bank_name, account_name, iban_masked}`), `iban_change, note, status (pending · approved · rejected · cancelled), requested_by_name, created_at, decided_by_name, decided_at, decision_comment, can_decide, can_cancel, can_reveal` |
+| POST | `/hr/profile-changes` | self | `mobile, emergency_contact {name, relation, phone}, address {line1, city, country}, bank {bank_name, account_name, iban}, note` (only what changes) | the request. Validated like the HR form (`422`, codes `mobile`, `emergency_contact`, `address`, `iban`, `bank_name`), `422 no_changes`, one pending request per employee `409 pending_exists`. Notifies HR full |
+| POST | `/hr/profile-changes/:id/approve` | full, **not their own** | `{ comment? }` | applied to the profile / employee record (mobile on the HR record). Activity + audit log; an IBAN change is audited as `security` with masked before / after. Notifies the employee. `403 own_request`, `409 not_pending` |
+| POST | `/hr/profile-changes/:id/reject` | full, not their own | `{ reason* }` | `422 reason_required`; notifies the employee |
+| POST | `/hr/profile-changes/:id/cancel` | the employee (own) or full | — | `409 not_pending` |
+| POST | `/hr/profile-changes/:id/reveal` | full, not their own | — | `{ id, iban }`: the full proposed IBAN of a **pending** request (else `422 nothing_to_reveal`); activity + audit |
+| GET | `/hr/self-service/inbox` | full | — | `counts {profile_changes, letters, total}`, pending `profile_changes[]`, pending `letters[]` |
+
+**Masking.** The proposed IBAN is stored in full while pending (a real backend encrypts it), served masked like the
+profile's, revealable by HR full only (POST, audited; in `REVEAL_PATHS`), and **wiped** once the request is approved,
+rejected or cancelled (the masked form stays). The HR secrets guard also checks pending IBANs (`hrSensitiveValues`).
+Deciding is HR full only (`403` for everyone else, whatever the id); reading another employee's request → `404` like a
+missing one (a Department Head included).
+
+### HR letters
+
+Five letter types per company: `salary_certificate`, `salary_transfer` (addressed to a bank), `employment_certificate`,
+`experience_letter`, `noc` (travel · visa · other), seeded with synthetic English templates (review with HR / legal).
+Pure rules `src/modules/hr/selfservice/letters.ts`. Placeholders: `employee.fullName`, `employee.salutation`,
+`employee.pronoun / possessive / object`, `employee.employeeNo / jobTitle / department / nationality / hireDate /
+exitDate / employmentType`, `salary.basic / housing / transport / other / allowances / total / currency`, `bank.name`,
+`bank.ibanLast4`, `company.name / legalName / address / country`, `letter.date / referenceNo`, `addressee`, `purpose`,
+`noc.purpose`, `signatory.name / title` (written `{{employee.fullName}}`). Rendering is one pass (a value containing
+`{{…}}` stays literal) and plain text (screens never render HTML); a missing value prints `________` and blocks the
+issue (`422 missing_values`); `employee.salutation` may be empty. Salary / bank placeholders are only allowed in the
+two salary types (`422 invalid_template` on save), so **pay only ever appears in salary letters, seen by HR full and
+the employee**. Never a full IBAN or a document number.
+
+| Method | Path | Who | Body / query | Answer |
+|---|---|---|---|---|
+| GET | `/hr/letters/types` | full: all with `body`; self: active ones, `body: ''` | — | `id, code, name, description, body, includes_salary, active, is_default, updated_at, updated_by_name, available, unavailable_reason` |
+| PATCH | `/hr/letters/types/:id` | full | `name, description, body, active` | the type; `422 invalid_template` (`problems[]`), `422 no_changes`; audited |
+| POST | `/hr/letters/types/:id/reset` | full | — | back to the seeded default |
+| GET | `/hr/letters/requests` | full: company; others: own | `status, employee_id` | `id, employee_id, employee_name, employee_no, department_name, letter_type_id, code, type_name, includes_salary, addressee, purpose, noc_purpose, language_note, on_behalf, requested_by_name, status (pending · issued · rejected · cancelled), created_at, decided_by_name, decided_at, rejection_reason, override_reason, reference_no, issue_date, can_decide, can_cancel` |
+| POST | `/hr/letters/requests` | self; full for anyone (`employee_id`) | `letter_type_id*, addressee` (required for salary_transfer; default "To whom it may concern"), `purpose` (required for noc), `noc_purpose` (noc), `language_note`, `override_reason` (full; experience letter) | the request. `422 not_leaving` (experience letter: notice / terminated, or HR's `override_reason`), `422 no_contract` (salary letters), `422 type_inactive`, `409 duplicate_request` (same type pending); another employee as non-full `403`; foreign / missing employee or type `404`. Notifies HR full except the requester |
+| GET | `/hr/letters/requests/:id` | full, or the employee | — | row + `letter {title, reference_no, issue_date, verification_code, body, signatory_name, signatory_title, letterhead {name, legal_name, address_lines[], phone, email, website, license_no, logo_url, primary_color}}` once issued. Anyone else (a Department Head for a report) `404` |
+| POST | `/hr/letters/requests/:id/approve` | full, not their own | `{ override_reason?, signatory_title? }` | **issued**: reference `<prefix>-HRL-<year>-<0001>` (per company and company-calendar year; prefix of the employee numbers APX / CRS; every check runs before the number is taken, so a refused approval never uses one), issue date = company today, verification code `XXXX-XXXX-XXXX`, rendered text frozen, letterhead from Settings › Company profile + Branding (logo, colour), signatory = the approver. Activity + audit; notifies the employee. `403 own_request`, `409 not_pending`, `422 not_leaving · no_contract · missing_values · invalid_template` |
+| POST | `/hr/letters/requests/:id/reject` | full, not their own | `{ reason* }` | `422 reason_required`; notifies the employee |
+| POST | `/hr/letters/requests/:id/cancel` | the employee (own) or full | — | `409 not_pending` |
+| GET | `/hr/letters/verify?code=` | full | — | `{ valid, code, reference_no, employee_name, employee_no, type_name, issue_date, issued_by_name }` (no pay). Caller's company only: another company's code answers `valid: false` like an unknown one; malformed `422 code` |
+
+**Notifications** (stored, type `hr-requests`, bell group **HR**, once per request and event through `notified` keys):
+submitted → every active HR-full user except the requester; letter issued / rejected and profile change approved /
+rejected → the employee. **Not built (next steps):** a public verification page (`GET /public/letters/verify`,
+rate-limited, answering only validity / reference / issue date); Arabic or bilingual letters (`language_note` is free
+text for HR); server-side PDF (browser print, A4).
+
+**Isolation and tests.** Endpoints in `src/shared/mocks/isolation/hrSelfServiceEndpoints.ts` (spread into
+`endpoints.ts`; Crest's samples turn HR on); `employee_id` / `letter_type_id` in `REFS`; every role × both companies
+`src/app/isolation/hrSelfService.isolation.test.ts`; rules `src/shared/mocks/services/hrSelfService.test.ts`,
+`src/modules/hr/selfservice/letters.test.ts`; browser `e2e/hr-self-service.spec.ts`. Portal cards of other HR sections:
+`src/modules/hr/selfservice/portalSlots.tsx` (onboarding tasks, reviews). Persisted dev DB: `VERSION` 23 added the stores.
+
+### Onboarding & offboarding
+
+Checklist **templates** and **journeys** (one checklist run per employee and kind). Services:
+`src/shared/mocks/services/hrJourney.ts` (+ `hrJourneySystem.ts`, the offboarding's system steps shared with the employee
+profile), stores `src/shared/mocks/data/hrJourney.ts`, rules `src/modules/hr/journey/calc.ts`, wire
+`src/shared/api/hrJourneyMappers.ts` (plain snake_case at any depth). Screens `/hr/journeys` (tabs Journeys · My tasks ·
+Templates) and `/hr/journeys/:id`.
+
+**Who.** **full**: templates, every journey, start / cancel / mark active, add / remove / reassign / tick any non-system
+item. **team** (Department Head): journeys of the employees in their HR scope; ticks the **Manager** items of those (not
+of their own journey). **own**: their own journeys; ticks their **Employee** items. **hidden**: `403` on journeys and
+templates. **Assignee inbox (any role, like the leave approver inbox):** `GET /hr/journeys/my-tasks` and ticking an item
+**assigned to you** work whatever your `hr` scope (a Sales Manager onboarding a new agent, the Accountant's payroll item).
+Outside the scope: `404` like a missing id; inside the scope but not yours: `403`. Plan gate as every `/hr` path.
+
+| Method | Path | Who | Body / query | Answer |
+|---|---|---|---|---|
+| GET | `/hr/journeys` | full / team / own | `kind (onboarding\|offboarding), status (active\|completed\|cancelled), employee_id` | rows: `id, kind, employee_id, employee_name, employee_no, job_title, department_id, department_name, manager_name, employee_status, template_id, template_name, anchor_date (hire / exit date), status, started_at, started_by_name, completed_at, progress {done, total, required_done, required_total, pct}, overdue, next_due_date`. Runs the journey reminder tick first |
+| POST | `/hr/journeys` | full | `employee_id*, kind*, template_id` (default: best match) | the detail. `409 journey_exists` when one is running; offboarding only for a leaving employee (`422`); foreign / missing employee or template → `404` |
+| GET | `/hr/journeys/my-tasks` | any role | — | `[{ journey_id, journey_kind, employee_id, employee_name, self, item }]`: non-system items assigned to the caller in running journeys, open first |
+| GET | `/hr/journeys/options` | full | — | `templates[] {id, name, kind}`, `assignees[] {id, name, role}` (active users), `departments[]`, `courses[]` |
+| GET | `/hr/journeys/:id` | in scope | — | row + `items[]`, `can_manage`, `can_finish`, `finish_blockers[]` |
+| POST | `/hr/journeys/:id/items` | full | `title*, owner_role*, assignee_user_id, due_date \| due_offset_days, required, description, action` | the detail |
+| PATCH | `/hr/journeys/:id/items/:itemId` | full | `title, description, owner_role, assignee_user_id (reassign; null = HR team), due_date (null = follow the anchor again), required, action` | the detail. System items take only `due_date` / `assignee_user_id`; foreign / inactive user → `422` like a missing one |
+| DELETE | `/hr/journeys/:id/items/:itemId` | full | — | the detail; `422` for a system item |
+| POST | `/hr/journeys/:id/items/:itemId/complete` | see Who | `note` | the detail (in scope) or the caller's task (assignee outside the scope). `422` system item, `403` not yours, `409 journey_closed` |
+| POST | `/hr/journeys/:id/items/:itemId/reopen` | see Who | — | same |
+| POST | `/hr/journeys/:id/activate` | full | — | onboarding only: every **required** item done (`422 items_open` with `items[]` otherwise) → journey `completed`; an `onboarding` employee becomes `active` |
+| POST | `/hr/journeys/:id/cancel` | full | — | `cancelled`; a running offboarding can't be cancelled while the employee is leaving (`422`) |
+| GET / POST | `/hr/journeys/templates` | full | `kind*, name* (unique per company), description, department_id, employment_type, active, items*[] {title*, description, owner_role* (hr · it · manager · employee · finance · user), owner_user_id (required for user; optional default person for hr / it / finance), due_offset_days* (−365…365), due_anchor (start · probation_end, onboarding only), required (default true), action}` | templates + `department_name, items[].owner_user_name, active_journeys` |
+| GET / PATCH / DELETE | `/hr/journeys/templates/:id` | full | as POST (kind can't change; items with a known `id` keep it) | the template / `{ id }`. Running journeys keep their copied items |
+
+**Item** fields: `id, title, description, owner_role, assignee_user_id, assignee_name, due_anchor, due_offset_days, due_date,
+due_overridden, required, blocking, action {kind: assign_asset · enrol_course · upload_document · sign_contract ·
+probation_review, asset_category, course_id (null = every mandatory course), document_type}, system (assets · login ·
+settlement · null), status (open · done · skipped), done_at, done_by_name, detail, note, overdue, days_left, can_complete`.
+
+**Lifecycle.** `createEmployee` with status `onboarding` (the Employees form or Recruitment's hire) starts an onboarding
+from the **best template**: active, same kind, targeting fields empty or equal to the employee's; department match beats
+employment-type match beats general; ties → most recently updated. Assignees: Employee → the employee's login, Manager →
+the manager's login, hr / it / finance → the template's default person or the HR team (`null`), user → that person.
+Status → `notice` / `terminated` starts an **offboarding** with the template items plus three **system items** (`assets`
+blocking, `login`, `settlement`) that follow their real source live (assets returned / lost, login deactivated, final
+settlement paid) and can't be ticked by hand; back to `active` cancels it. `POST /hr/employees/:id/offboarding/complete`
+(unchanged: blocked only by unreturned assets) completes the journey and marks the open items `skipped`. Linked items
+tick themselves once their record exists (asset of the category held, document type on file, a signed contract, enrolled
+in the course / every mandatory course).
+
+**Due dates** are company-local days: anchor + offset; anchor = hire date (onboarding) / exit date (offboarding) /
+contract probation end (`probation_end`, fallback hire date + 90, so the seeded probation review at −10 lands on day 80).
+They follow the anchor until HR sets one. **Overdue** = open and due before the company's today (regional timezone, mock
+clock). **Probation seam:** HR › Performance can call `completeProbationReviewItem(companyId, employeeId, { reviewId })`
+and `probationReviewItemOf(…)` (services/hrJourney.ts); no import the other way.
+
+**Notifications** (stored, type `hr-journey`, bell group **HR**, once per item and threshold): item assigned → the
+assignee (batched per journey start; not to the actor; re-armed on reassignment); due tomorrow (or "due today" when first
+seen then) and overdue → the assignee, or every HR-full user for HR-team items (marks keyed by due date, so a moved date
+re-arms them); journey completed → HR full + the employee's manager. Runs on the company's lifecycle tick and before the
+journey reads; only with the `hr` module.
+
+**Tasks module.** Journey items are **not** copied into Tasks: tasks need a user owner and lead / customer / event links,
+while journey items belong to employees without logins, to the "HR team" pool and to system checks. They show in My tasks
+on this page, in the My HR portal card (`src/modules/hr/journey/components/MyOnboardingTasksCard.tsx`) and in the bell.
+
+**Isolation.** Every endpoint is in the coverage table (`src/shared/mocks/isolation/hrJourneyEndpoints.ts`); foreign ids
+in bodies / queries (`employee_id`, `template_id`, `department_id`, `owner_user_id`, `assignee_user_id`) behave like
+missing ones (`scoped.isolation.test.ts`); roles: `src/app/isolation/hrJourney.isolation.test.ts`; rules:
+`src/shared/mocks/services/hrJourney.test.ts`; browser: `e2e/hr-journey.spec.ts`. Persisted dev DB: `VERSION` 22.
+
+### Performance
+
+Review templates, cycles, goals, self / manager reviews, HR calibration and probation reviews. Types
+`src/modules/hr/performance/types.ts`, pure rules `src/modules/hr/performance/calc.ts`, services
+`src/shared/mocks/services/hrPerformance.ts` (+ `hrPerformanceCore.ts` access / notifications / seams,
+`hrPerformanceTick.ts`), stores `src/shared/mocks/data/hrPerformance.ts`, wire `src/shared/api/hrPerformanceMappers.ts`
+(mechanical snake_case at any depth). Ids `PRT-` templates, `PCY-` cycles, `PRV-` reviews, `PGL-` goals; every lookup is
+company-first, so a foreign id answers exactly like a missing one (`404 Not found.`). Dates are company calendar days.
+
+**Who sees a review** (deliberate exception to the hidden scope, like self-service leave): the **employee** themself,
+whatever their `hr` scope (a Sales Agent too): goals and their self-assessment; the manager's assessment, scores and
+final rating **only once shared**; **never** the calibration. The **direct manager** (`employees.manager_id` at launch),
+whatever their `hr` scope (a Sales Manager reviews their agents): writes the manager assessment, approves goals.
+**Department Head** (`team`): their team's reviews, read-only. **HR full**: every review incl. calibration; acts as
+the reviewer when the employee has no manager with an active login; never calibrates their own review. Nobody sees a
+peer's review (`404`). Templates and cycles: HR full only (`403` otherwise). The screen `/hr/performance` is therefore
+plan-gated only; the sidebar item follows the matrix.
+
+**Flow.** Cycle phases `draft → goal_setting → self_review → manager_review → calibration → shared → closed` (goal
+setting / self-review skipped when the template has none). HR launches (a review per participant: explicit
+`employee_ids`, else `department_ids` (empty = all), status active / on leave, hired on or before `hired_before`),
+advances one phase at a time and closes (from any launched phase; unfinished reviews become `incomplete`). Moving to
+`shared` shares every review whose manager assessment is submitted. Review stage (computed): `goal_setting ·
+self_review · manager_review · calibration · shared · acknowledged · incomplete`. Goals: weights are whole numbers
+1–100 and may not exceed 100 in total (`422 goal_weights`); the employee sets terms during goal setting and progress /
+status until the manager submits; a terms change un-approves the goal; the manager approves (total must be 100).
+Self-assessment: during self-review (late: during manager review until the manager submits). Manager assessment:
+drafts from the self-review phase, submit in the manager-review phase (submitting approves the goals). Submits need
+every question (and goal) rated (`422 incomplete`). **Score**: competency = mean of the question ratings; goals =
+Σ(weight × rating) / Σ weights; overall = goals weight % × goals + competency weight % × competencies (goals off:
+competencies); final rating = the latest HR calibration, else the overall rounded half up to a scale level.
+**Calibration** (HR full, calibration phase): `rating` on the scale + mandatory `note` (`422 note_required`), written to
+the audit log (`performance_review`) and the review's calibration history. An acknowledged review is **locked**
+(`409 review_locked`); writes on a closed cycle `409 cycle_closed`; wrong phase `409 phase_closed`; bad cycle moves
+`409 invalid_transition`.
+
+**Probation reviews** are created by the tick (company lifecycle tick + every performance call, only with `hr`) for
+each active contract whose `probation_end_date` is within **30** company-calendar days: a one-person cycle `type
+probation` (template = the active one flagged `for_probation`), starting at its self-review (if the template has one)
+or the manager review, deadline = the probation end; once per contract and probation end date. The manager must
+recommend `confirm · extend (1–6 months) · terminate`; submitting moves the cycle to calibration; HR may override the
+outcome in the calibrate call; **sharing applies it**: confirm → employee activity; extend → the active contract's
+probation end moves (its reminder re-arms); terminate → HR is told (status / exit date stay an HR action in Employees).
+
+**Notifications** (stored, type `hr`, bell group HR, once-only through marks on the cycle / review): phase opened →
+participants (goal setting, self-review: employees; manager review: reviewers; calibration: HR full); due within 3
+days / overdue → whoever must act (once per review, phase and deadline; calibration: HR full once per cycle); shared →
+the employee; acknowledged → the reviewer + HR full; goals approved → the employee; probation review created → the
+manager. `POST /cycles/:id/remind` is a manual nudge (not once-only).
+
+| Method | Path | Who | Body / query | Answer |
+|---|---|---|---|---|
+| GET | `/hr/performance/options` | any employee | — | `{ manage, reviews, templates[] (full), departments[] (full), courses[] (reviewers), probation_lookahead_days }` |
+| GET | `/hr/performance/my` | any employee | — | `{ employee_id, pending[{ review_id, action (set_goals · approve_goals · self_review · manager_review · acknowledge), employee_name, cycle_name, due_date, overdue }], reviews[] (own rows), goals[] (own, open cycles), team_to_complete, latest_shared }` (the portal card) |
+| GET | `/hr/performance/templates` | full | — | `id, name, description, scale[{value, label}], sections[{id, title, questions[{id, text}]}], goals_enabled, goals_weight, competency_weight, self_review, for_probation, active, cycle_count` |
+| POST / PATCH | `/hr/performance/templates`, `/:id` | full | `name*, description, scale (2–10 labels, default 1–5), sections* (1–12, 1–20 questions each), goals_enabled, goals_weight (0–100), self_review, for_probation (one per company), active` | the template; draft cycles follow it, launched cycles keep their snapshot |
+| GET | `/hr/performance/cycles` | full | — | `id, name, type (annual · mid_year · probation · ad_hoc), phase, template_id, template_name, period_start, period_end, department_ids, employee_ids, hired_before, deadlines {goal_setting, self_review, manager_review, calibration}, current_deadline, launched_at, closed_at, progress {total, goals_ready, self_done, manager_done, shared, acknowledged, completion_pct}` |
+| POST | `/hr/performance/cycles` | full | `name*, type* (not probation), template_id* (active, own company; foreign = missing → 422), period_start*, period_end*, department_ids[], employee_ids[], hired_before, deadlines` (required per template, in order: `422 deadline_order`) | the cycle detail (draft) |
+| GET | `/hr/performance/cycles/:id` | full | — | row + `template` (snapshot), `by_stage[]`, `distribution[{value, label, count}]` (final ratings), `departments[{department_id, name, total, manager_done, completion_pct, average_rating}]`, `reviews[]` |
+| PATCH | `/hr/performance/cycles/:id` | full | draft: as POST; launched: `name`, `deadlines` | the detail |
+| POST | `/hr/performance/cycles/:id/launch` · `/advance` · `/close` | full | — | the detail (`422 no_participants`, `409 invalid_transition`) |
+| POST | `/hr/performance/cycles/:id/remind` | full | — | `{ sent }` |
+| GET | `/hr/performance/reviews` | any (scoped) | `cycle_id`, `stage` | the reviews the caller sees **except their own**: `id, cycle_id, cycle_name, cycle_type, cycle_phase, employee_id, employee_name, employee_no, job_title, department_id, department_name, manager_id, manager_name, stage, due_date, overdue, self_submitted_at, manager_submitted_at, overall_score, final_rating, final_label, shared_at, acknowledged_at` |
+| GET | `/hr/performance/reviews/:id` | visible | — | row + `viewer (employee · manager · team · hr), template, period, deadlines, goals[], goal_weight_total, self, self_scores, manager {answers, goal_ratings, summary, submitted_at, recommended_course_ids, recommendation, extend_months}, scores {competency, goals, overall}, calibration {rating, previous_rating, note, by_name, at, history[]} (HR only), acknowledgement, probation {contract_id, end_date, outcome, outcome_applied_at}, recommended_courses[], sales_kpis[] (manager / HR; Sales Agents: Sales › Targets values vs actuals over the period), locked, can {…}` |
+| PUT | `/hr/performance/reviews/:id/self` | the employee | `answers[{question_id, rating, comment}], goal_ratings[{goal_id, rating, comment}], summary, submit` | the review |
+| PUT | `/hr/performance/reviews/:id/manager` | the reviewer | as self + `recommended_course_ids[]` (own courses; foreign = missing → 422), `recommendation`, `extend_months` (probation) | the review |
+| POST | `/hr/performance/reviews/:id/calibrate` | full (not own) | `rating*, note*, recommendation?` | the review |
+| POST | `/hr/performance/reviews/:id/share` | full | — | the review |
+| POST | `/hr/performance/reviews/:id/acknowledge` | the employee | `comment?` | the review (locked) |
+| POST | `/hr/performance/reviews/:id/goals` | employee / reviewer | `title*, weight*, target, description, progress, status (not_started · on_track · at_risk · completed · missed)` | the review |
+| POST | `/hr/performance/reviews/:id/goals/approve` | the reviewer | — | the review |
+| PATCH / DELETE | `/hr/performance/goals/:id` | employee / reviewer | as POST | the review |
+
+**Seams.** `onProbationOutcome(name, listener)` (`services/hrPerformanceCore.ts`) runs when a probation outcome is
+applied; `probationReviewFor(companyId, employeeId)` returns the latest probation review's stage / recommendation /
+outcome (for the onboarding checklist). Portal card: `src/modules/hr/performance/components/MyPerformanceCard.tsx`.
+
+**Isolation.** Every endpoint is in `src/shared/mocks/isolation/hrPerformanceEndpoints.ts` (spread into
+`endpoints.ts`; Crest's samples turn `hr` on with a platform module override; the calibrate / share / acknowledge
+samples build a one-person cycle through the API). Ids in bodies / queries (`template_id`, `department_ids`,
+`employee_ids`, `cycle_id`, `recommended_course_ids`) are in `REFS`. Roles × both companies:
+`src/app/isolation/hrPerformance.isolation.test.ts`; rules: `src/modules/hr/performance/calc.test.ts`,
+`src/shared/mocks/services/hrPerformance.test.ts`; browser: `e2e/hr-performance.spec.ts`. Persisted dev DB: `VERSION`
+24. Not built: a "Performance" tab in HR Reports (the distribution lives on the cycle view), 360° / peer feedback,
+reassigning a running review to another manager.

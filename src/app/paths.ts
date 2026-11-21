@@ -67,6 +67,34 @@ export const PATHS = {
   publicTicket: '/t/:code',
   /** Public feedback survey of an attendee, by its survey token. */
   publicSurvey: '/s/:token',
+  /** HR › Recruitment and Training (plan module `hr`). */
+  hrRecruitment: '/hr/recruitment',
+  hrTraining: '/hr/training',
+  /** HR › Performance reviews (every employee: own reviews; managers; HR: cycles, templates). ?tab=, ?review=, ?cycle=. */
+  hrPerformance: '/hr/performance',
+  /** HR › Employees (+ profile), Employee contracts, Company assets. */
+  hrEmployees: '/hr/employees',
+  hrEmployeeDetail: '/hr/employees/:id',
+  /** HR › Onboarding & offboarding (?tab=journeys|mine|templates; My tasks for every role). */
+  hrJourneys: '/hr/journeys',
+  hrJourneyDetail: '/hr/journeys/:id',
+  hrContracts: '/hr/contracts',
+  hrAssets: '/hr/assets',
+  /** HR › Attendance and Leave (self-service for every employee; ?tab=, ?request=). */
+  hrAttendance: '/hr/attendance',
+  hrLeave: '/hr/leave',
+  /** HR › Salary Management (HR full: runs, payslips, loans, settlements; others: My payslips). ?tab=, ?run=, ?payslip=. */
+  hrSalary: '/hr/salary',
+  hrPayslip: '/hr/salary/payslips/:id',
+  /** HR › Reports (HR full and Department Heads; ?tab=). */
+  hrReports: '/hr/reports',
+  /** HR › My HR: the self-service portal of every employee (any role with an employee record; plan-gated only). */
+  hrMe: '/hr/me',
+  hrMyPayslip: '/hr/me/payslips/:id',
+  /** A printable HR letter (the employee's own, or any for HR full). */
+  hrLetter: '/hr/letters/:id',
+  /** HR › Employee requests (HR full): profile changes, letter requests, letter templates, verify (?tab=). */
+  hrRequests: '/hr/requests',
   /** Platform console: outside any workspace (TenantProvider exempts /platform). */
   platform: '/platform',
   platformLogin: '/platform/login',
@@ -109,6 +137,19 @@ export function newQuotationPath(opts: { leadId?: string; customerId?: string } 
 }
 export function eventPath(id: string, tab?: string): string {
   return tab ? `/events/${enc(id)}?tab=${enc(tab)}` : `/events/${enc(id)}`
+}
+/** An employee profile, optionally on a tab (overview, documents, contract, assets, activity). */
+export function letterPath(id: string): string {
+  return `/hr/letters/${enc(id)}`
+}
+export function myPayslipPath(id: string): string {
+  return `/hr/me/payslips/${enc(id)}`
+}
+export function payslipPath(id: string): string {
+  return `/hr/salary/payslips/${enc(id)}`
+}
+export function employeePath(id: string, tab?: string): string {
+  return tab ? `/hr/employees/${enc(id)}?tab=${enc(tab)}` : `/hr/employees/${enc(id)}`
 }
 export function speakerPath(id: string): string {
   return `/events/speakers/${enc(id)}`

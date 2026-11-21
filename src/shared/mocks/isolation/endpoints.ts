@@ -21,6 +21,14 @@ import { EVENTS_ADVANCED_ENDPOINTS } from './eventsEndpoints'
 import { EVENT_SECTIONS_ENDPOINTS } from './eventSectionsEndpoints'
 import { SPONSORS_LOGISTICS_ENDPOINTS } from './sponsorsLogisticsEndpoints'
 import { EVENT_LIBRARY_ENDPOINTS } from './eventLibraryEndpoints'
+import { HR_TALENT_ENDPOINTS } from './hrTalentEndpoints'
+import { HR_TIME_ENDPOINTS } from './hrTimeEndpoints'
+import { HR_PEOPLE_ENDPOINTS } from './hrPeopleEndpoints'
+import { HR_PAYROLL_ENDPOINTS } from './hrPayrollEndpoints'
+import { HR_REPORTS_ENDPOINTS } from './hrReportsEndpoints'
+import { HR_SELF_SERVICE_ENDPOINTS } from './hrSelfServiceEndpoints'
+import { HR_JOURNEY_ENDPOINTS } from './hrJourneyEndpoints'
+import { HR_PERFORMANCE_ENDPOINTS } from './hrPerformanceEndpoints'
 
 /**
  * THE COVERAGE TABLE of the isolation suite: one entry per registered MSW handler (method + path as
@@ -525,7 +533,6 @@ export const ENDPOINTS: Endpoint[] = [
   { method: 'POST', path: '/billing/reactivate', kind: 'company-write', module: 'billing/usage', sample: () => ({ body: {}, expect: [200, 409] }) },
   { method: 'GET', path: '/billing/export', kind: 'company-export', module: 'exports', sample: () => ({}) },
   { method: 'POST', path: '/ai/credits/consume', kind: 'company-write', module: 'billing/usage', sample: (co) => ({ body: { credits: 1 }, expect: co === APEX ? [200, 402, 403] : [200, 402, 403] }) },
-  { method: 'GET', path: '/hr/employees', kind: 'company-list', module: 'billing/usage', sample: (co) => ({ expect: co === APEX ? 200 : 403 }), note: 'Module stub: Crest (Business) has no HR → 403 module_not_in_plan.' },
   /* ---- events (handlers/events.ts; plan module `events`) ---- */
   { method: 'GET', path: '/events', kind: 'company-list', module: 'events', sample: () => ({ query: { from: day(-400), to: day(400) } }), count: { of: len, expected: ownCount(events) } },
   { method: 'POST', path: '/events', kind: 'company-write', module: 'events', sample: (co) => ({ body: { name: `Isolation event ${uniq()}`, type: 'meeting', start_date: day(10), start_time: '09:00', end_time: '11:00', budget: 1000, team_ids: [userOf(co, 'Sales Agent').id] } }) },
@@ -548,6 +555,22 @@ export const ENDPOINTS: Endpoint[] = [
   ...SPONSORS_LOGISTICS_ENDPOINTS,
   /* ---- events › speakers directory, venues, vendors (isolation/eventLibraryEndpoints.ts) ---- */
   ...EVENT_LIBRARY_ENDPOINTS,
+  /* ---- HR › recruitment, training (isolation/hrTalentEndpoints.ts) ---- */
+  ...HR_TALENT_ENDPOINTS,
+  /* ---- HR › attendance, leave, public holidays (isolation/hrTimeEndpoints.ts) ---- */
+  ...HR_TIME_ENDPOINTS,
+  /* ---- HR › employees, documents, contracts, assets (isolation/hrPeopleEndpoints.ts) ---- */
+  ...HR_PEOPLE_ENDPOINTS,
+  /* ---- HR › salary management (isolation/hrPayrollEndpoints.ts) ---- */
+  ...HR_PAYROLL_ENDPOINTS,
+  /* ---- HR › reports (isolation/hrReportsEndpoints.ts) ---- */
+  ...HR_REPORTS_ENDPOINTS,
+  /* ---- HR › self-service portal, profile changes, HR letters (isolation/hrSelfServiceEndpoints.ts) ---- */
+  ...HR_SELF_SERVICE_ENDPOINTS,
+  /* ---- HR › onboarding & offboarding (isolation/hrJourneyEndpoints.ts) ---- */
+  ...HR_JOURNEY_ENDPOINTS,
+  /* ---- HR › performance reviews (isolation/hrPerformanceEndpoints.ts) ---- */
+  ...HR_PERFORMANCE_ENDPOINTS,
   { method: 'GET', path: '/public/events/:token', kind: 'public', module: 'events', reason: PUBLIC_EVENT },
   { method: 'POST', path: '/public/events/:token/register', kind: 'public', module: 'events', reason: PUBLIC_EVENT + ' Rate-limited per client and email, honeypot; the attendee and its lead land in the event’s company only.' },
 

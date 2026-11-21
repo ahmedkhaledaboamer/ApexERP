@@ -31,6 +31,14 @@ import { settingsHandlers } from './settings'
 import { settingsUsersHandlers } from './settingsUsers'
 import { targetsHandlers } from './targets'
 import { templatesHandlers } from './templates'
+import { hrTalentHandlers } from './hrTalent'
+import { hrPeopleHandlers } from './hrPeople'
+import { hrTimeHandlers } from './hrTime'
+import { hrPayrollHandlers } from './hrPayroll'
+import { hrReportsHandlers } from './hrReports'
+import { hrSelfServiceHandlers } from './hrSelfService'
+import { hrJourneyHandlers } from './hrJourney'
+import { hrPerformanceHandlers } from './hrPerformance'
 
 /**
  * Every mocked endpoint. Each module adds its handlers here.
@@ -72,6 +80,22 @@ export const handlers = [
   ...eventLibraryHandlers,
   ...eventsAdvancedHandlers,
   ...eventsHandlers,
+  // HR › Recruitment, Training (/hr/recruitment/*, /hr/training/*).
+  ...hrTalentHandlers,
+  // HR › Employees, Employee contracts, Company assets (/hr/employees, /hr/documents, /hr/contracts, /hr/assets).
+  ...hrPeopleHandlers,
+  // HR › Attendance, Leave, Public holidays (/hr/attendance/*, /hr/leave/*, /hr/holidays).
+  ...hrTimeHandlers,
+  // HR › Salary Management (/hr/payroll/*).
+  ...hrPayrollHandlers,
+  // HR › Reports (/hr/reports/*).
+  ...hrReportsHandlers,
+  // HR › Self-service portal, profile changes, HR letters (/hr/me, /hr/profile-changes, /hr/letters/*, /hr/self-service/*).
+  ...hrSelfServiceHandlers,
+  // HR › Onboarding & offboarding (/hr/journeys/*).
+  ...hrJourneyHandlers,
+  // HR › Performance reviews (/hr/performance/*).
+  ...hrPerformanceHandlers,
   ...billingHandlers,
   // Last: it ends with a catch-all for unknown /platform/* paths.
   ...platformHandlers,

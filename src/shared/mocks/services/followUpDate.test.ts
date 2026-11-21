@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { User } from '@/shared/types'
-import { leads, users } from '@/shared/mocks/db'
+import { activities, leads, users } from '@/shared/mocks/db'
 import { APEX_ID, companyById, CREST_ID } from '@/shared/mocks/data/tenancy'
 import { automationRulesFor, isClosedStatus, SYSTEM_STATUS } from '@/shared/mocks/data/lookups'
 import { resetClock } from '@/shared/mocks/clock'
@@ -81,6 +81,9 @@ describe('No response schedules +N days from the company’s today', () => {
     const lead = onlyFollowUp(APEX_ID, '2026-11-10')
     lead.status = SYSTEM_STATUS.noResponse
     lead.stageChangedAt = new Date('2026-11-18T20:00:00Z').toISOString()
+    // The seed dates activities from the real clock; drop this lead's ones after the stage change so
+    // only the attempt logged here counts (otherwise it can reach the Cold threshold on later days).
+    for (let i = activities.length - 1; i >= 0; i--) if (activities[i].leadId === lead.id && activities[i].at > lead.stageChangedAt) activities.splice(i, 1)
     await logActivity(apexAdmin(), { leadId: lead.id, type: 'call', summary: 'No answer' })
     expect(lead.nextFollowUpDate).toBe('2026-11-21')
   })

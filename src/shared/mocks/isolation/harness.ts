@@ -9,6 +9,9 @@ import { restoreSnapshot, takeSnapshot, type MockSnapshot } from '@/shared/mocks
 import { users } from '@/shared/mocks/db'
 import { APEX_ID, CREST_ID } from '@/shared/mocks/data/tenancy'
 import { resetClock } from '@/shared/mocks/clock'
+import { hrProfiles } from '@/shared/mocks/data/hrPeople'
+import { pendingIbans } from '@/shared/mocks/data/hrSelfService'
+import { hrPayrollProfiles } from '@/shared/mocks/data/hrPayroll'
 import { platformTokenFor, tokenFor } from '@/shared/mocks/server'
 
 /**
@@ -121,7 +124,7 @@ export async function api(token: string | null, method: string, path: string, op
   }
   const out: Res = { status: res.status, body, text, method: m, path }
   recorded.push(out)
-  const leaks = secretsIn(body, `${m} ${path}`)
+  const leaks = [...secretsIn(body, `${m} ${path}`), ...hrSensitiveIn(text, `${m} ${url.pathname.replace(/^\/api/, '')}`)]
   if (leaks.length) throw new Error(`Secrets guard: ${m} ${path} answered with secrets:\n  ${leaks.join('\n  ')}`)
   return out
 }
@@ -217,6 +220,46 @@ export function secretsIn(body: unknown, where: string): string[] {
     }
   }
   walk(body, '$')
+  return out
+}
+
+/**
+ * HR sensitive identifiers (stored in full, served masked "•••• 1234"): every stored IBAN (hrProfiles) and every
+ * payroll person id (WPS person id / national id / iqama: hr.payrollProfiles). No response may carry one in full,
+ * except the explicit HR-full reveal / bank-file endpoints below (POST only, audited; docs/API.md › HR).
+ */
+export const REVEAL_PATHS: RegExp[] = [
+  /^POST \/hr\/employees\/[^/]+\/reveal$/,
+  /^POST \/hr\/documents\/[^/]+\/reveal$/,
+  /^POST \/hr\/payroll\/profiles\/[^/]+\/reveal$/,
+  /^POST \/hr\/payroll\/runs\/[^/]+\/bank-file$/,
+  // HR full: the proposed IBAN of a pending self-service bank account change (audited).
+  /^POST \/hr\/profile-changes\/[^/]+\/reveal$/,
+]
+
+export function hrSensitiveValues(): string[] {
+  const out = new Set<string>()
+  for (const p of hrProfiles) if (p.iban && p.iban.length >= 15) out.add(p.iban)
+  for (const p of hrPayrollProfiles) if (p.personId && p.personId.length >= 10) out.add(p.personId)
+  // Proposed IBANs of pending self-service changes (served masked like the profile's).
+  for (const iban of pendingIbans()) out.add(iban)
+  return [...out]
+}
+
+/** Full IBANs / person ids in a response text (a numeric id must not be part of a longer digit run). */
+export function hrSensitiveIn(text: string, where: string, values: readonly string[] = hrSensitiveValues()): string[] {
+  const route = where.replace(/\?.*$/, '')
+  if (!text || REVEAL_PATHS.some((re) => re.test(route))) return []
+  const out: string[] = []
+  for (const v of values) {
+    for (let i = text.indexOf(v); i >= 0; i = text.indexOf(v, i + 1)) {
+      const before = text[i - 1] ?? ''
+      const after = text[i + v.length] ?? ''
+      if (/^\d+$/.test(v) && (/\d/.test(before) || /\d/.test(after))) continue
+      out.push(`${route}: unmasked HR identifier ending ${v.slice(-4)} (IBAN / person id)`)
+      break
+    }
+  }
   return out
 }
 

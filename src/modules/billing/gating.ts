@@ -1,5 +1,5 @@
-import type { ModuleKey, Role } from '@/shared/types'
-import { can } from '@/shared/lib/permissions'
+import type { ModuleKey, Role, Scope } from '@/shared/types'
+import { can, scopeOf } from '@/shared/lib/permissions'
 import { GATEABLE_MODULES, type Entitlements, type LimitKey, type Plan, type PlanModule } from '@/modules/billing/types'
 
 /**
@@ -26,6 +26,15 @@ export function planIncludes(entitlements: GateEntitlements, module: PlanModule)
 export interface GatedItem {
   module?: ModuleKey
   planModule?: PlanModule
+  /** Only these scopes of `module` see the item (e.g. HR Reports: full and team, not an employee's own scope). */
+  scopes?: readonly Scope[]
+}
+
+/** The role can view the item's module, with one of its allowed scopes when the item lists them. */
+function roleSees(item: GatedItem, role: Role | null | undefined): boolean {
+  if (!item.module) return true
+  if (!role || !can(role, item.module, 'view')) return false
+  return !item.scopes || item.scopes.includes(scopeOf(role, item.module))
 }
 
 export function itemPlanModule(item: GatedItem): PlanModule | undefined {
@@ -39,7 +48,7 @@ export function itemPlanModule(item: GatedItem): PlanModule | undefined {
 export type NavAccess = 'visible' | 'locked' | 'hidden'
 
 export function navItemAccess(item: GatedItem, ctx: GateContext): NavAccess {
-  if (item.module && (!ctx.role || !can(ctx.role, item.module, 'view'))) return 'hidden'
+  if (!roleSees(item, ctx.role)) return 'hidden'
   const pm = itemPlanModule(item)
   if (!pm || planIncludes(ctx.entitlements, pm)) return 'visible'
   // While entitlements load, gateable items stay out of the way instead of flashing a lock.
@@ -71,7 +80,7 @@ export function routeDecision(
     if (!ctx.entitlements) return ctx.entitlementsLoading ? 'loading' : 'upgrade'
     if (!planIncludes(ctx.entitlements, pm)) return 'upgrade'
   }
-  if (item.module && (!ctx.role || !can(ctx.role, item.module, 'view'))) return 'forbidden'
+  if (!roleSees(item, ctx.role)) return 'forbidden'
   return 'allow'
 }
 

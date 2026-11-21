@@ -1,6 +1,6 @@
 import { lazy, Suspense, type ReactNode } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
-import type { ModuleKey } from '@/shared/types'
+import type { ModuleKey, Scope } from '@/shared/types'
 import { useAppSelector } from '@/store/hooks'
 import { AppLayout } from '@/shared/components/layout/AppLayout'
 import { ComingSoonPage } from '@/shared/components/layout/ComingSoonPage'
@@ -91,6 +91,29 @@ const EventAnalyticsPage = lazy(() => import('@/modules/events/pages/EventAnalyt
 const EventSponsorsPage = lazy(() => import('@/modules/events/pages/EventSponsorsPage'))
 const EventLogisticsPage = lazy(() => import('@/modules/events/pages/EventLogisticsPage'))
 const SpeakersPage = lazy(() => import('@/modules/events/pages/SpeakersPage'))
+// HR › Employees, Employee contracts, Company assets.
+const EmployeesPage = lazy(() => import('@/modules/hr/pages/EmployeesPage'))
+const JourneysPage = lazy(() => import('@/modules/hr/journey/pages/JourneysPage'))
+const JourneyDetailPage = lazy(() => import('@/modules/hr/journey/pages/JourneyDetailPage'))
+const EmployeeDetailPage = lazy(() => import('@/modules/hr/pages/EmployeeDetailPage'))
+const HrContractsPage = lazy(() => import('@/modules/hr/pages/ContractsPage'))
+const HrAssetsPage = lazy(() => import('@/modules/hr/pages/AssetsPage'))
+// HR › Recruitment, Training.
+const RecruitmentPage = lazy(() => import('@/modules/hr/pages/RecruitmentPage'))
+const TrainingPage = lazy(() => import('@/modules/hr/pages/TrainingPage'))
+const PerformancePage = lazy(() => import('@/modules/hr/performance/PerformancePage'))
+// HR › Attendance, Leave (self-service for every employee: plan-gated only, the API scopes the data).
+const AttendancePage = lazy(() => import('@/modules/hr/time/pages/AttendancePage'))
+const LeavePage = lazy(() => import('@/modules/hr/time/pages/LeavePage'))
+// HR › Salary Management.
+const SalaryPage = lazy(() => import('@/modules/hr/payroll/pages/SalaryPage'))
+const PayslipPage = lazy(() => import('@/modules/hr/payroll/pages/PayslipPage'))
+const HrReportsPage = lazy(() => import('@/modules/hr/reports/HrReportsPage'))
+// HR › Self-service (My HR portal, own payslips, letters) and the HR inbox of employee requests.
+const MyHrPage = lazy(() => import('@/modules/hr/selfservice/pages/MyHrPage'))
+const MyPayslipPage = lazy(() => import('@/modules/hr/selfservice/pages/MyPayslipPage'))
+const LetterPage = lazy(() => import('@/modules/hr/selfservice/pages/LetterPage'))
+const HrRequestsPage = lazy(() => import('@/modules/hr/selfservice/pages/HrRequestsPage'))
 const SpeakerDetailPage = lazy(() => import('@/modules/events/pages/SpeakerDetailPage'))
 const VenuesPage = lazy(() => import('@/modules/events/pages/VenuesPage'))
 const VenueDetailPage = lazy(() => import('@/modules/events/pages/VenueDetailPage'))
@@ -105,6 +128,11 @@ export function AppRouter() {
   const servicesGuard = (page: ReactNode) => <RequirePermission module="services">{page}</RequirePermission>
   const deptGuard = (page: ReactNode) => <RequirePermission module="departments">{page}</RequirePermission>
   const tasksGuard = (page: ReactNode) => <RequirePermission module="tasks">{page}</RequirePermission>
+  const hrPeopleGuard = (page: ReactNode) => (
+    <RequirePermission module="hr">
+      <Suspense fallback={<GateSkeleton />}>{page}</Suspense>
+    </RequirePermission>
+  )
   const marketing = (page: ReactNode) => (
     <RequirePermission module="marketing">
       <Suspense fallback={<GateSkeleton />}>{page}</Suspense>
@@ -292,6 +320,125 @@ export function AppRouter() {
         <Route path={PATHS.departments} element={deptGuard(<DepartmentsPage />)} />
         <Route path={PATHS.orgChart} element={deptGuard(<OrgChartPage />)} />
         <Route path={PATHS.departmentDetail} element={deptGuard(<DepartmentDetailPage />)} />
+        {/* HR › Employees, Employee contracts, Company assets: plan module + hr column (full / team / own). */}
+        <Route path={PATHS.hrEmployees} element={hrPeopleGuard(<EmployeesPage />)} />
+        <Route path={PATHS.hrEmployeeDetail} element={hrPeopleGuard(<EmployeeDetailPage />)} />
+        {/* HR › Onboarding & offboarding: plan-gated only (My tasks is the assignee inbox of every role); the API scopes the rest. */}
+        <Route path={PATHS.hrJourneys} element={<ModuleGate module="hr"><Suspense fallback={<GateSkeleton />}><JourneysPage /></Suspense></ModuleGate>} />
+        <Route path={PATHS.hrJourneyDetail} element={hrPeopleGuard(<JourneyDetailPage />)} />
+        <Route path={PATHS.hrContracts} element={hrPeopleGuard(<HrContractsPage />)} />
+        <Route path={PATHS.hrAssets} element={hrPeopleGuard(<HrAssetsPage />)} />
+        {/* HR › Salary Management: plan module + hr column (full runs payroll; team / own see their own payslips). */}
+        <Route path={PATHS.hrSalary} element={hrPeopleGuard(<SalaryPage />)} />
+        <Route path={PATHS.hrPayslip} element={hrPeopleGuard(<PayslipPage />)} />
+        {/* HR › Attendance, Leave: every employee clocks in / requests leave for themselves (even with hr hidden), so plan-gated only. */}
+        <Route
+          path={PATHS.hrAttendance}
+          element={
+            <ModuleGate module="hr">
+              <Suspense fallback={<GateSkeleton />}>
+                <AttendancePage />
+              </Suspense>
+            </ModuleGate>
+          }
+        />
+        <Route
+          path={PATHS.hrLeave}
+          element={
+            <ModuleGate module="hr">
+              <Suspense fallback={<GateSkeleton />}>
+                <LeavePage />
+              </Suspense>
+            </ModuleGate>
+          }
+        />
+        {/* HR › Recruitment, Training: plan module + hr column (full / team / own; the API scopes the data). */}
+        <Route
+          path={PATHS.hrRecruitment}
+          element={
+            <RequirePermission module="hr">
+              <Suspense fallback={<GateSkeleton />}>
+                <RecruitmentPage />
+              </Suspense>
+            </RequirePermission>
+          }
+        />
+        <Route
+          path={PATHS.hrTraining}
+          element={
+            <RequirePermission module="hr">
+              <Suspense fallback={<GateSkeleton />}>
+                <TrainingPage />
+              </Suspense>
+            </RequirePermission>
+          }
+        />
+        {/* HR › Performance: every employee does their own self-review and sees their shared results (even with hr hidden), and direct managers review their reports, so plan-gated only; the API scopes the rows. */}
+        <Route
+          path={PATHS.hrPerformance}
+          element={
+            <ModuleGate module="hr">
+              <Suspense fallback={<GateSkeleton />}>
+                <PerformancePage />
+              </Suspense>
+            </ModuleGate>
+          }
+        />
+
+        {/* HR › Reports: plan module + hr column full / team (an employee's own scope has no reports). */}
+        <Route
+          path={PATHS.hrReports}
+          element={
+            <RequirePermission module="hr" scopes={['full', 'team']}>
+              <Suspense fallback={<GateSkeleton />}>
+                <HrReportsPage />
+              </Suspense>
+            </RequirePermission>
+          }
+        />
+
+        {/* HR › My HR (portal, own payslips, letters): every employee, even with hr hidden, so plan-gated only (the API scopes the data). */}
+        <Route
+          path={PATHS.hrMe}
+          element={
+            <ModuleGate module="hr">
+              <Suspense fallback={<GateSkeleton />}>
+                <MyHrPage />
+              </Suspense>
+            </ModuleGate>
+          }
+        />
+        <Route
+          path={PATHS.hrMyPayslip}
+          element={
+            <ModuleGate module="hr">
+              <Suspense fallback={<GateSkeleton />}>
+                <MyPayslipPage />
+              </Suspense>
+            </ModuleGate>
+          }
+        />
+        <Route
+          path={PATHS.hrLetter}
+          element={
+            <ModuleGate module="hr">
+              <Suspense fallback={<GateSkeleton />}>
+                <LetterPage />
+              </Suspense>
+            </ModuleGate>
+          }
+        />
+        {/* HR › Employee requests (profile changes, letters, templates, verify): HR full only. */}
+        <Route
+          path={PATHS.hrRequests}
+          element={
+            <RequirePermission module="hr" scopes={['full']}>
+              <Suspense fallback={<GateSkeleton />}>
+                <HrRequestsPage />
+              </Suspense>
+            </RequirePermission>
+          }
+        />
 
         {/* Spec screens not built yet: a placeholder that explains what's coming. */}
         <Route path="*" element={<PlannedPage />} />
@@ -320,9 +467,9 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
  * Route-level guard (billing/gating.ts › routeDecision): modules outside the plan render the upgrade
  * page; roles without view access to the module go to the dashboard.
  */
-export function RequirePermission({ module, children }: { module: ModuleKey; children: ReactNode }) {
+export function RequirePermission({ module, scopes, children }: { module: ModuleKey; scopes?: readonly Scope[]; children: ReactNode }) {
   const ctx = useGateContext()
-  const decision = routeDecision({ module }, ctx)
+  const decision = routeDecision({ module, scopes }, ctx)
   if (decision === 'loading') return <GateSkeleton />
   if (decision === 'upgrade') return <ModuleNotIncluded module={module} />
   if (decision === 'forbidden') return <Navigate to={PATHS.dashboard} replace />

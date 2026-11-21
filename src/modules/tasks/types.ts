@@ -300,7 +300,7 @@ export interface StoredNotification {
    * `marketing-overdue` / `marketing`: content calendar, design requests and brand assets
    * (services/creativeReminders.ts and the creative services).
    */
-  type: 'won' | 'assignment' | 'mention' | 'task-overdue' | 'task-due' | 'billing' | 'usage' | 'marketing-due' | 'marketing-overdue' | 'marketing' | 'event-follow-up'
+  type: 'won' | 'assignment' | 'mention' | 'task-overdue' | 'task-due' | 'billing' | 'usage' | 'marketing-due' | 'marketing-overdue' | 'marketing' | 'event-follow-up' | 'hr' | 'hr-people' | 'hr-payroll' | 'hr-journey' | 'hr-requests'
   title: string
   body: string
   link: string

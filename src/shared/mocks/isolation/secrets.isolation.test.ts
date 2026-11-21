@@ -19,6 +19,10 @@ import {
   userToken,
 } from './harness'
 import { ENDPOINTS, fill, isCompany, keyOf } from './endpoints'
+import { hrSensitiveIn } from './harness'
+import { withHr } from './hrTalentEndpoints'
+import { hrProfiles } from '@/shared/mocks/data/hrPeople'
+import { hrPayrollProfiles } from '@/shared/mocks/data/hrPayroll'
 
 /**
  * §8 Secrets guard. The harness's api() runs `secretsIn` on EVERY response of the whole suite (all
@@ -167,4 +171,36 @@ describe('§8 Every response recorded by this file passed the guard', () => {
     for (const r of recorded) expect(secretsIn(r.body, `${r.method} ${r.path}`), `${r.method} ${r.path}`).toEqual([])
     for (const r of recorded) expect(r.text.includes(DEMO_PASSWORD), `${r.method} ${r.path}`).toBe(false)
   })
+})
+
+describe('§8 HR identifiers (IBAN, WPS person id, national id / iqama) are served masked', () => {
+  it('the guard flags a full stored IBAN / person id outside the explicit reveal / bank-file endpoints', () => {
+    const [iban] = hrProfiles.filter((p) => p.iban).map((p) => p.iban)
+    const pid = hrPayrollProfiles.find((p) => p.personId)!.personId
+    expect(hrSensitiveIn(JSON.stringify({ iban }), 'GET /hr/employees/EMP-u11')).toHaveLength(1)
+    expect(hrSensitiveIn(JSON.stringify({ note: `id ${pid}` }), 'GET /hr/payroll/payslips')).toHaveLength(1)
+    expect(hrSensitiveIn(JSON.stringify({ iban_masked: `•••• ${iban.slice(-4)}` }), 'GET /hr/employees/EMP-u11')).toEqual([])
+    expect(hrSensitiveIn(JSON.stringify({ value: iban }), 'POST /hr/employees/EMP-u11/reveal')).toEqual([])
+    expect(hrSensitiveIn(JSON.stringify({ person_id: pid }), 'POST /hr/payroll/profiles/EMP-u11/reveal')).toEqual([])
+    expect(hrSensitiveIn(JSON.stringify({ content: `EDR,${pid}` }), 'POST /hr/payroll/runs/PR-1/bank-file')).toEqual([])
+    expect(hrSensitiveIn(JSON.stringify({ content: `EDR,${pid}` }), 'GET /hr/payroll/runs/PR-1')).toHaveLength(1)
+  })
+
+  it.each(COMPANIES)('%s: every HR GET, for every role, answers without a full IBAN or person id (the guard runs on each)', async (co) => {
+    withHr(co)
+    const hrGets = ENDPOINTS.filter((e) => e.method === 'GET' && e.path.startsWith('/hr/') && isCompany(e))
+    expect(hrGets.some((e) => e.path.startsWith('/hr/payroll/'))).toBe(true)
+    const active = users.filter((x) => x.companyId === co && x.active !== false)
+    const perRole = active.filter((u, i) => active.findIndex((x) => x.role === u.role) === i)
+    let checked = 0
+    for (const u of perRole) {
+      for (const e of hrGets) {
+        const s = (await (e as { sample: (c: typeof co) => unknown }).sample(co)) as { params?: Record<string, string>; query?: Record<string, string> }
+        const res = await api(userToken(u.id), 'GET', fill(e.path, s.params, s.query))
+        expect(res.status, `${u.role} ${keyOf(e.method, e.path)}`).toBeLessThan(500)
+        checked++
+      }
+    }
+    expect(checked).toBeGreaterThan(20)
+  }, 60_000)
 })

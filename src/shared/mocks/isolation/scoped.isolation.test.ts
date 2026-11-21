@@ -12,6 +12,15 @@ import { events } from '@/shared/mocks/data/events'
 import { contracts } from '@/shared/mocks/data/contracts'
 import { tasks, projects } from '@/shared/mocks/data/tasks'
 import { restoreSnapshot, takeSnapshot } from '@/shared/mocks/persist/registry'
+import { hrApplications, hrCandidates, hrCourses, hrOpenings, hrSessions } from '@/shared/mocks/data/hrTalent'
+import { empIdForUser } from '@/shared/mocks/data/hrEmployees'
+import { hrJourneys, hrJourneyTemplates } from '@/shared/mocks/data/hrJourney'
+import { hrLetterTypes } from '@/shared/mocks/data/hrSelfService'
+import { hrPerfCycles, hrPerfReviews, hrPerfTemplates } from '@/shared/mocks/data/hrPerformance'
+import { withHr } from './hrTalentEndpoints'
+import { companyById } from '@/shared/mocks/data/tenancy'
+import { todayIsoIn } from '@/shared/lib/companyDay'
+import { addMonths as addMonthsYm } from '@/modules/hr/payroll/calc'
 import {
   ADMIN,
   APEX,
@@ -143,6 +152,23 @@ interface Ref {
   id: (co: Co) => string
 }
 
+/** HR refs: the path turns HR on for the caller's company first (Crest's plan has no HR). */
+const hrPath = (path: string) => (co: Co) => {
+  withHr(co)
+  return path
+}
+const hrOpen = (co: Co) => one(hrOpenings, co, (o) => o.status === 'open')
+/** The month after the company's current one (payroll adjustments / loans can't target a paid month). */
+const payNext = (co: Co) => addMonthsYm(todayIsoIn(companyById(co)!.regional.timezone).slice(0, 7), 1)
+/** Performance refs: the check-in template (goals off), a valid ad-hoc cycle body, and the review of the top manager (no manager: the admin, HR full, reviews it). */
+const perfCheckin = (co: Co) => one(hrPerfTemplates, co, (t) => !t.goalsEnabled && t.selfReview && !t.forProbation).id
+const perfCycle = (co: Co, extra: Record<string, unknown>) => ({
+  name: 'Ref cycle', type: 'ad_hoc', template_id: perfCheckin(co), period_start: day(-30), period_end: day(0),
+  deadlines: { self_review: day(5), manager_review: day(10), calibration: day(15) }, ...extra,
+})
+const perfTopReview = (co: Co) => one(hrPerfReviews, co, (r) => r.employeeId === empIdForUser(co === APEX ? 'u2' : 'u102') && r.cycleId === one(hrPerfCycles, co, (c) => c.phase === 'self_review').id).id
+const hrApp = (co: Co) => one(hrApplications, co, (a) => a.stage === 'screening').id
+
 const REFS: Ref[] = [
   { name: 'task owner', method: 'POST', path: () => '/tasks', id: (co) => one(users, co, (u) => u.role === 'Sales Agent').id, body: (_co, id) => ({ title: 'Ref', owner_id: id }) },
   { name: 'task follower', method: 'POST', path: () => '/tasks', id: (co) => one(users, co, (u) => u.role === 'Sales Agent').id, body: (_co, id) => ({ title: 'Ref', follower_ids: [id] }) },
@@ -185,6 +211,40 @@ const REFS: Ref[] = [
   { name: 'ad campaign mapping', method: 'PATCH', path: (co) => `/marketing/ads/campaigns/${one(adCampaigns, co).id}`, id: (co) => one(campaigns, co).id, body: (_co, id) => ({ campaign_id: id }) },
   { name: 'ad account connect', method: 'POST', path: () => '/marketing/ads/connections', id: (co) => accountsFor(co, 'tiktok')[2].accountId, body: (_co, id) => ({ provider: 'tiktok', account_id: id, consent: true }) },
   { name: 'audit user filter', method: 'GET', path: () => '/audit-log', id: (co) => ADMIN[co], query: (id) => `?user_id=${id}` },
+  /* HR › recruitment, training (Crest gets HR through a module override; hrOpen(co) turns it on). */
+  { name: 'hr opening department', method: 'POST', path: hrPath('/hr/recruitment/openings'), id: (co) => hrOpen(co).departmentId, body: (co, id) => ({ title: 'Ref role', department_id: id, hiring_manager_id: ADMIN[co], headcount: 1 }) },
+  { name: 'hr opening hiring manager', method: 'POST', path: hrPath('/hr/recruitment/openings'), id: (co) => ADMIN[co], body: (co, id) => ({ title: 'Ref role', department_id: hrOpen(co).departmentId, hiring_manager_id: id, headcount: 1 }) },
+  { name: 'hr candidate opening', method: 'POST', path: hrPath('/hr/recruitment/candidates'), id: (co) => hrOpen(co).id, body: (co, id) => ({ full_name: 'Ref Candidate', email: `ref-${co}@candidates.test`, opening_id: id }) },
+  { name: 'hr application candidate', method: 'POST', path: hrPath('/hr/recruitment/applications'), id: (co) => one(hrCandidates, co).id, body: (co, id) => ({ candidate_id: id, opening_id: hrOpen(co).id }) },
+  { name: 'hr application opening', method: 'POST', path: hrPath('/hr/recruitment/applications'), id: (co) => hrOpen(co).id, body: (co, id) => ({ candidate_id: one(hrCandidates, co).id, opening_id: id }) },
+  { name: 'hr interviewers', method: 'POST', path: (co) => hrPath(`/hr/recruitment/applications/${hrApp(co)}/interviews`)(co), id: (co) => ADMIN[co], body: (_co, id) => ({ date: day(5), time: '10:00', type: 'video', interviewer_ids: [id] }) },
+  { name: 'hr enrollment employee', method: 'POST', path: (co) => hrPath(`/hr/training/sessions/${one(hrSessions, co, (s) => s.status === 'scheduled').id}/enrollments`)(co), id: (co) => empIdForUser(ADMIN[co]), body: (_co, id) => ({ employee_ids: [id] }) },
+  // HR › Salary Management (handlers/hrPayroll.ts): employee ids in bodies and filters.
+  { name: 'payroll adjustment employee', method: 'POST', path: hrPath('/hr/payroll/adjustments'), id: (co) => empIdForUser(ADMIN[co]), body: (co, id) => ({ employee_id: id, kind: 'bonus', label: 'Ref bonus', amount: 10, month: payNext(co) }) },
+  { name: 'payroll loan employee', method: 'POST', path: hrPath('/hr/payroll/loans'), id: (co) => empIdForUser(ADMIN[co]), body: (co, id) => ({ employee_id: id, principal: 100, installment_amount: 50, start_month: payNext(co) }) },
+  { name: 'payroll settlement preview employee', method: 'POST', path: hrPath('/hr/payroll/settlements/preview'), id: (co) => empIdForUser(ADMIN[co]), body: (_co, id) => ({ employee_id: id, reason: 'termination', exit_date: day(0) }) },
+  { name: 'payroll settlement employee', method: 'POST', path: hrPath('/hr/payroll/settlements'), id: (co) => empIdForUser(ADMIN[co]), body: (_co, id) => ({ employee_id: id, reason: 'termination', exit_date: day(0) }) },
+  { name: 'payroll adjustments filter', method: 'GET', path: hrPath('/hr/payroll/adjustments'), query: (id) => `?employee_id=${id}`, id: (co) => empIdForUser(ADMIN[co]) },
+  { name: 'payroll payslips filter', method: 'GET', path: hrPath('/hr/payroll/payslips'), query: (id) => `?employee_id=${id}`, id: (co) => empIdForUser(ADMIN[co]) },
+  { name: 'hr report department filter', method: 'GET', path: hrPath('/hr/reports/headcount'), query: (id) => `?department_id=${id}`, id: (co) => one(departments, co, (d) => d.active).id },
+  { name: 'hr report export department filter', method: 'GET', path: hrPath('/hr/reports/attendance/export'), query: (id) => `?department_id=${id}`, id: (co) => one(departments, co, (d) => d.active).id },
+  // HR › Self-service / letters (handlers/hrSelfService.ts): HR files a letter for an employee; the type; the list filter.
+  { name: 'hr letter request employee', method: 'POST', path: hrPath('/hr/letters/requests'), id: (co) => empIdForUser(co === 'co_apex' ? 'u14' : 'u107'), body: (co, id) => ({ letter_type_id: one(hrLetterTypes, co, (t) => t.code === 'employment_certificate').id, employee_id: id, addressee: 'Ref' }) },
+  { name: 'hr letter request type', method: 'POST', path: hrPath('/hr/letters/requests'), id: (co) => one(hrLetterTypes, co, (t) => t.code === 'employment_certificate').id, body: (co, id) => ({ letter_type_id: id, employee_id: empIdForUser(co === 'co_apex' ? 'u14' : 'u107'), addressee: 'Ref' }) },
+  { name: 'hr letter requests employee filter', method: 'GET', path: hrPath('/hr/letters/requests'), query: (id) => `?employee_id=${id}`, id: (co) => empIdForUser(co === 'co_apex' ? 'u14' : 'u107') },
+  // HR › Onboarding & offboarding (isolation/hrJourneyEndpoints.ts).
+  { name: 'journey employee', method: 'POST', path: hrPath('/hr/journeys'), id: (co) => empIdForUser(ADMIN[co]), body: (_co, id) => ({ employee_id: id, kind: 'onboarding' }) },
+  { name: 'journey template', method: 'POST', path: hrPath('/hr/journeys'), id: (co) => one(hrJourneyTemplates, co, (t) => t.kind === 'onboarding').id, body: (co, id) => ({ employee_id: empIdForUser(ADMIN[co]), kind: 'onboarding', template_id: id }) },
+  { name: 'journey employee filter', method: 'GET', path: hrPath('/hr/journeys'), query: (id) => `?employee_id=${id}`, id: (co) => one(hrJourneys, co).employeeId },
+  { name: 'journey template department', method: 'POST', path: hrPath('/hr/journeys/templates'), id: (co) => one(departments, co, (d) => d.active).id, body: (_co, id) => ({ kind: 'onboarding', name: 'Ref template', department_id: id, items: [{ title: 'Ref step', owner_role: 'hr', due_offset_days: 0 }] }) },
+  { name: 'journey template owner user', method: 'POST', path: hrPath('/hr/journeys/templates'), id: (co) => ADMIN[co], body: (_co, id) => ({ kind: 'onboarding', name: 'Ref template', items: [{ title: 'Ref step', owner_role: 'user', owner_user_id: id, due_offset_days: 0 }] }) },
+  // HR › Performance (isolation/hrPerformanceEndpoints.ts): cycle template / departments / participants, the reviews filter, recommended courses.
+  { name: 'performance cycle template', method: 'POST', path: hrPath('/hr/performance/cycles'), id: (co) => perfCheckin(co), body: (co, id) => perfCycle(co, { template_id: id }) },
+  { name: 'performance cycle department', method: 'POST', path: hrPath('/hr/performance/cycles'), id: (co) => one(departments, co, (d) => d.active).id, body: (co, id) => perfCycle(co, { department_ids: [id] }) },
+  { name: 'performance cycle participant', method: 'POST', path: hrPath('/hr/performance/cycles'), id: (co) => empIdForUser(ADMIN[co]), body: (co, id) => perfCycle(co, { employee_ids: [id] }) },
+  { name: 'performance reviews cycle filter', method: 'GET', path: hrPath('/hr/performance/reviews'), query: (id) => `?cycle_id=${id}`, id: (co) => one(hrPerfCycles, co, (c) => c.phase === 'self_review').id },
+  { name: 'performance recommended course', method: 'PUT', path: (co) => hrPath(`/hr/performance/reviews/${perfTopReview(co)}/manager`)(co), id: (co) => one(hrCourses, co).id, body: (_co, id) => ({ recommended_course_ids: [id], submit: false }) },
+  { name: 'journey item assignee', method: 'POST', path: (co) => hrPath(`/hr/journeys/${one(hrJourneys, co, (j) => j.status === 'active').id}/items`)(co), id: (co) => ADMIN[co], body: (_co, id) => ({ title: 'Ref item', owner_role: 'user', assignee_user_id: id }) },
 ]
 
 describe('Ids of the other company in a body or query behave like ids that don’t exist', () => {

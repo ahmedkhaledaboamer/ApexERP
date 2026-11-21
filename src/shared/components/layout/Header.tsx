@@ -12,11 +12,16 @@ import {
   Sun,
   UserPlus,
   CircleUser,
+  IdCard,
   FileText,
   CheckSquare,
   Building2,
   Palette,
+  Clock,
+  Plane,
 } from 'lucide-react'
+import { planIncludes } from '@/modules/billing/gating'
+import { useGateContext } from '@/modules/billing/hooks'
 import type { Role } from '@/shared/types'
 import { PATHS } from '@/app/paths'
 import { MARKETING_PATHS } from '@/modules/marketing/paths'
@@ -204,6 +209,7 @@ function UserMenu() {
   const navigate = useNavigate()
   const user = useCurrentUser()
   const toast = useToast()
+  const hr = planIncludes(useGateContext().entitlements, 'hr')
 
   const roleMutation = useMutation({
     mutationFn: (role: Role) => switchRole(role),
@@ -256,6 +262,38 @@ function UserMenu() {
           >
             My design requests
           </MenuItem>
+          {/* Self-service for every employee, whatever their hr scope (plan module `hr` only). */}
+          {hr && (
+            <>
+              <MenuItem
+                icon={<Clock />}
+                onSelect={() => {
+                  close()
+                  navigate(`${PATHS.hrAttendance}?tab=me`)
+                }}
+              >
+                Clock in / out
+              </MenuItem>
+              <MenuItem
+                icon={<Plane />}
+                onSelect={() => {
+                  close()
+                  navigate(`${PATHS.hrLeave}?tab=me&request=1`)
+                }}
+              >
+                Request leave
+              </MenuItem>
+              <MenuItem
+                icon={<IdCard />}
+                onSelect={() => {
+                  close()
+                  navigate(PATHS.hrMe)
+                }}
+              >
+                My HR
+              </MenuItem>
+            </>
+          )}
           <MenuSeparator />
           <MenuLabel>Demo: view as role</MenuLabel>
           <div className="max-h-56 overflow-y-auto">

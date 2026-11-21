@@ -16,6 +16,7 @@ import { isOverdue, myTasks, overdueTasks, subjectOf } from '@/shared/mocks/sele
 import { runTaskReminders } from '@/shared/mocks/services/taskReminders'
 import { runCreativeReminders } from '@/shared/mocks/services/creativeReminders'
 import { runBoothFollowUps } from '@/shared/mocks/services/eventSections'
+import { runTrainingReminders } from '@/shared/mocks/services/trainingReminders'
 import { delay, fail, ownerName } from '@/shared/mocks/server'
 import { visibleLeads } from '@/shared/mocks/services/leads'
 import { statusLabelOf } from '@/shared/mocks/lookupChecks'
@@ -210,6 +211,16 @@ const STORED_TYPE: Record<StoredNotification['type'], AlertType> = {
   marketing: 'marketing',
   // Overdue booth follow-up (services/eventSections.ts runBoothFollowUps), once per capture.
   'event-follow-up': 'follow-up',
+  // HR approvals and decisions (leave requests, attendance corrections: services/leave.ts, services/attendance.ts).
+  hr: 'hr',
+  // Document expiry, probation / contract end, asset warranty (services/hrPeopleAlerts.ts), once per record and date.
+  'hr-people': 'hr',
+  // Payroll run awaiting approval (approvers), payslip available (the employee): services/hrPayroll.ts, once per run / line.
+  'hr-payroll': 'hr',
+  // Onboarding / offboarding: item assigned, due tomorrow, overdue (owner), journey completed (HR + manager): services/hrJourney.ts, once per item and threshold.
+  'hr-journey': 'hr',
+  // Self-service: letter / profile change submitted (HR full), letter issued / rejected and profile change decided (the employee): services/hrLetters.ts, hrSelfService.ts, once per request and event.
+  'hr-requests': 'hr',
 }
 const STORED_SEVERITY: Record<StoredNotification['type'], AlertSeverity> = {
   won: 'info',
@@ -223,6 +234,11 @@ const STORED_SEVERITY: Record<StoredNotification['type'], AlertSeverity> = {
   'marketing-overdue': 'danger',
   marketing: 'info',
   'event-follow-up': 'warning',
+  hr: 'info',
+  'hr-people': 'warning',
+  'hr-payroll': 'info',
+  'hr-journey': 'info',
+  'hr-requests': 'info',
 }
 
 function toAlert(n: StoredNotification): Alert {
@@ -251,6 +267,7 @@ export function alertsFor(user: User, now: Date = clockNow()): Alert[] {
   runTaskReminders(tenantOf(user), now)
   runCreativeReminders(tenantOf(user), now)
   runBoothFollowUps(tenantOf(user), now)
+  runTrainingReminders(tenantOf(user), now)
   return [...salesAlerts(user, now), ...taskAlerts(user, now), ...storedFor(user).map(toAlert)].sort((a, b) => b.at.localeCompare(a.at))
 }
 

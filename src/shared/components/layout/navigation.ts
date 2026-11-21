@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  Banknote,
   BookUser,
   ChartPie,
   ScanLine,
@@ -19,6 +20,8 @@ import {
   FileSpreadsheet,
   FileText,
   FolderKanban,
+  GraduationCap,
+  Laptop,
   History,
   KanbanSquare,
   LayoutDashboard,
@@ -47,9 +50,12 @@ import {
   WandSparkles,
   type LucideIcon,
   Handshake,
+  CircleUser,
+  Inbox,
   Luggage,
+  ListChecks,
 } from 'lucide-react'
-import type { ModuleKey } from '@/shared/types'
+import type { ModuleKey, Scope } from '@/shared/types'
 import type { PlanModule } from '@/modules/billing/types'
 import { PATHS } from '@/app/paths'
 
@@ -59,6 +65,8 @@ export interface NavItem {
   to: string
   /** Hidden when the role has no view access to this module. */
   module?: ModuleKey
+  /** Only these scopes of `module` see the item (default: any scope that can view). */
+  scopes?: readonly Scope[]
   /**
    * Plan module that must be in the subscription (defaults to `module`). Items whose plan module
    * isn't included are shown locked and their route renders the upgrade page (billing/gating.ts).
@@ -399,25 +407,130 @@ export const NAV_SECTIONS: NavSection[] = [
   },
   {
     id: 'hr',
-    label: 'HR',
+    label: 'HR & Admin',
     dot: 'bg-danger-500',
     items: [
+      // My HR first (self-service of the signed-in employee). Roles with hr hidden reach it from the user menu.
+      {
+        label: 'My HR',
+        icon: CircleUser,
+        to: PATHS.hrMe,
+        module: 'hr',
+        ready: true,
+        phase: 3,
+        description: 'Your own profile, documents, contract, leave, attendance, payslips, assets, training and HR letters.',
+      },
       {
         label: 'Employees',
         icon: Users,
-        to: '/hr/employees',
+        to: PATHS.hrEmployees,
         module: 'hr',
+        ready: true,
         phase: 2,
         description: 'Employee profiles and documents, with alerts 60 days before residency or passport expiry.',
       },
-      { label: 'Attendance', icon: Clock, to: '/hr/attendance', module: 'hr', phase: 2, description: 'Daily attendance records.' },
+      {
+        label: 'Onboarding & offboarding',
+        icon: ListChecks,
+        to: PATHS.hrJourneys,
+        module: 'hr',
+        ready: true,
+        phase: 3,
+        description: 'Checklists for joiners and leavers from templates: who does what by when, progress, overdue items, My tasks.',
+      },
+      {
+        label: 'Recruitment',
+        icon: UserPlus,
+        to: PATHS.hrRecruitment,
+        module: 'hr',
+        ready: true,
+        phase: 2,
+        description: 'Job openings with approval, candidates, a pipeline from applied to hired, interview scorecards and offers.',
+      },
+      {
+        label: 'Attendance',
+        icon: Clock,
+        to: PATHS.hrAttendance,
+        module: 'hr',
+        ready: true,
+        phase: 2,
+        description: 'Clock in / out, the today board, monthly sheets, shifts, corrections and punch imports, in the company timezone.',
+      },
       {
         label: 'Leave',
         icon: Plane,
-        to: '/hr/leave',
+        to: PATHS.hrLeave,
         module: 'hr',
+        ready: true,
         phase: 2,
-        description: 'Leave types, balances and approvals: department head first, then HR.',
+        description: 'Leave types, balances and approvals: department head first, then HR. Team calendar and public holidays.',
+      },
+      // Employee Contracts and Salary Management go above Training; Company Assets and HR Reports below.
+      {
+        label: 'Employee Contracts',
+        icon: FileSignature,
+        to: PATHS.hrContracts,
+        module: 'hr',
+        ready: true,
+        phase: 2,
+        description: 'Contracts per employee with history: type, probation, notice, pay, renewals and end-date alerts.',
+      },
+      {
+        label: 'Salary Management',
+        icon: Banknote,
+        to: PATHS.hrSalary,
+        module: 'hr',
+        ready: true,
+        phase: 2,
+        description: 'Monthly payroll (WPS / Mudad files), payslips, adjustments, loans and end-of-service settlements.',
+      },
+      {
+        label: 'Training',
+        icon: GraduationCap,
+        to: PATHS.hrTraining,
+        module: 'hr',
+        ready: true,
+        phase: 2,
+        description: 'Courses, sessions and enrollments; certificates with expiry alerts; the mandatory training matrix and budget.',
+      },
+      {
+        label: 'Performance',
+        icon: Target,
+        to: PATHS.hrPerformance,
+        module: 'hr',
+        ready: true,
+        phase: 3,
+        description: 'Review cycles with goals, self and manager reviews, HR calibration and shared results; probation reviews before probation ends.',
+      },
+      {
+        label: 'Company Assets',
+        icon: Laptop,
+        to: PATHS.hrAssets,
+        module: 'hr',
+        ready: true,
+        phase: 2,
+        description: 'The asset register: laptops, phones, vehicles, cards; who holds what, hand-overs and returns, warranty alerts.',
+      },
+      {
+        label: 'Employee Requests',
+        icon: Inbox,
+        to: PATHS.hrRequests,
+        module: 'hr',
+        scopes: ['full'],
+        ready: true,
+        phase: 3,
+        description: 'Profile changes and HR letter requests from My HR in one queue; letter templates and verification codes.',
+      },
+      // Keep HR Reports the last HR item.
+      {
+        label: 'HR Reports',
+        icon: ChartPie,
+        to: PATHS.hrReports,
+        module: 'hr',
+        scopes: ['full', 'team'],
+        ready: true,
+        phase: 2,
+        description: 'Headcount, turnover, nationalisation, attendance, leave, expiries, assets, recruitment, training and committed payroll cost, with CSV exports.',
       },
     ],
   },

@@ -46,7 +46,8 @@ export const billingHandlers: HttpHandler[] = [
   }),
 
   // Stubs of modules that have no screens yet, so plan gating is real (403 module_not_in_plan).
-  ...['/hr/employees', '/finance/invoices', '/integrations'].map((path) =>
+  // (/hr/employees is real now: handlers/hrPeople.ts.)
+  ...['/finance/invoices', '/integrations'].map((path) =>
     http.get(`${API}${path}`, ({ request }) =>
       respondAs(billingMapper, () => {
         userFrom(request)

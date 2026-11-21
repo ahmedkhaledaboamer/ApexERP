@@ -16,6 +16,7 @@ export type AlertType =
   | 'billing'
   | 'usage'
   | 'marketing'
+  | 'hr'
 
 export type AlertSeverity = 'info' | 'warning' | 'danger'
 
@@ -52,7 +53,8 @@ export const ALERT_TYPE_LABEL: Record<AlertType, string> = {
   billing: 'Billing',
   usage: 'Plan usage',
   marketing: 'Marketing',
+  hr: 'HR',
 }
 
 /** Display order of the groups in the bell. */
-export const ALERT_TYPES: AlertType[] = ['billing', 'usage', 'mention', 'assignment', 'won', 'task-overdue', 'task', 'marketing', 'follow-up', 'no-contact', 'stalled', 'renewal']
+export const ALERT_TYPES: AlertType[] = ['billing', 'usage', 'mention', 'assignment', 'hr', 'won', 'task-overdue', 'task', 'marketing', 'follow-up', 'no-contact', 'stalled', 'renewal']

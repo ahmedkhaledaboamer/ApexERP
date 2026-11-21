@@ -191,3 +191,20 @@ describe('downgrade blocks and billing errors', () => {
     expect(toBillingEvent('validation', 'm', {})).toBeNull()
   })
 })
+
+describe('HR Reports: hr full and team only (scopes)', () => {
+  it('is the last HR item; Employee (own) and hidden roles never see it, HR Manager and Department Head do', () => {
+    const reports = item('HR Reports')
+    const hr = ALL_NAV_ITEMS.filter((i) => i.module === 'hr')
+    expect(hr[hr.length - 1]).toBe(reports)
+    const ctx = (role: 'HR Manager' | 'Department Head' | 'Employee' | 'Sales Agent') => ({ role, entitlements: enterprise })
+    expect(navItemAccess(reports, ctx('HR Manager'))).toBe('visible')
+    expect(navItemAccess(reports, ctx('Department Head'))).toBe('visible')
+    expect(navItemAccess(reports, ctx('Employee'))).toBe('hidden')
+    expect(navItemAccess(reports, ctx('Sales Agent'))).toBe('hidden')
+    expect(routeDecision({ module: 'hr', scopes: ['full', 'team'] }, ctx('Employee'))).toBe('forbidden')
+    expect(routeDecision({ module: 'hr', scopes: ['full', 'team'] }, ctx('Department Head'))).toBe('allow')
+    // Employees still see the self-service HR items.
+    expect(navItemAccess(item('Leave'), ctx('Employee'))).toBe('visible')
+  })
+})
