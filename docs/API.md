@@ -2954,3 +2954,302 @@ samples build a one-person cycle through the API). Ids in bodies / queries (`tem
 `src/shared/mocks/services/hrPerformance.test.ts`; browser: `e2e/hr-performance.spec.ts`. Persisted dev DB: `VERSION`
 24. Not built: a "Performance" tab in HR Reports (the distribution lives on the cycle view), 360° / peer feedback,
 reassigning a running review to another manager.
+
+## Finance
+
+Accounts & finance (plan module **`accounting`**: every `/finance/*` path answers `403 module_not_in_plan` without it;
+role access from the `accounting` column of `PERMISSION_MATRIX`: **full** Company Admin, Management, Accountant;
+**view** Sales Manager; everyone else **hidden** → `403`). Core contract: `src/modules/finance/types.ts` (accounts,
+journal entries, tax codes, invoices; ids `ACC-<code>` for template accounts, `JE-<n>` / `JV-<yyyy>-<nnnn>` for
+entries), stores `src/shared/mocks/data/finance.ts`, posting API `src/shared/mocks/services/ledger.ts` (`postJournal`,
+`reverseJournal`, `systemAccount`). Money: 2 decimals; journal lines are in the company's **base currency** (AED /
+SAR). Error bodies are `{ message, code, …details }`.
+
+### Ledger & settings
+
+Finance settings, exchange rates, the lock date, the chart of accounts, the journal (manual entries, reversals, opening
+balances), the trial balance, account ledgers and the finance overview. Services
+`src/shared/mocks/services/financeLedger.ts` (+ `financeRates.ts`), stores `fin.accounts`, `fin.journal`,
+`perTenant:fin.settings` (`src/shared/mocks/data/financeLedger.ts`; seed entries `data/financeLedgerSeed.ts`), pure
+rules `src/modules/finance/ledger/calc.ts`, wire `src/shared/api/financeLedgerMappers.ts` (plain snake_case at any
+depth). Screens: `/finance` (overview), `/finance/accounts` (`?account=` opens a ledger), `/finance/journal`
+(`?entry=`, `?new=1`, `?tab=trial-balance`), `/finance/settings`.
+
+**Who.** Reads (settings, accounts, ledgers, journal, entries, trial balance, overview, rate lookup): full and view.
+Writes and the dimension pickers: full only (`403 forbidden` otherwise). **Lock date**: Company Admin and Accountant only
+(Management → `403 lock_date_forbidden`), audit-logged. A foreign id in the path answers `404 Not found.` like a missing
+one; a foreign account / dimension id in a body answers the same `422` as a missing one.
+
+| Method | Path | Who | Body / query | Answer |
+|---|---|---|---|---|
+| GET | `/finance/settings` | view | — | `base_currency, country, fiscal_year_start_month (1–12), vat_registered, vat_number, vat_label (TRN · VAT number), legal_name_en, legal_name_ar, document_prefix (APX · CRS), payment_terms_days, invoice_notes, invoice_terms, default_revenue_account_id, default_bank_account_id, exchange_rates[{id, currency, rate, effective_date, created_at, created_by_name}], lock_date, lock_date_set_at, lock_date_set_by_name, can_move_lock_date, can_edit, updated_at` |
+| PATCH | `/finance/settings` | full | any editable field above | the settings. `422`: month 1–12, terms 0–365 days, `invalid_vat_number` (UAE TRN 15 digits starting 100; KSA 15 digits starting and ending with 3), VAT number required when registered, KSA + registered needs `legal_name_ar` (Arabic script), `invalid_account` (default revenue = active postable income account; bank = active postable asset account). Audited |
+| PUT | `/finance/settings/lock-date` | Company Admin, Accountant | `{ lock_date: yyyy-MM-dd or null, reason }` | the settings; not in the future (`422`); audit entity `finance_lock_date` |
+| GET | `/finance/exchange-rates/lookup` | view | `currency*, date` (default today) | `{ currency, date, base_currency, rate }` (`rate` null when none) |
+| POST | `/finance/exchange-rates` | full | `currency* (ISO 3 letters, not the base), rate* (> 0: 1 unit in base currency), effective_date*` | the settings. `409 duplicate_rate` (same currency and date) |
+| DELETE | `/finance/exchange-rates/:id` | full | — | the settings (posted documents keep their own rate) |
+| GET | `/finance/accounts` | view | `as_of`, `include_inactive` (default true) | tree order (parents first, children by code): every `Account` field + `debit, credit, balance` (natural side, base currency; headers roll up their descendants), `has_postings, depth` |
+| POST | `/finance/accounts` | full | `code* (3–10 digits, unique per company), name*, type*, subtype, parent_id (a header of the same type), is_header, description` | the row; id `ACC-N<n>` (unique across companies). `409 duplicate_code`, `422 invalid_parent` |
+| PATCH | `/finance/accounts/:id` | full | same + `active`, `system_role` (moves the role from its current holder; the account must be active, postable and of the role's type) | the row. `409 has_postings` (type change, becoming a header), `409 has_children`, `409 system_role` (deactivating a system account or clearing its role: give the role to another account first), `409 has_balance` (deactivating with a non-zero balance), `409 has_active_children`, `409 default_account` |
+| DELETE | `/finance/accounts/:id` | full | — | `{ id }`; never-posted accounts only: `409 has_postings` (deactivate instead), `system_role`, `has_children`, `default_account` |
+| POST | `/finance/accounts/import-template` | full | — | the chart: the country template (UAE / KSA, `chartTemplateFor`) and VAT codes, for an **empty** chart only (`409 chart_not_empty`) |
+| GET | `/finance/accounts/:id/ledger` | view | `from, to` | `account {id, code, name, type}, currency, from, to, opening_balance` (before `from`), `rows[{entry_id, number, date, memo, description, source_type, debit, credit, balance}]` (running natural-side balance), `totals, closing_balance`. A header lists its descendants' lines |
+| GET | `/finance/journal` | view | `from, to, source_type, account_id, q` (number, memo, line text, account code / name, source number) | rows, newest first: `id, number, date, memo, source_type, source_id, source_number, source_link, status (posted · reversed), reversal_of, reversed_by, total, line_count, account_names[], created_by, created_by_name, created_at` |
+| GET | `/finance/journal/dimensions` | full | — | `{ departments, projects, events, customers }`, each `[{id, name}]` of the company |
+| POST | `/finance/journal` | full | `date*, memo*, lines*[{account_id*, debit, credit, description, department_id, project_id, event_id, customer_id}]` (≥ 2 lines, one side per line, balanced) | the entry detail (`source_type: manual`). `422 unbalanced`, `invalid_line`, `invalid_account` (unknown / inactive / header / another company's), `invalid_dimension`; `423 period_locked`. Audited |
+| GET | `/finance/journal/:id` | view | — | row + `lines[]` (+ `account_code, account_name, department_name, project_name, event_name, customer_name`), `reversal_of_number, reversed_by_number, can_reverse, reverse_blocked_reason` |
+| POST | `/finance/journal/:id/reverse` | full | `{ date (default today, not before the entry), memo }` | the **reversing** entry. Manual and opening-balance entries only (`409 source_document`: correct invoices / payments from their document), `409 already_reversed`, `409 is_reversal`, `423 period_locked` |
+| POST | `/finance/opening-balances` | full | `date*, memo, lines*[{account_id, debit, credit}]` | one entry with `source_type: opening_balance`; the difference goes to the `opening_balance_equity` account (which can't be entered itself) |
+| GET | `/finance/reports/trial-balance` | view | `as_of` (default today), `include_zero` | `as_of, currency, rows[{account_id, code, name, type, debit, credit}]` (postable accounts, the net on its side), `totals {debit, credit}, balanced` |
+| GET | `/finance/overview` | view | — | `currency, today, cash[{account_id, code, name, balance}]` (accounts under the cash / bank header + the cash roles), `cash_total, receivables {total, overdue, open_count, overdue_count}` (open invoices' `balance_due × exchange_rate`; overdue by `isOverdue` at the company's today), `revenue {this_month, last_month, month, previous_month}` (income accounts, credit − debit), `vat {output, input, payable}` (ledger balances of the VAT roles; payable = output − input, an estimate), `latest[]` (8 rows), `lock_date` |
+
+**Lock date.** `postJournal` refuses any entry dated **on or before** the company's lock date with
+`423 { code: 'period_locked', lock_date }` — for every finance section (invoices, payments, PDC, manual entries,
+reversals, opening balances), wired with `setPeriodGuard` when the ledger services load. Crest's seed has the 2025 books
+locked (`2025-12-31`).
+
+**Exchange rates** (for every section): `rateFor(companyId, currency, date)` in
+`src/shared/mocks/services/financeRates.ts` → 1 for the base currency, else the latest rate effective on or before
+`date`, else `null`; `requireRate(…)` throws `422 missing_exchange_rate`; `baseCurrencyOf(companyId)`.
+
+**Helpers for the other finance sections.** `financeSettingsOf(companyId)` (payment terms, notes, terms, prefix, default
+accounts) and `balancesByAccount(companyId, asOf, from)` (natural balances with roll-up, for statements) in
+`services/financeLedger.ts`; `companyDocPrefix(companyId)` in `data/financeLedger.ts`;
+`registerJournalSource(type, (companyId, id) => ({ number, link }))` (how a section's documents show in the journal;
+invoices resolve from `fin.invoices` by default; default links `/finance/invoices/:id`, `/finance/payments/:id`,
+`/hr/salary?run=`); the pure `sumByAccount`, `rollUp`, `trialBalance`, `accountLedger`, `naturalBalance` in
+`src/modules/finance/ledger/calc.ts` (reusable for P&L and the balance sheet in phase 3).
+
+**Seed** (both companies, through `postJournal`): opening balances on 1 January of the current year (the difference to
+opening balance equity) and manual entries in the last months. Apex (AED, accountant u8): rent, an audit-fee accrual
+reversed this month, depreciation, software with 5 % input VAT, a petty-cash top-up; exchange rates USD / EUR (two
+dates) / SAR; TRN set. Crest (SAR, admin u101): Zakat paid, fleet depreciation, warehouse rent with 15 % input VAT,
+bank charges; rates USD / AED / EUR; Arabic legal name; 2025 locked.
+
+**Tests.** Endpoints in `src/shared/mocks/isolation/financeLedgerEndpoints.ts` (both directions, spoofing; foreign
+account / dimension ids in bodies and the account filter in `REFS` of `scoped.isolation.test.ts`; seeded chart ids are
+shared by design, so item samples use a company-unique `ACC-N…` account); roles × both companies, plan gate and
+recomputed numbers in `src/app/isolation/financeLedger.isolation.test.ts`; rules in
+`src/modules/finance/ledger/calc.test.ts` and `src/shared/mocks/services/financeLedger.test.ts`; browser
+`e2e/finance-ledger.spec.ts`. Persisted dev DB: `VERSION` 27. Not built: P&L / balance sheet screens, foreign-currency
+manual entries (lines are base currency), bank accounts as records (IBAN), year-end close to retained earnings, a
+tax-code screen, attachments on entries.
+
+### Invoices
+
+Sales invoices (UAE tax invoices, KSA standard / simplified tax invoices). Services
+`src/shared/mocks/services/financeInvoices.ts` (endpoints, access), `financeInvoiceCore.ts` (lines, postings, issue /
+void / credit, ZATCA stamp, recurring tick), `financeInvoiceSources.ts` (quotation / contract / won-deal lines),
+`financeInvoiceSettings.ts` (reads Finance settings: VAT number, legal names EN / AR, prefix, terms, notes, default
+revenue account, exchange rates — with company-profile fallbacks); stores `fin.invoices` (contract store; rows carry the
+section fields below), `fin.creditNotes`, `fin.recurring`, `fin.zatcaChain` (`src/shared/mocks/data/financeInvoices.ts`,
+seed `data/financeInvoicesSeed.ts`); pure rules `src/modules/finance/invoices/calc.ts`, `zatca.ts`; wire
+`src/shared/api/financeInvoicesMappers.ts` (plain snake_case at any depth; `creditable` and `rates` are data-keyed maps).
+Screens: `/finance/invoices` (`?tab=invoices|credit-notes|recurring`, `?status=`, `?customer=`, `?overdue=1`,
+`?from=quotation|contract|won&id=` opens the source dialog prefilled, `?credit_note=`), `/finance/invoices/new`,
+`/finance/invoices/:id`, `/finance/invoices/:id/edit` (drafts). "Create invoice" on an accepted quotation, a contract (row
+menu; an accountant gets an invoice-only column) and a customer profile (won deal). Replaces the old billing stub of
+`GET /finance/invoices`.
+
+**Access.** `accounting` full (Company Admin, Management, Accountant): everything. view (Sales Manager): every GET of
+the company's invoices, credit notes, schedules, meta and sources; every write `403` (the detail's `can.*` flags are all
+false: no Issue / Edit / Void / Credit / Send / XML buttons). hidden: `403`. The ZATCA XML download is a POST (audited)
+and full only.
+
+| Method | Path | Body / query | Answer |
+|---|---|---|---|
+| GET | `/finance/invoices` | `status` (`draft · issued · partially_paid · paid · void · open · overdue`), `customer_id`, `from`, `to` (issue date; drafts by creation date), `overdue=true`, `q` (number / customer / milestone) | `InvoiceRow[]` (`overdue`, `days_overdue`, `base_total`, `base_balance_due` in base currency) |
+| POST | `/finance/invoices` | `customer_id`, `customer_vat_number?`, `currency?`, `exchange_rate?`, `issue_date?`, `due_date?`, `payment_terms_days?` (0–365), `lines[] {description, service_id?, quantity, unit_price, discount? (amount), tax_code_id?, revenue_account_id?}`, `notes?`, `terms?`, `project_id?`, `event_id?` | draft `InvoiceDetail` |
+| GET | `/finance/invoices/meta` | — | country, base currency, `zatca_enabled`, VAT number, terms, tax codes, income accounts, customers (+ last VAT no.), services, projects, events, default `rates`, `can_write` |
+| GET | `/finance/invoices/sources` | — | accepted quotations (`net_total`, `invoiced_pct`) and non-cancelled contracts (`invoiced_pct` for one-off) |
+| POST | `/finance/invoices/from-source` | one of `quotation_id`, `contract_id`, `lead_id` (won deal → its accepted quotation with something left, else its Won-flow contract); `percent?` (1–100, default: what is left), `milestone?` | draft `InvoiceDetail` (link kept: `quotation_id`, `contract_id`, `lead_id`, `billing_pct`, `milestone`) |
+| GET | `/finance/invoices/:id` | — | `InvoiceDetail`: lines, totals, base totals, tax summary, seller (settings), customer (VAT no., email), journal entry (+ void reversal), credit notes, `creditable` per line, send log, history, `zatca`, `title` / `title_ar`, `can` |
+| PATCH | `/finance/invoices/:id` | any POST field (drafts only) | `InvoiceDetail`; `409 not_draft` once issued |
+| DELETE | `/finance/invoices/:id` | — | `{ ok }` (drafts only; `409 not_draft`) |
+| POST | `/finance/invoices/:id/issue` | — | `InvoiceDetail`: number `<PREFIX>-INV-<yyyy>-<nnnn>` (frozen), issue date (default company today; no future date), due date (default issue + terms), kind, journal entry; KSA: the ZATCA stamp |
+| POST | `/finance/invoices/:id/void` | `reason` (≥ 3 chars) | `InvoiceDetail` (status `void`, journal reversed on the company's today); `409 has_settlements` with payments / credit notes, `409 is_draft`, `409 already_void` |
+| POST | `/finance/invoices/:id/send` | `to?` (default: the customer's decision-maker email), `message?` | `InvoiceDetail` with the send logged (`send_log[] {at, by_name, to, subject}`); simulated email; `409 not_issued` for drafts / void |
+| POST | `/finance/invoices/:id/zatca-xml` | — | `{ filename, mime_type, content }` UBL 2.1 XML (audited `security`); `409 zatca_not_applicable` outside KSA |
+
+**Rules.**
+- Math (`calc.ts`): gross = qty × unit price; discount is an amount (≤ gross); net = gross − discount; VAT = net × rate,
+  **rounded per line**; totals are sums; base = amount × `exchange_rate` rounded to 2 decimals.
+- Customer, project, event, service, tax code and revenue account must belong to the caller's company (`422
+  customer_not_found` / `project_not_found` / `event_not_found` / `service_not_found` / `invalid_tax_code` /
+  `invalid_account`, identical for a foreign and a missing id). Revenue account default: service revenue for catalog
+  lines, the Finance settings default revenue account for free text.
+- Currency: the base currency has rate 1; another currency takes `exchange_rate`, else Finance settings › Exchange rates
+  (latest on or before the issue date), else the published USD pegs; none → `422 rate_required`.
+- KSA kind: buyer VAT number set → `tax_invoice` (standard, B2B), empty → `simplified` (B2C); a KSA VAT number has 15
+  digits starting and ending with 3 (`422 invalid_vat_number`). UAE: always a tax invoice ("Tax Invoice", TRN of seller
+  and buyer; VAT also shown in AED for foreign-currency invoices).
+- Issue posts (base currency) **Dr Accounts receivable (total), Dr Sales discounts (line discounts), Cr revenue per line
+  account (qty × price), Cr VAT output (VAT)**; a currency rounding difference goes to the `rounding` account. The entry
+  is posted before the number is taken, so a refused post (`423 period_locked` from the lock date) leaves the draft
+  untouched with no number used. Drafts never post. Issued invoices are immutable: credit note or void.
+- From a quotation (must be `accepted`: `409 quotation_not_accepted`; the deal must be won: `409 no_customer`) or a
+  one-off contract: at most 100% in total over non-void invoices (drafts count) — `409 already_invoiced`, `422
+  exceeds_remaining`, `422 invalid_percent`. 100% at once copies the quotation lines; a partial share is one line of that
+  share of the quotation's net, and the invoice that reaches 100% takes the exact remainder. Monthly / annual contracts
+  bill one period per invoice (no cap).
+- Notifications (stored, once, bell group **Finance**, type `finance`): invoice voided → its creator (unless they voided
+  it themselves). Audit: create, update, delete, issue, void, send, XML download.
+- `paid` / `partially_paid`, `amount_paid` / `amount_credited` / `balance_due` change only through `applyToInvoice`
+  (`services/financeInvoiceBalance.ts`); overdue is derived (open, balance > 0, due before the company's today).
+
+### Credit notes
+
+| Method | Path | Body / query | Answer |
+|---|---|---|---|
+| GET | `/finance/credit-notes` | `invoice_id?` | `CreditNote[]` |
+| POST | `/finance/credit-notes` | `invoice_id`, `reason` (≥ 3), `date?` (default company today; not future, not before the invoice), `full: true` or `lines[] {invoice_line_id, amount}` (net, excl. VAT) | `CreditNote` (number `<PREFIX>-CN-<yyyy>-<nnnn>`) |
+| GET | `/finance/credit-notes/:id` | — | `CreditNote` |
+| POST | `/finance/credit-notes/:id/zatca-xml` | — | UBL XML (381, `BillingReference` to the invoice, reason in `InstructionNote`); KSA only |
+
+Only issued / partially paid / paid invoices (`409 not_issued`). Each line can be credited up to its net still
+creditable (`422 exceeds_line`, `422 nothing_to_credit`); VAT at the line's rate (a full remaining line credits its exact
+VAT). Posts **Dr revenue (credited net) per account, Dr VAT output, Cr Accounts receivable (applied), Cr Customer
+advances (excess)**. Applied = min(total, open balance) → `applyToInvoice(inv, { credited })`; the **excess** above the
+open balance is customer credit (`excess_amount`, account `customer_advances` 2300) for the Collections section to
+refund or apply. Journal entries of credit notes link to the invoice (`registerJournalSource('credit_note')`).
+
+### Recurring invoices
+
+| Method | Path | Body | Answer |
+|---|---|---|---|
+| GET | `/finance/recurring-invoices` | — | `RecurringSchedule[]` |
+| POST | `/finance/recurring-invoices` | `source_invoice_id` or `contract_id`; `frequency` (`monthly · quarterly · yearly`; contract default from its billing), `start_date` (default today), `end_date?`, `mode` (`draft` · `auto_issue`) | `RecurringSchedule` (`409 schedule_exists` for a source with a live schedule; the source invoice counts as period 1 when its issue date is the start) |
+| GET | `/finance/recurring-invoices/:id` | — | `RecurringSchedule` |
+| PATCH | `/finance/recurring-invoices/:id` | `frequency?`, `end_date?`, `next_date?`, `mode?`, `status?` (`active · paused · ended`) | `RecurringSchedule` (`409 schedule_ended`) |
+
+Generation rides on the lifecycle tick (`onLifecycleTick('finance.recurring-invoices')`: lazy on every request and
+`POST /dev/billing/advance`), only with the `accounting` module: every period whose date is on or before the **company's
+today (its timezone)** is generated once (`generated[]` and the next date moving on, so re-running is a no-op; missed
+periods are caught up). The invoice's issue date is the period date; `auto_issue` issues it (a refused post leaves a
+draft and `last_error`). Every accounting-full user gets one stored `finance` notification per generated invoice; a
+system audit entry is written.
+
+### ZATCA
+
+KSA companies (country `SA`: Crest) get the FATOORA phase-2 **data** on every issued invoice and credit note
+(`zatca`): `uuid`, `icv` (Invoice Counter Value: per company, +1 per document, never reused; a voided invoice keeps its
+ICV), `pih` (Previous Invoice Hash: the previous document's `invoice_hash`; the first is the spec's seed
+`NWZlY2ViNjZmZmM4NmYzOGQ5NTI3ODZjNmQ2OTZjNzljMmRiYzIzOWRkNGU5MWI0NjcyOWQ3M2EyN2ZiNTdlOQ==`), `invoice_hash` (base64
+SHA-256 over the UBL XML without the QR reference), `qr` (base64 of TLV: 1 seller name, 2 VAT number, 3 timestamp, 4
+total incl. VAT, 5 VAT total), `type_code` 388 / 381, `subtype` 0100000 standard / 0200000 simplified,
+`status: not_submitted`. The print shows the QR (`qrcode.react`, already a dependency) and bilingual Arabic + English
+labels ("فاتورة ضريبية" / "فاتورة ضريبية مبسطة", Arabic legal name from Finance settings). The XML carries ProfileID, ID,
+UUID, IssueDate / IssueTime, InvoiceTypeCode@name, document and tax currencies, the ICV / PIH / QR references, supplier
+(CRN, address, VAT) and customer, delivery date, payment means (+ the reason for credit notes), both TaxTotals with
+subtotals and exemption reasons, LegalMonetaryTotal and the lines.
+
+**Not done here (backend):** CSID onboarding, the XAdES signature and UBL extensions, C14N 1.1 canonicalisation, and
+clearance (B2B) / reporting (B2C) through the ZATCA API; the national address (building number, district, postal code)
+is a placeholder until Finance settings hold it. The invoice screen says so. **UAE:** e-invoicing (Peppol PINT AE via an
+accredited service provider) is a seam: the invoice data is kept; nothing is sent.
+
+**Isolation and tests.** Every endpoint is in `src/shared/mocks/isolation/financeInvoicesEndpoints.ts` (spread into
+`endpoints.ts`); ids in bodies / filters (customer, project, event, service, quotation, contract, lead, invoice, source
+invoice) are in `REFS` (`scoped.isolation.test.ts`); roles × both companies, plan gate, foreign ids and a spoofed company
+in `src/app/isolation/financeInvoices.isolation.test.ts`; rules in `src/shared/mocks/services/financeInvoices.test.ts`;
+browser `e2e/finance-invoices.spec.ts`. Persisted dev DB: `VERSION` 28.
+
+### Payments
+
+Accounts & finance › Collections (`src/modules/finance/collections/types.ts`; services
+`src/shared/mocks/services/financeCollections.ts`, `financeReceivables.ts`, `financeCollectionsCore.ts`; stores
+`data/financeCollections.ts`; wire names snake_case via `src/shared/api/financeCollectionsMappers.ts`). Reads: accounting
+**full** and **view** (Sales Manager); writes: **full** only (`403 forbidden` otherwise). Ids in bodies (customer,
+invoices, accounts) must be the caller's company's (`422`, same answer as a missing id). Every write posts through
+`postJournal` / `reverseJournal` (a date on or before the lock date → `423 period_locked`, nothing changes) and moves
+invoice balances only through `applyToInvoice`. Collections data is seeded lazily per company on its first collections
+call (`ensureCollectionsSeed`, from that company's issued invoices, dated after the lock date). Payment id `PAY-<n>`,
+receipt number `<PREFIX>-RCT-<yyyy>-<nnnn>`. Journal sources `payment`, `payment_refund`, `pdc` are registered with the
+ledger (number + link).
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/finance/payments?customer_id&invoice_id&method&status&from&to&q` | newest first |
+| POST | `/finance/payments` | `{customer_id, date (≤ today), method (bank_transfer · cash · cheque · card), amount, currency?, exchange_rate?, bank_charges?, deposit_account_id?, reference?, notes?, allocation_mode (auto · manual · none), allocations?: [{invoice_id, amount}]}` → the payment |
+| GET | `/finance/payments/:id` · `/finance/payments/:id/receipt` | receipt = payment + company branding (name, logo, address, tax no.) + customer |
+| POST | `/finance/payments/:id/apply-credit` | `{date?, allocations?}` (empty = oldest due first); `409 no_credit` / `nothing_to_apply` |
+| POST | `/finance/payments/:id/refund` | `{amount, date?, account_id?, reference?}`: from the credit first, then back off the newest allocations (those invoices re-open); `422 over_refund` |
+| POST | `/finance/payments/:id/void` | `{reason}` required: reverses every entry of the payment and undoes its allocations; `409 payment_void`, `409 pdc_receipt` (a cleared cheque's receipt: refund instead) |
+| POST | `/finance/credit-note-credits/:id/apply` · `/refund` | a credit note's `excess_amount` (customer credit kept in 2300 by the invoices section): same bodies as for a payment |
+| GET | `/finance/deposit-accounts` | cash / bank accounts (children of 1100 + cash-type system roles) |
+| GET | `/finance/customers/:id/open-items` | open invoices (`balance_due`, `pdc_held`, `available`) and credits (`kind` payment · credit_note) |
+
+**Allocation rules.** A payment settles invoices of the same customer **in the same currency** (`422
+currency_mismatch`); each allocation ≤ the invoice's `available` = balance − cheques held (`422 over_allocated`); the
+sum ≤ the amount; the rest is **customer credit** (customer_advances 2300). `auto` = oldest due date first.
+**Postings** (base currency; r = the payment's rate, rᵢ = each invoice's own rate): Dr deposit (amount − bank
+charges)·r · Dr Bank charges (6800) charges·r · Cr AR Σ allocᵢ·rᵢ · Cr customer advances credit·r · the difference to
+**fx_gain_loss** (credit = gain, debit = loss). Rates: the ledger's `rateFor` (Finance settings), a small fallback
+table when none is effective, or the rate typed on the payment. Default deposit account: bank (transfer, card), cash
+(cash), undeposited funds (cheque), payment gateway clearing (payment link). Each write is audited and logged on the
+customer timeline (activities of the customer's Won lead) and on the invoice's `history`.
+
+### PDC
+
+Post-dated cheques. **Rule: a PDC secures invoices but does not pay them**: the invoice stays open (shown as secured,
+`pdc_held`) until the cheque clears; then a receipt is recorded and the invoice is paid. A bounced cheque leaves it open.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/finance/pdcs?status&customer_id` | by cheque date; `maturing_soon` (due within 7 days, held), `deposit_due` (held, due ≤ today) |
+| POST | `/finance/pdcs` | `{customer_id, cheque_no, bank_name, received_date (≤ today), due_date (≥ received), amount, currency?, exchange_rate?, allocations?, notes?}`: Dr PDC receivable (1210) · Cr AR (linked invoices, own rates) · Cr customer advances (rest) ± FX; `409 duplicate_cheque` |
+| GET | `/finance/pdcs/:id` | |
+| POST | `/finance/pdcs/:id/deposit` | `{date?, deposit_account_id?}`: received → deposited; `409 not_due` before the cheque date; no posting |
+| POST | `/finance/pdcs/:id/clear` | deposited → cleared: Dr bank · Cr PDC receivable; a receipt (`source: pdc`) pays the invoices (what an invoice can no longer take moves to customer credit) |
+| POST | `/finance/pdcs/:id/bounce` | received / deposited → bounced: the received entry is reversed; optional `bounce_fee` (Dr Bank charges · Cr bank); the customer is flagged (`bounced_cheques`); the accountants and the customer's owner get a `finance` notification |
+
+The lifecycle tick sends "Deposit cheque … today" to the accountants once per held cheque on its date (company
+timezone). GL note: while a cheque is held, AR in the ledger is net of it; aging and statements show the invoice open,
+"secured by cheque".
+
+### Receivables
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/finance/receivables/aging?as_of` | by customer, base currency: `current` (not yet due), `d30` (1–30), `d60` (31–60), `d90` (61–90), `over90`, `total`, `pdc_secured`, `credit`, totals. The CSV export is built client-side from this |
+| GET | `/finance/receivables/aging/:customerId?as_of` | drill-down: invoices with `days_overdue`, `bucket`, `dunning_paused`, `last_reminder` |
+| GET | `/finance/customers/:id/statement?from&to` | opening balance, lines (invoice · payment · credit_note · refund; debit / credit / running balance, base currency), closing balance, cheques held |
+| POST | `/finance/customers/:id/statement/email` | `{from?, to?, email?}` (default: the billing contact) → `{sent_to}`; mock email, logged on the customer timeline |
+| GET | `/finance/customers` | every customer with its credit position (credit-limits tab, pickers) |
+| GET / PATCH | `/finance/customers/:id/credit` | `{credit_limit (null = none), credit_hold, dunning_paused}` (PATCH: full only) |
+| GET | `/finance/credit-check?lead_id or customer_id&amount&currency` | any role with **sales or accounting**: `{level: ok · warning · blocked, mode, message, detail}`; `detail` (amounts) only for accounting view / full |
+| GET / PATCH | `/finance/collections/settings` | `{dunning_enabled, dunning_steps: [{id, offset_days (−30…365), active, notify_owner}], credit_check_mode: warn · block, gateway_fee_pct (0–10), default_expiry_days (1–90)}` |
+| GET | `/finance/dunning/log?invoice_id&customer_id` | `{outcome: sent · skipped, sent_to, offset_days, date}` |
+| POST | `/finance/dunning/pause` | `{target_type: invoice · customer, target_id, paused}` |
+
+**As-of balances:** today = the live balance; an earlier date = total − allocations dated ≤ it (a refunded allocation
+counts until the refund date) − credit notes dated ≤ it. **Credit exposure** = open invoice balances − unapplied
+customer credit (payments + credit-note excess), never below 0; **cheques held don't reduce it**. Quotation create /
+send answer `409 credit_blocked` only when `credit_check_mode = block` and the customer is on hold or would exceed the
+limit (default `warn`: the form shows a notice). **Dunning** runs on the lifecycle tick (company timezone) once the
+company uses collections (its lazy seed has run): per open invoice not covered by cheques and not paused, the latest
+due step is emailed once (mock email to the billing contact; logged on the invoice history, the customer timeline and
+the dunning log); earlier unsent steps are logged `skipped` (no burst on a late start); steps with `notify_owner`
+(default +30) notify the customer's owner.
+
+### Payment links
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/finance/payment-links?invoice_id&status` | `{url: /pay/<token>, amount, expires_at, status: active · paid · expired · void}` |
+| POST | `/finance/payment-links` | `{invoice_id, expires_in_days?}`: the invoice's available balance; an earlier active link of the invoice is voided; `409 nothing_due` |
+| POST | `/finance/payment-links/:id/void` | |
+| GET | `/public/pay/:token` | **no auth**: only `{state: payable · paid · expired · unavailable, message, invoice_number, amount_due, currency, company_name, logo_url, monogram, test_mode}`. Unknown token, a company without accounting, a deleted / suspended workspace → `404 payment_link_not_found` |
+| POST | `/public/pay/:token` | **no auth**, test mode: `{cardholder_name, card_number, expiry (MM/YY), cvc}` validated (Luhn, expiry, CVC) and dropped; only "Brand •••• last4" is kept. `4000 0000 0000 0002` → `402 card_declined`. Success records a `payment_link` payment to payment gateway clearing (1140; the gateway fee setting as bank charges), marks the link paid and notifies the accountants and the owner → `{paid, receipt_number, amount, currency}`. `409 link_paid / link_expired / link_unavailable`; rate-limited per client (`X-Client-Id`) and link (`429`) |
+
+**Real gateways (seam).** `payPublic` stands in for a hosted checkout. A real integration (Telr, Tap, PayTabs, Stripe)
+creates the gateway session when the link is created (`gateway`, `gateway_ref` on the link), redirects the customer to
+the hosted page (card data never touches our servers: PCI SAQ-A) and records the payment from the signed **webhook**
+(idempotent on `gateway_ref`), settling 1140 against the bank on the payout with the real fee.
+
+**Isolation and tests.** Every endpoint is in `src/shared/mocks/isolation/financeCollectionsEndpoints.ts` (spread into
+`endpoints.ts`); the public pay endpoints are `public` with reasons; customer / invoice ids in bodies and filters are in
+`REFS` (`scoped.isolation.test.ts`); roles × both companies, the plan gate and "a token never shows or pays another
+company's invoice" in `src/app/isolation/financeCollections.isolation.test.ts`; rules in
+`src/shared/mocks/services/financeCollections.test.ts`; browser `e2e/finance-collections.spec.ts`. Persisted dev DB:
+`VERSION` 29.

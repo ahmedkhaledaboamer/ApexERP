@@ -3,9 +3,10 @@ import { useAutomationRules } from '@/shared/hooks/useAutomationRules'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { createColumnHelper, type FilterFn, type Table } from '@tanstack/react-table'
 import { addMonths, addYears, format, max as maxDate, parseISO } from 'date-fns'
-import { Ban, BellRing, CircleDollarSign, FileSignature, MoreHorizontal, Pencil, Plus, Repeat, RotateCcw, ShieldOff, TimerOff, X } from 'lucide-react'
+import { Ban, BellRing, CircleDollarSign, FileSignature, MoreHorizontal, Pencil, Plus, Receipt, Repeat, RotateCcw, ShieldOff, TimerOff, X } from 'lucide-react'
 import type { Scope } from '@/shared/types'
-import { customerPath } from '@/app/paths'
+import { customerPath, invoiceFromSourcePath } from '@/app/paths'
+import { CreateInvoiceButton, useCanInvoice } from '@/modules/finance/invoices/components/CreateInvoiceButton'
 import { useContractsQuery, useUpdateContract } from '@/modules/crm/hooks/useCrm'
 import type { ContractRow } from '@/modules/crm/types'
 import {
@@ -56,7 +57,8 @@ function ContractsList({ scope, canEdit }: { scope: Scope; canEdit: boolean }) {
   const query = useContractsQuery()
   const data = useMemo(() => query.data ?? [], [query.data])
   const [drawer, setDrawer] = useState<DrawerState>(null)
-  const columns = useMemo(() => buildColumns(canEdit, (contract) => setDrawer({ contract })), [canEdit])
+  const canInvoice = useCanInvoice()
+  const columns = useMemo(() => buildColumns(canEdit, (contract) => setDrawer({ contract }), canInvoice), [canEdit, canInvoice])
 
   const table = useDataTable({
     id: 'crm-contracts',
@@ -266,7 +268,7 @@ const inSet: FilterFn<ContractRow> = (row, id, values: string[] | undefined) =>
 
 const col = createColumnHelper<ContractRow>()
 
-function buildColumns(canEdit: boolean, onEdit: (c: ContractRow) => void) {
+function buildColumns(canEdit: boolean, onEdit: (c: ContractRow) => void, canInvoice = false) {
   const columns = [
     col.accessor('title', {
       header: 'Contract',
@@ -351,7 +353,24 @@ function buildColumns(canEdit: boolean, onEdit: (c: ContractRow) => void) {
       ),
     }),
   ]
-  if (!canEdit) return columns
+  // Accounts & finance: an accountant (sales view) gets just "Create invoice" (finance/invoices/components/CreateInvoiceButton.tsx).
+  if (!canEdit) {
+    if (!canInvoice) return columns
+    return [
+      ...columns,
+      col.display({
+        id: 'actions',
+        enableHiding: false,
+        meta: { width: 48, align: 'end' },
+        cell: ({ row }) =>
+          row.original.status === 'cancelled' ? null : (
+            <span onClick={(e) => e.stopPropagation()} className="inline-flex">
+              <CreateInvoiceButton kind="contract" id={row.original.id} size="xs" variant="ghost" iconOnly aria-label={`Create invoice for ${row.original.title}`} label="" />
+            </span>
+          ),
+      }),
+    ]
+  }
   return [
     ...columns,
     col.display({
@@ -373,6 +392,8 @@ function RowActions({ contract: k, onEdit }: { contract: ContractRow; onEdit: ()
   const update = useUpdateContract()
   const toast = useToast()
   const cancelled = k.status === 'cancelled'
+  const canInvoice = useCanInvoice()
+  const navigate = useNavigate()
 
   function patch(input: Parameters<typeof update.mutate>[0]['input'], done: string) {
     update.mutate(
@@ -416,6 +437,17 @@ function RowActions({ contract: k, onEdit }: { contract: ContractRow; onEdit: ()
                 }}
               >
                 Renew for a term
+              </MenuItem>
+            )}
+            {canInvoice && !cancelled && (
+              <MenuItem
+                icon={<Receipt />}
+                onSelect={() => {
+                  close()
+                  navigate(invoiceFromSourcePath('contract', k.id))
+                }}
+              >
+                Create invoice
               </MenuItem>
             )}
             <MenuSeparator />

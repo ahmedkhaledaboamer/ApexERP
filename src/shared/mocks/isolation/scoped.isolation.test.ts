@@ -18,6 +18,9 @@ import { hrJourneys, hrJourneyTemplates } from '@/shared/mocks/data/hrJourney'
 import { hrLetterTypes } from '@/shared/mocks/data/hrSelfService'
 import { hrPerfCycles, hrPerfReviews, hrPerfTemplates } from '@/shared/mocks/data/hrPerformance'
 import { withHr } from './hrTalentEndpoints'
+import { finToday, ownAccount } from './financeLedgerEndpoints'
+import { collectionsFixtures as colFx } from './financeCollectionsEndpoints'
+import { financeCreditNotes, invoiceRecords } from '@/shared/mocks/data/financeInvoices'
 import { companyById } from '@/shared/mocks/data/tenancy'
 import { todayIsoIn } from '@/shared/lib/companyDay'
 import { addMonths as addMonthsYm } from '@/modules/hr/payroll/calc'
@@ -245,6 +248,49 @@ const REFS: Ref[] = [
   { name: 'performance reviews cycle filter', method: 'GET', path: hrPath('/hr/performance/reviews'), query: (id) => `?cycle_id=${id}`, id: (co) => one(hrPerfCycles, co, (c) => c.phase === 'self_review').id },
   { name: 'performance recommended course', method: 'PUT', path: (co) => hrPath(`/hr/performance/reviews/${perfTopReview(co)}/manager`)(co), id: (co) => one(hrCourses, co).id, body: (_co, id) => ({ recommended_course_ids: [id], submit: false }) },
   { name: 'journey item assignee', method: 'POST', path: (co) => hrPath(`/hr/journeys/${one(hrJourneys, co, (j) => j.status === 'active').id}/items`)(co), id: (co) => ADMIN[co], body: (_co, id) => ({ title: 'Ref item', owner_role: 'user', assignee_user_id: id }) },
+  // Accounts & finance › ledger (isolation/financeLedgerEndpoints.ts): account / dimension ids in bodies and filters
+  // (seeded chart ids are shared by design, so the refs use a company-unique `ACC-N…` account).
+  { name: 'manual journal account', method: 'POST', path: () => '/finance/journal', id: (co) => ownAccount(co).id, body: (co, id) => ({ date: finToday(co), memo: 'Ref', lines: [{ account_id: id, debit: 1, credit: 0 }, { account_id: 'ACC-1120', debit: 0, credit: 1 }] }) },
+  { name: 'manual journal department', method: 'POST', path: () => '/finance/journal', id: (co) => one(departments, co, (d) => d.active).id, body: (co, id) => ({ date: finToday(co), memo: 'Ref', lines: [{ account_id: 'ACC-6800', debit: 1, credit: 0, department_id: id }, { account_id: 'ACC-1120', debit: 0, credit: 1 }] }) },
+  { name: 'manual journal customer', method: 'POST', path: () => '/finance/journal', id: (co) => one(customers, co).id, body: (co, id) => ({ date: finToday(co), memo: 'Ref', lines: [{ account_id: 'ACC-6800', debit: 1, credit: 0, customer_id: id }, { account_id: 'ACC-1120', debit: 0, credit: 1 }] }) },
+  { name: 'manual journal event', method: 'POST', path: () => '/finance/journal', id: (co) => one(events, co).id, body: (co, id) => ({ date: finToday(co), memo: 'Ref', lines: [{ account_id: 'ACC-6800', debit: 1, credit: 0, event_id: id }, { account_id: 'ACC-1120', debit: 0, credit: 1 }] }) },
+  { name: 'opening balance account', method: 'POST', path: () => '/finance/opening-balances', id: (co) => ownAccount(co).id, body: (co, id) => ({ date: finToday(co), lines: [{ account_id: id, debit: 5, credit: 0 }] }) },
+  { name: 'account parent', method: 'POST', path: () => '/finance/accounts', id: (co) => ownAccount(co, 'expense', true).id, body: (_co, id) => ({ code: '6971', name: 'Ref account', type: 'expense', parent_id: id }) },
+  { name: 'finance default revenue account', method: 'PATCH', path: () => '/finance/settings', id: (co) => ownAccount(co, 'income').id, body: (_co, id) => ({ default_revenue_account_id: id }) },
+  { name: 'finance default bank account', method: 'PATCH', path: () => '/finance/settings', id: (co) => ownAccount(co, 'asset').id, body: (_co, id) => ({ default_bank_account_id: id }) },
+  { name: 'journal account filter', method: 'GET', path: () => '/finance/journal', query: (id) => `?account_id=${id}`, id: (co) => ownAccount(co).id },
+  // Accounts & finance › invoices, credit notes, recurring (isolation/financeInvoicesEndpoints.ts): customer / source / invoice ids in bodies and filters.
+  { name: 'invoice customer', method: 'POST', path: () => '/finance/invoices', id: (co) => one(customers, co).id, body: (_co, id) => ({ customer_id: id, lines: [{ description: 'Ref', quantity: 1, unit_price: 10 }] }) },
+  { name: 'invoice project', method: 'POST', path: () => '/finance/invoices', id: (co) => one(projects, co).id, body: (co, id) => ({ customer_id: one(customers, co).id, project_id: id, lines: [{ description: 'Ref', quantity: 1, unit_price: 10 }] }) },
+  { name: 'invoice event', method: 'POST', path: () => '/finance/invoices', id: (co) => one(events, co).id, body: (co, id) => ({ customer_id: one(customers, co).id, event_id: id, lines: [{ description: 'Ref', quantity: 1, unit_price: 10 }] }) },
+  { name: 'invoice line service', method: 'POST', path: () => '/finance/invoices', id: (co) => one(services, co).id, body: (co, id) => ({ customer_id: one(customers, co).id, lines: [{ description: 'Ref', service_id: id, quantity: 1, unit_price: 10 }] }) },
+  { name: 'invoice draft customer (PATCH)', method: 'PATCH', path: (co) => `/finance/invoices/${one(invoiceRecords, co, (i) => i.status === 'draft').id}`, id: (co) => one(customers, co).id, body: (_co, id) => ({ customer_id: id }) },
+  { name: 'invoice from quotation', method: 'POST', path: () => '/finance/invoices/from-source', id: (co) => one(quotations, co, (q) => q.status === 'accepted').id, body: (_co, id) => ({ quotation_id: id, percent: 1 }) },
+  { name: 'invoice from contract', method: 'POST', path: () => '/finance/invoices/from-source', id: (co) => one(contracts, co, (c) => c.billing === 'Monthly' && c.status !== 'cancelled').id, body: (_co, id) => ({ contract_id: id }) },
+  { name: 'invoice from won deal', method: 'POST', path: () => '/finance/invoices/from-source', id: (co) => one(customers, co).leadId, body: (_co, id) => ({ lead_id: id }) },
+  { name: 'invoices customer filter', method: 'GET', path: () => '/finance/invoices', query: (id) => `?customer_id=${id}`, id: (co) => one(customers, co).id },
+  { name: 'credit note invoice', method: 'POST', path: () => '/finance/credit-notes', id: (co) => one(invoiceRecords, co, (i) => i.status === 'issued' && i.balanceDue > 10).id, body: (_co, id) => ({ invoice_id: id, reason: 'Ref credit', full: true }) },
+  { name: 'credit notes invoice filter', method: 'GET', path: () => '/finance/credit-notes', query: (id) => `?invoice_id=${id}`, id: (co) => one(financeCreditNotes, co).invoiceId },
+  { name: 'recurring source invoice', method: 'POST', path: () => '/finance/recurring-invoices', id: (co) => one(invoiceRecords, co, (i) => i.status === 'issued' && !i.recurringId).id, body: (_co, id) => ({ source_invoice_id: id, frequency: 'monthly', start_date: '2099-01-01' }) },
+  { name: 'recurring contract', method: 'POST', path: () => '/finance/recurring-invoices', id: (co) => one(contracts, co, (c) => c.billing === 'Annual').id, body: (_co, id) => ({ contract_id: id, start_date: '2099-01-01' }) },
+  // Accounts & finance › collections (isolation/financeCollectionsEndpoints.ts): customer / invoice ids in payments,
+  // allocations, cheques, payment links, credit applications, dunning pauses, credit checks and list filters.
+  { name: 'payment customer', method: 'POST', path: () => '/finance/payments', id: (co) => colFx.customerId(co), body: (co, id) => ({ customer_id: id, date: finToday(co), method: 'cash', amount: 1, allocation_mode: 'none' }) },
+  { name: 'payment allocation invoice', method: 'POST', path: () => '/finance/payments', id: (co) => colFx.openInvoice(co).id, body: (co, id) => ({ customer_id: colFx.customerId(co), date: finToday(co), method: 'cash', amount: 1, currency: colFx.openInvoice(co).currency, exchange_rate: colFx.openInvoice(co).exchangeRate, allocation_mode: 'manual', allocations: [{ invoice_id: id, amount: 1 }] }) },
+  { name: 'payments customer filter', method: 'GET', path: () => '/finance/payments', query: (id) => `?customer_id=${id}`, id: (co) => colFx.customerId(co) },
+  { name: 'payments invoice filter', method: 'GET', path: () => '/finance/payments', query: (id) => `?invoice_id=${id}`, id: (co) => colFx.openInvoice(co).id },
+  { name: 'apply credit invoice', method: 'POST', path: (co) => `/finance/payments/${colFx.creditPayment(co).id}/apply-credit`, id: (co) => colFx.openInvoice(co).id, body: (_co, id) => ({ allocations: [{ invoice_id: id, amount: 1 }] }) },
+  { name: 'cheque customer', method: 'POST', path: () => '/finance/pdcs', id: (co) => colFx.customerId(co), body: (co, id) => ({ customer_id: id, cheque_no: 'REF1', bank_name: 'Ref Bank', received_date: finToday(co), due_date: finToday(co), amount: 1, currency: colFx.openInvoice(co).currency, exchange_rate: colFx.openInvoice(co).exchangeRate }) },
+  { name: 'cheque allocation invoice', method: 'POST', path: () => '/finance/pdcs', id: (co) => colFx.openInvoice(co).id, body: (co, id) => ({ customer_id: colFx.customerId(co), cheque_no: 'REF2', bank_name: 'Ref Bank', received_date: finToday(co), due_date: finToday(co), amount: 1, currency: colFx.openInvoice(co).currency, exchange_rate: colFx.openInvoice(co).exchangeRate, allocations: [{ invoice_id: id, amount: 1 }] }) },
+  { name: 'cheques customer filter', method: 'GET', path: () => '/finance/pdcs', query: (id) => `?customer_id=${id}`, id: (co) => colFx.customerId(co) },
+  { name: 'payment link invoice', method: 'POST', path: () => '/finance/payment-links', id: (co) => colFx.openInvoice(co).id, body: (_co, id) => ({ invoice_id: id }) },
+  { name: 'payment links invoice filter', method: 'GET', path: () => '/finance/payment-links', query: (id) => `?invoice_id=${id}`, id: (co) => colFx.openInvoice(co).id },
+  { name: 'dunning pause invoice', method: 'POST', path: () => '/finance/dunning/pause', id: (co) => colFx.openInvoice(co).id, body: (_co, id) => ({ target_type: 'invoice', target_id: id, paused: true }) },
+  { name: 'dunning pause customer', method: 'POST', path: () => '/finance/dunning/pause', id: (co) => colFx.customerId(co), body: (_co, id) => ({ target_type: 'customer', target_id: id, paused: true }) },
+  { name: 'dunning log invoice filter', method: 'GET', path: () => '/finance/dunning/log', query: (id) => `?invoice_id=${id}`, id: (co) => colFx.openInvoice(co).id },
+  { name: 'dunning log customer filter', method: 'GET', path: () => '/finance/dunning/log', query: (id) => `?customer_id=${id}`, id: (co) => colFx.customerId(co) },
+  { name: 'credit check customer', method: 'GET', path: () => '/finance/credit-check', query: (id) => `?customer_id=${id}&amount=100`, id: (co) => colFx.customerId(co) },
+  { name: 'credit check lead', method: 'GET', path: () => '/finance/credit-check', query: (id) => `?lead_id=${id}&amount=100`, id: (co) => one(customers, co).leadId },
 ]
 
 describe('Ids of the other company in a body or query behave like ids that don’t exist', () => {

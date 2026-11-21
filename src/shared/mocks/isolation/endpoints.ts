@@ -29,6 +29,9 @@ import { HR_REPORTS_ENDPOINTS } from './hrReportsEndpoints'
 import { HR_SELF_SERVICE_ENDPOINTS } from './hrSelfServiceEndpoints'
 import { HR_JOURNEY_ENDPOINTS } from './hrJourneyEndpoints'
 import { HR_PERFORMANCE_ENDPOINTS } from './hrPerformanceEndpoints'
+import { FINANCE_LEDGER_ENDPOINTS } from './financeLedgerEndpoints'
+import { FINANCE_INVOICES_ENDPOINTS } from './financeInvoicesEndpoints'
+import { FINANCE_COLLECTIONS_ENDPOINTS } from './financeCollectionsEndpoints'
 
 /**
  * THE COVERAGE TABLE of the isolation suite: one entry per registered MSW handler (method + path as
@@ -571,6 +574,12 @@ export const ENDPOINTS: Endpoint[] = [
   ...HR_JOURNEY_ENDPOINTS,
   /* ---- HR › performance reviews (isolation/hrPerformanceEndpoints.ts) ---- */
   ...HR_PERFORMANCE_ENDPOINTS,
+  /* ---- Accounts & finance › ledger core and setup (isolation/financeLedgerEndpoints.ts) ---- */
+  ...FINANCE_LEDGER_ENDPOINTS,
+  /* ---- Accounts & finance › invoices, credit notes, recurring, ZATCA (isolation/financeInvoicesEndpoints.ts) ---- */
+  ...FINANCE_INVOICES_ENDPOINTS,
+  /* ---- Accounts & finance › collections: payments, PDC, payment links, receivables, dunning (isolation/financeCollectionsEndpoints.ts) ---- */
+  ...FINANCE_COLLECTIONS_ENDPOINTS,
   { method: 'GET', path: '/public/events/:token', kind: 'public', module: 'events', reason: PUBLIC_EVENT },
   { method: 'POST', path: '/public/events/:token/register', kind: 'public', module: 'events', reason: PUBLIC_EVENT + ' Rate-limited per client and email, honeypot; the attendee and its lead land in the event’s company only.' },
 
@@ -627,7 +636,6 @@ export const ENDPOINTS: Endpoint[] = [
   { method: 'GET', path: '/marketing/ads/providers/:provider/accounts', kind: 'company-list', module: 'marketing/ads', notOwned: ['provider'], sample: () => ({ params: { provider: 'meta' } }) },
   { method: 'PATCH', path: '/marketing/ads/campaigns/:id', kind: 'company-item', module: 'marketing/ads', sample: (co) => ({ params: { id: adCampaign(co).id }, body: { campaign_id: campaign(co).id } }) },
   { method: 'GET', path: '/marketing/analytics', kind: 'company-export', module: 'marketing/analytics', sample: () => ({ query: { preset: 'custom', from: day(-60), to: day(0), compare: 'true' } }) },
-  { method: 'GET', path: '/finance/invoices', kind: 'company-list', module: 'billing/usage', sample: () => ({}) },
   { method: 'GET', path: '/integrations', kind: 'company-list', module: 'integrations/email', sample: () => ({}) },
 
   /* ---- platform console (handlers/platform.ts) ---- */

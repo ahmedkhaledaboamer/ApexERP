@@ -40,6 +40,7 @@ import {
   fmtAmount,
   todayIso,
 } from '@/modules/quotations/lib/totals'
+import { QuotationCreditNotice } from '@/modules/finance/collections/components/QuotationCreditNotice'
 import { defaultNotes, defaultTerms, issuerFor } from '@/modules/quotations/lib/company'
 import { useBranding, useRegion, useTenant } from '@/modules/tenancy/hooks'
 import { useTemplatesQuery } from '@/modules/settings/hooks/useTemplates'
@@ -75,6 +76,7 @@ import { useToast } from '@/shared/components/ui/Toast'
 import { Field, TextArea, TextInput } from '@/shared/components/form/Field'
 import { PageBody } from '@/shared/components/layout/PageHeader'
 import { useOpenWonDialog } from '@/modules/won/hooks'
+import { CreateInvoiceButton } from '@/modules/finance/invoices/components/CreateInvoiceButton'
 
 /** One page for /sales/quotations/new (create) and /sales/quotations/:id (view, edit while Draft). */
 export default function QuotationEditorPage() {
@@ -577,6 +579,11 @@ function QuotationEditor({ quotation, initialLeadId, user }: EditorProps) {
                         That lead isn’t in your access. Pick another one.
                       </p>
                     )}
+                    {(!quotation || quotation.status === 'draft') && form.leadId && (
+                      <div className="mt-3">
+                        <QuotationCreditNotice leadId={form.leadId} amount={totals.total} currency={currency} />
+                      </div>
+                    )}
                   </CardBody>
                 </Card>
 
@@ -738,6 +745,7 @@ function QuotationEditor({ quotation, initialLeadId, user }: EditorProps) {
                         Win deal
                       </Button>
                     )}
+                    {quotation && status === 'accepted' && <CreateInvoiceButton kind="quotation" id={quotation.id} className="w-full" />}
                     {quotation && status === 'expired' && (
                       <p className="flex items-start gap-1.5 rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-700 dark:bg-warning-500/10 dark:text-warning-500">
                         <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />

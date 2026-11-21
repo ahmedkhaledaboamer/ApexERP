@@ -15,6 +15,7 @@ import {
   Palette,
   Trophy,
   UserCheck,
+  Wallet,
   type LucideIcon,
 } from 'lucide-react'
 import { PATHS } from '@/app/paths'
@@ -40,6 +41,7 @@ const ICON: Partial<Record<string, LucideIcon>> = {
   billing: CreditCard,
   usage: Gauge,
   marketing: Palette,
+  finance: Wallet,
 }
 
 const SEVERITY_DOT: Record<Alert['severity'], string> = {

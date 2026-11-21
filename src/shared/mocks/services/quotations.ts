@@ -30,6 +30,7 @@ import { statusOf, SYSTEM_STATUS } from '@/shared/mocks/data/lookups'
 import { findInTenant, scoped, stamp, tenantOf, type Tenant } from '@/shared/mocks/tenant'
 import { assertCapacity, onLifecycleTick, recordUsage } from '@/shared/mocks/services/billing'
 import { salesTeamOf, untenant } from '@/shared/mocks/services/leads'
+import { assertCreditAllows } from '@/shared/mocks/services/financeReceivables'
 
 /* ------------------------------------------------------------------------------------------
  * Quotations. Scope follows the lead: you see a quotation when you can see its lead, inside
@@ -251,6 +252,8 @@ export async function createQuotation(user: User, input: QuotationInput): Promis
 
   const result = clean(tenantOf(user), input)
   if ('error' in result) return fail(result.error, 422)
+  // Credit limits (Accounts & finance): 409 credit_blocked only when the company's credit check is set to block.
+  assertCreditAllows(tenantOf(user), lead.customerId, computeTotals(result.value.items, result.value.vatPct).total, result.value.currency)
 
   const now = new Date().toISOString()
   const record: Tenant<QuotationRecord> = stamp({
@@ -295,6 +298,7 @@ export async function sendQuotation(user: User, id: string): Promise<Quotation> 
   // Re-check the stored draft before it leaves the building.
   const result = clean(q.companyId, {}, q)
   if ('error' in result) return fail(result.error, 422)
+  assertCreditAllows(q.companyId, lead.customerId ?? q.customerId, computeTotals(q.items, q.vatPct).total, q.currency)
   // Sending is an email: counts toward the plan's emails per period (402 LIMIT_REACHED).
   assertCapacity(q.companyId, 'emailsPerMonth')
 

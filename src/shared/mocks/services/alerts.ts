@@ -221,6 +221,8 @@ const STORED_TYPE: Record<StoredNotification['type'], AlertType> = {
   'hr-journey': 'hr',
   // Self-service: letter / profile change submitted (HR full), letter issued / rejected and profile change decided (the employee): services/hrLetters.ts, hrSelfService.ts, once per request and event.
   'hr-requests': 'hr',
+  // Accounts & finance: bounced cheque, cheque to deposit today, invoice 30 days overdue (services/financeCollections*), once per record and event. Invoices: recurring invoice generated (accounting full), invoice voided (its creator): services/financeInvoiceCore.ts, financeInvoices.ts, once per invoice.
+  finance: 'finance',
 }
 const STORED_SEVERITY: Record<StoredNotification['type'], AlertSeverity> = {
   won: 'info',
@@ -239,6 +241,7 @@ const STORED_SEVERITY: Record<StoredNotification['type'], AlertSeverity> = {
   'hr-payroll': 'info',
   'hr-journey': 'info',
   'hr-requests': 'info',
+  finance: 'warning',
 }
 
 function toAlert(n: StoredNotification): Alert {

@@ -52,11 +52,13 @@ import { Avatar } from '@/shared/components/ui/Avatar'
 import { Badge, DOT } from '@/shared/components/ui/Badge'
 import { Button } from '@/shared/components/ui/Button'
 import { Card, CardBody, CardHeader, Property, PropertyList } from '@/shared/components/ui/Card'
+import { CustomerCreditCard } from '@/modules/finance/collections/components/CustomerCreditCard'
 import { EmptyState, ErrorState, Skeleton } from '@/shared/components/ui/Feedback'
 import { Menu, MenuItem } from '@/shared/components/ui/Menu'
 import { Tabs } from '@/shared/components/ui/Tabs'
 import { useToast } from '@/shared/components/ui/Toast'
 import { PageBody } from '@/shared/components/layout/PageHeader'
+import { CreateInvoiceButton } from '@/modules/finance/invoices/components/CreateInvoiceButton'
 import { CustomerTasksPanel } from '@/modules/tasks/components/CustomerTasksPanel'
 
 type Tab = 'overview' | 'activity' | 'contacts' | 'contracts' | 'quotations' | 'tasks' | 'notes'
@@ -177,6 +179,8 @@ function CustomerRecord({ id, canEdit }: { id: string; canEdit: boolean }) {
                   New quotation
                 </Button>
               )}
+              {/* Accounts & finance: invoice the won deal (its accepted quotation, else the Won-flow contract). */}
+              <CreateInvoiceButton kind="won" id={c.leadId} size="sm" />
             </div>
           </div>
 
@@ -268,6 +272,7 @@ function CustomerRecord({ id, canEdit }: { id: string; canEdit: boolean }) {
 
           <aside className="space-y-4">
             <DetailsCard customer={c} />
+            <CustomerCreditCard customerId={c.id} />
             <KeyContacts contacts={c.contacts} onAll={() => setTab('contacts')} />
           </aside>
         </div>

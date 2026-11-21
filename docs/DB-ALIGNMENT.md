@@ -1769,3 +1769,68 @@ Self-service (`src/shared/mocks/services/hrSelfService.ts`) and HR letters (`hrL
 | H-SS5 | `employees.mobile` vs `users.mobile` | separate | an approved mobile change updates the HR record only | Decide whether the login's mobile follows |
 | H-SS6 | Public letter verification | — | HR-full lookup only (`GET /hr/letters/verify`) | Next: public, rate-limited endpoint answering validity / reference / issue date only |
 | H-SS7 | Bilingual letters | — | English only; `language_note` free text | Arabic templates (`body_ar`) and RTL print |
+
+### Design gaps › Finance (ledger & settings)
+
+Ledger core (`src/shared/mocks/data/finance.ts`, `data/financeLedger.ts`; services `ledger.ts`, `financeLedger.ts`,
+`financeRates.ts`; rules `src/modules/finance/ledger/calc.ts`; wire `src/shared/api/financeLedgerMappers.ts`, mechanical
+snake_case). For Accounting the design (as recorded in this document: AC-1, AC-2, L6, L8) has `tax_rates (name, rate,
+is_default, is_active)`, `bank_accounts (is_default, IBAN encrypted)`, `invoices`, `payments`, `expenses (vendor_id)` and
+`vendors`; **it has no chart of accounts, journal, settings or exchange-rate tables** — the mock's columns are the
+proposal (check the design's Accounting section before acting). Every table is company-scoped (`company_id`); amounts
+`decimal(14,2)`, rates `decimal(18,6)`.
+
+| # | Table / column | Design | Mock / API | Proposal |
+|---|---|---|---|---|
+| F-L1 | `accounts` (chart of accounts) | — | `id, code, name, type (asset · liability · equity · income · expense), subtype, parent_id, system_role, is_header, active, currency, description, timestamps`; template ids `ACC-<code>` shared across companies, created ones `ACC-N<n>` | New table; UNIQUE `(company_id, code)`; UNIQUE `(company_id, system_role)` where not null (exactly one active per role, service rule); `parent_id → accounts.id` same company, header only, same type, no cycles; numeric surrogate key (the mock's shared `ACC-<code>` ids are a mock convenience) |
+| F-L2 | `journal_entries` + `journal_lines` | — | entry `id, number (JV-yyyy-nnnn per company and year), date, memo, source_type (manual · invoice · credit_note · payment · payment_refund · pdc · opening_balance · payroll · bill · expense · bank), source_id, status (posted · reversed), reversal_of, reversed_by, created_by, created_at`; lines `account_id, debit, credit, description, customer_id, department_id, project_id, event_id, tax_code` (base currency) | Two tables; UNIQUE `(company_id, number)`; `source_type + source_id` polymorphic (index); lines `CHECK (debit >= 0 AND credit >= 0 AND (debit = 0 OR credit = 0))`; balance enforced in the posting service inside one transaction; entries immutable (corrections by reversal) |
+| F-L3 | Document sequences | — | `fin.seq.numbers` `company:series:year → last` | `document_sequences (company_id, series, year, last_no)` incremented with a row lock |
+| F-L4 | `finance_settings` | partly `companies` (AC-2 legal profile), `tax_rates.is_default` (AC-1) | `fiscal_year_start_month, vat_registered, vat_number, legal_name_en, legal_name_ar, document_prefix, payment_terms_days, invoice_notes, invoice_terms, default_revenue_account_id, default_bank_account_id, lock_date, lock_date_set_at, lock_date_set_by, updated_at, updated_by` | New 1:1 table (or `companies.settings.finance` json). `vat_number` duplicates `companies.tax_number` (AC-2): decide one source (the mock seeds it from the company profile and keeps it separate; Apex's profile has none). `legal_name_ar` for KSA (ZATCA) invoices |
+| F-L5 | `exchange_rates` | — | `id, currency, rate (1 unit in base), effective_date, created_at, created_by` | New table UNIQUE `(company_id, currency, effective_date)`; lookup = latest `effective_date <= document date`; documents snapshot `exchange_rate` |
+| F-L6 | Lock date | — | `lock_date` on the settings; posting on or before it → `423 period_locked`; only Company Admin / Accountant move it; audit `finance_lock_date` | Column on F-L4 (or `accounting_periods (company_id, period_end, status open · closed)` for per-period closing later); enforced in the posting service |
+| F-L7 | `tax_codes` vs `tax_rates` | `tax_rates (name, rate, is_default, is_active)` | `fin.taxCodes`: `id (VAT5 · VAT15 · ZR · EX · OOS), name, category (standard · zero_rated · exempt · out_of_scope), rate, active` | Extend `tax_rates` with `code` (UNIQUE per company) and `category`; `is_default` = the standard code (AC-1); no edit screen yet |
+| F-L8 | Bank accounts | `bank_accounts (is_default, IBAN encrypted)` | none: bank = a ledger account (`system_role bank_default`), the default bank account in settings | Add `bank_accounts.account_id → accounts.id` so each bank record has its ledger account; `is_default` ↔ settings `default_bank_account_id` |
+| F-L9 | Journal dimensions | — | line `department_id, project_id, event_id, customer_id` (validated against the company) | FKs on `journal_lines` (nullable); indexes for reporting |
+| F-L10 | Audit | `audit_logs` | finance settings, lock date (`security`), accounts, exchange rates, manual journals / reversals / opening balances | As designed (`auditable_type` finance_settings · finance_lock_date · account · exchange_rate · journal_entry) |
+
+### Design gaps › Finance (invoices, credit notes, recurring, ZATCA)
+
+Invoices section (`src/shared/mocks/data/finance.ts` `fin.invoices`, `data/financeInvoices.ts`; services
+`financeInvoices.ts`, `financeInvoiceCore.ts`; rules `src/modules/finance/invoices/calc.ts`, `zatca.ts`). The design has
+an `invoices` table (with `tax_rates`, `payments`); the mock's columns are the proposal — check the design's Accounting
+section before acting. Amounts `decimal(14,2)`, rates `decimal(18,6)`, company-scoped.
+
+| # | Table / column | Design | Mock / API | Proposal |
+|---|---|---|---|---|
+| F-I1 | `invoices` | `invoices` (number, status, totals, dates) | `id, number (<PREFIX>-INV-yyyy-nnnn, assigned on issue; "Draft" before), kind (tax_invoice · simplified), status (draft · issued · partially_paid · paid · void), customer_id, quotation_id, contract_id, lead_id, project_id, event_id, recurring_id, issue_date, due_date, payment_terms_days, currency, exchange_rate, subtotal, discount_total, tax_total, total, amount_paid, amount_credited, balance_due, notes, terms, journal_entry_id, void_journal_entry_id, created_by, issued_at, voided_at, void_reason, timestamps` | Extend `invoices` with the missing columns; UNIQUE `(company_id, number)` where issued; FKs same company; the number from `document_sequences` (F-L3) inside the issue transaction |
+| F-I2 | Customer VAT / TRN | — (`customers` has no tax number) | `invoices.customer_vat_number` (per invoice; the next invoice of the customer defaults to the last one used) | Add `customers.tax_number string(20) null` (validated by country) and snapshot it on the invoice |
+| F-I3 | `invoice_items` | — | lines `id, description, service_id, quantity, unit_price, discount (amount), tax_code_id, net, tax_amount, total, revenue_account_id` (VAT rounded per line) | New table `invoice_items (invoice_id, …)`; `tax_code_id → tax_rates` (F-L7), `revenue_account_id → accounts` (F-L1) |
+| F-I4 | Partial / milestone billing | — | `billing_pct` (share of the quotation / one-off contract), `milestone` label; ≤ 100% over non-void invoices | Columns on `invoices`; the cap checked in the service with a row lock on the quotation / contract |
+| F-I5 | `credit_notes` + `credit_note_items` | — | `id, number (<PREFIX>-CN-yyyy-nnnn), invoice_id, customer_id, date, reason, currency, exchange_rate, subtotal, tax_total, total, applied_amount, excess_amount, journal_entry_id, created_by, created_at`; lines `invoice_item_id, description, tax_code_id, tax_rate, net, tax_amount, total, revenue_account_id` | Two tables; `excess_amount` is customer credit (account 2300) consumed by Collections (refund / apply), or a `customer_credits` table owned by Collections |
+| F-I6 | `recurring_invoices` | — | `id, customer_id, source_invoice_id, contract_id, frequency (monthly · quarterly · yearly), start_date, end_date, next_date, period_index, mode (draft · auto_issue), status (active · paused · ended), template json (currency, VAT no., terms, lines, notes, project), generated json [{period, invoice_id, at}], last_error, created_by, timestamps` | Table + `recurring_invoice_runs (schedule_id, period date, invoice_id)` UNIQUE `(schedule_id, period)` for idempotency; a scheduled job per company timezone |
+| F-I7 | ZATCA data | — | per invoice / credit note `zatca {uuid, icv, pih, invoice_hash, qr, timestamp, type_code, subtype, status (not_submitted · cleared · reported · rejected)}`; chain per company `{icv, last_hash}` | `zatca_documents (company_id, document_type, document_id, uuid, icv, pih, invoice_hash, qr text, signed_xml longtext, status, submitted_at, response json)` UNIQUE `(company_id, icv)`; `zatca_devices (company_id, csid encrypted, private_key encrypted, onboarded_at)`; ICV / hash assigned under a company lock |
+| F-I8 | Send log / history | `audit_logs` (Invoice morph) | `send_log[] {at, by_name, to, subject}`, `history[] {at, by_name, action, summary}` on the invoice | `invoice_events (invoice_id, action, to_email, user_id, at)` or `audit_logs` with auditable_type Invoice |
+| F-I9 | KSA national address | `companies` (AC-2) | building number / district / postal code are placeholders in the XML | Add to the company profile or finance settings (required in B2B XML) |
+| F-I10 | UAE e-invoicing | — | none (seam) | Peppol PINT AE through an accredited service provider: `einvoice_submissions (invoice_id, provider, status, message_id, response)` when it lands |
+
+
+### Design gaps › Finance (collections: payments, PDC, receivables, payment links)
+
+Collections section (`data/financeCollections.ts`; services `financeCollections.ts`, `financeReceivables.ts`,
+`financeCollectionsCore.ts`). The design has a `payments` table against invoices; the rest is a proposal. Amounts
+`decimal(14,2)`, rates `decimal(18,6)`, company-scoped, FKs to the same company.
+
+| # | Table / column | Design | Mock / API | Proposal |
+|---|---|---|---|---|
+| F-C1 | `payments` | `payments` (invoice_id, amount, method, date) | `id, number (<PREFIX>-RCT-yyyy-nnnn), customer_id, date, method (bank_transfer · cash · cheque · card · payment_link), amount, currency, exchange_rate, bank_charges, deposit_account_id, reference, notes, status (posted · void), source (manual · pdc · payment_link), pdc_id, payment_link_id, card_hint, created_by, voided_at, void_reason` | A payment belongs to a **customer**, not one invoice: drop `payments.invoice_id`, add the columns; UNIQUE `(company_id, number)` from `document_sequences` |
+| F-C2 | `payment_allocations` | — | `id, payment_id, invoice_id, amount, date, kind (payment · credit), journal_entry_id null, reversed_on null` | New table; a partial refund splits a row (the refunded part gets `reversed_on`) so aging can be rebuilt as of any date |
+| F-C3 | `payment_refunds` | — | `id, payment_id, date, amount, account_id, reference, journal_entry_id, deallocated json, created_by` | New table |
+| F-C4 | Payment ↔ journal | `journal_entries.source_type/source_id` | `journal_entry_ids[]` on the payment | Use the source columns (types payment, payment_refund, pdc); no pivot needed |
+| F-C5 | `post_dated_cheques` | — | `id, customer_id, cheque_no, bank_name, received_date, due_date, amount, currency, exchange_rate, status (received · deposited · cleared · bounced), deposit_account_id, deposited_date, cleared_date, bounced_date, bounce_reason, bounce_fee, payment_id, notes, due_notified_at` + allocations `(invoice_id, amount)` | Two tables (`post_dated_cheques`, `pdc_allocations`); UNIQUE `(company_id, customer_id, bank_name, cheque_no)` among non-bounced |
+| F-C6 | `payment_links` | — | `id, token (letters only; served only inside the URL), invoice_id, amount, currency, expires_at, status (active · paid · void; expired derived), paid_at, payment_id` | New table + `gateway, gateway_ref, gateway_session_url` for real providers; UNIQUE `token` (platform-wide: it is the public lookup key) |
+| F-C7 | Customer credit | — (`customers` has none) | `customer_id, credit_limit null, credit_hold, dunning_paused, bounced_cheques, last_bounce_date` | Columns on `customers` (`credit_limit decimal(14,2) null`, `credit_hold`, `dunning_paused`, bounce counters) or a 1:1 `customer_credit_settings` |
+| F-C8 | Collections settings | — | per company `dunning_enabled, dunning_steps json [{id, offset_days, active, notify_owner}], credit_check_mode (warn · block), gateway_fee_pct, default_expiry_days` | Columns on `finance_settings` or a 1:1 `collections_settings` |
+| F-C9 | `dunning_log` | — | `id, invoice_id, customer_id, step_id, offset_days, outcome (sent · skipped), sent_to, date, at` + invoice pauses `(invoice_id, paused_at, paused_by)` | New tables; UNIQUE `(invoice_id, step_id)` is the idempotency key |
+| F-C10 | Credit-note excess usage | — | `credit_note_uses (credit_note_id, kind apply · refund, invoice_id null, amount, date, account_id null, journal_entry_id)` | New table, or one `customer_credit_movements` ledger for payments and credit notes |
+| F-C11 | Customer timeline | `activities` (lead) | payment / reminder / statement lines are `activities` of the customer's Won lead (type email · system) | Fine as is; a backend may add `activities.customer_id` |
+| F-C12 | Card data | — | none stored (brand + last 4 only) | Keep it that way: hosted checkout + webhook (PCI SAQ-A) |

@@ -95,6 +95,24 @@ export const PATHS = {
   hrLetter: '/hr/letters/:id',
   /** HR › Employee requests (HR full): profile changes, letter requests, letter templates, verify (?tab=). */
   hrRequests: '/hr/requests',
+  /** Accounts & finance › ledger core (plan module `accounting`; accounting full edits, view reads). ?account=, ?entry=, ?new=1, ?tab=trial-balance. */
+  financeOverview: '/finance',
+  financeAccounts: '/finance/accounts',
+  financeJournal: '/finance/journal',
+  financeSettings: '/finance/settings',
+  /** Accounts & finance › Invoices (?tab=invoices|credit-notes|recurring, ?status=, ?from=quotation|contract|won&id=, ?credit_note=). */
+  financeInvoices: '/finance/invoices',
+  financeInvoiceNew: '/finance/invoices/new',
+  financeInvoiceDetail: '/finance/invoices/:id',
+  financeInvoiceEdit: '/finance/invoices/:id/edit',
+  /** Accounts & finance › Payments (?tab=payments|pdc|links, ?payment=, ?pdc=, ?record=1&customer=&invoice=) and a printable receipt. */
+  financePayments: '/finance/payments',
+  financeReceipt: '/finance/payments/:id/receipt',
+  /** Accounts & finance › Receivables (?tab=aging|statements|credit|reminders, ?customer=) and a printable statement (?from=&to=). */
+  financeReceivables: '/finance/receivables',
+  financeStatement: '/finance/receivables/statements/:id',
+  /** Public payment page of a payment link (no sign-in, no workspace). */
+  publicPay: '/pay/:token',
   /** Platform console: outside any workspace (TenantProvider exempts /platform). */
   platform: '/platform',
   platformLogin: '/platform/login',
@@ -178,4 +196,25 @@ export function publicTicketPath(code: string): string {
 }
 export function publicSurveyPath(token: string): string {
   return `/s/${enc(token)}`
+}
+
+/** An invoice (Accounts & finance › Invoices). */
+/** A payment's printable receipt (Accounts & finance › Payments). */
+export function financeReceiptPath(id: string): string {
+  return `/finance/payments/${enc(id)}/receipt`
+}
+/** A customer's printable statement of account. */
+export function financeStatementPath(customerId: string, from?: string, to?: string): string {
+  const q = new URLSearchParams()
+  if (from) q.set('from', from)
+  if (to) q.set('to', to)
+  const s = q.toString()
+  return `/finance/receivables/statements/${enc(customerId)}${s ? `?${s}` : ''}`
+}
+export function financeInvoicePath(id: string): string {
+  return `/finance/invoices/${enc(id)}`
+}
+/** "Invoice this" from a quotation, contract or won deal (opens the prefilled source dialog on the invoices page). */
+export function invoiceFromSourcePath(kind: 'quotation' | 'contract' | 'won', id: string): string {
+  return `/finance/invoices?from=${kind}&id=${enc(id)}`
 }

@@ -114,6 +114,19 @@ const MyHrPage = lazy(() => import('@/modules/hr/selfservice/pages/MyHrPage'))
 const MyPayslipPage = lazy(() => import('@/modules/hr/selfservice/pages/MyPayslipPage'))
 const LetterPage = lazy(() => import('@/modules/hr/selfservice/pages/LetterPage'))
 const HrRequestsPage = lazy(() => import('@/modules/hr/selfservice/pages/HrRequestsPage'))
+const FinanceOverviewPage = lazy(() => import('@/modules/finance/ledger/pages/FinanceOverviewPage'))
+const ChartOfAccountsPage = lazy(() => import('@/modules/finance/ledger/pages/ChartOfAccountsPage'))
+const JournalPage = lazy(() => import('@/modules/finance/ledger/pages/JournalPage'))
+const FinanceSettingsPage = lazy(() => import('@/modules/finance/ledger/pages/FinanceSettingsPage'))
+const InvoicesPage = lazy(() => import('@/modules/finance/invoices/pages/InvoicesPage'))
+const InvoiceDetailPage = lazy(() => import('@/modules/finance/invoices/pages/InvoiceDetailPage'))
+const InvoiceEditorPage = lazy(() => import('@/modules/finance/invoices/pages/InvoiceEditorPage'))
+// Accounts & finance › Collections: payments, PDC, payment links, receivables. /pay/:token needs no sign-in.
+const PaymentsPage = lazy(() => import('@/modules/finance/collections/pages/PaymentsPage'))
+const ReceiptPage = lazy(() => import('@/modules/finance/collections/pages/ReceiptPage'))
+const ReceivablesPage = lazy(() => import('@/modules/finance/collections/pages/ReceivablesPage'))
+const StatementPage = lazy(() => import('@/modules/finance/collections/pages/StatementPage'))
+const PublicPayPage = lazy(() => import('@/modules/finance/collections/pages/PublicPayPage'))
 const SpeakerDetailPage = lazy(() => import('@/modules/events/pages/SpeakerDetailPage'))
 const VenuesPage = lazy(() => import('@/modules/events/pages/VenuesPage'))
 const VenueDetailPage = lazy(() => import('@/modules/events/pages/VenueDetailPage'))
@@ -168,6 +181,14 @@ export function AppRouter() {
         element={
           <Suspense fallback={<div className="grid h-full place-items-center text-[0.8125rem] text-muted">Loading…</div>}>
             <PublicRegistrationPage />
+          </Suspense>
+        }
+      />
+      <Route
+        path={PATHS.publicPay}
+        element={
+          <Suspense fallback={<div className="grid h-full place-items-center text-[0.8125rem] text-muted">Loading…</div>}>
+            <PublicPayPage />
           </Suspense>
         }
       />
@@ -439,6 +460,36 @@ export function AppRouter() {
             </RequirePermission>
           }
         />
+
+        {/* Accounts & finance › ledger core: plan module `accounting` + accounting column (full edits; Sales Manager views). */}
+        {(
+          [
+            [PATHS.financeOverview, <FinanceOverviewPage key="o" />],
+            [PATHS.financeAccounts, <ChartOfAccountsPage key="a" />],
+            [PATHS.financeJournal, <JournalPage key="j" />],
+            [PATHS.financeSettings, <FinanceSettingsPage key="s" />],
+            // Accounts & finance › Invoices, credit notes, recurring (Sales Manager: view only; the editor answers "only finance" to view roles).
+            [PATHS.financeInvoices, <InvoicesPage key="inv" />],
+            [PATHS.financeInvoiceNew, <InvoiceEditorPage key="inv-new" />],
+            [PATHS.financeInvoiceDetail, <InvoiceDetailPage key="inv-d" />],
+            [PATHS.financeInvoiceEdit, <InvoiceEditorPage key="inv-e" />],
+            // Accounts & finance › Collections (Sales Manager: view only; writes answer 403 and the buttons are hidden).
+            [PATHS.financePayments, <PaymentsPage key="pay" />],
+            [PATHS.financeReceipt, <ReceiptPage key="rct" />],
+            [PATHS.financeReceivables, <ReceivablesPage key="rcv" />],
+            [PATHS.financeStatement, <StatementPage key="stmt" />],
+          ] as const
+        ).map(([path, page]) => (
+          <Route
+            key={path}
+            path={path}
+            element={
+              <RequirePermission module="accounting">
+                <Suspense fallback={<GateSkeleton />}>{page}</Suspense>
+              </RequirePermission>
+            }
+          />
+        ))}
 
         {/* Spec screens not built yet: a placeholder that explains what's coming. */}
         <Route path="*" element={<PlannedPage />} />

@@ -47,6 +47,7 @@ import {
   UserPlus,
   Users,
   Wallet,
+  HandCoins,
   WandSparkles,
   type LucideIcon,
   Handshake,
@@ -54,6 +55,10 @@ import {
   Inbox,
   Luggage,
   ListChecks,
+  Landmark,
+  ListTree,
+  BookOpen,
+  SlidersHorizontal,
 } from 'lucide-react'
 import type { ModuleKey, Scope } from '@/shared/types'
 import type { PlanModule } from '@/modules/billing/types'
@@ -539,8 +544,14 @@ export const NAV_SECTIONS: NavSection[] = [
     label: 'Accounts & finance',
     dot: 'bg-success-500',
     items: [
-      { label: 'Invoices', icon: Receipt, to: '/finance/invoices', module: 'accounting', phase: 3, description: 'Invoices from contracts or won deals, with overdue alerts.' },
-      { label: 'Payments', icon: Wallet, to: '/finance/payments', module: 'accounting', phase: 3, description: 'Payments received against invoices.' },
+      // Final order: Finance overview, Invoices, Payments, Receivables, Chart of accounts, Journal, Finance settings (Expenses: next phase).
+      { label: 'Finance overview', icon: Landmark, to: PATHS.financeOverview, module: 'accounting', ready: true, end: true, phase: 3, description: 'Cash and bank balances, receivables and overdue, revenue this month vs last, the VAT estimate and the latest journal entries.' },
+      { label: 'Invoices', icon: Receipt, to: PATHS.financeInvoices, module: 'accounting', ready: true, phase: 3, description: 'Tax invoices from quotations, contracts and won deals; credit notes, recurring billing, print (bilingual in KSA) and ZATCA e-invoicing data.' },
+      { label: 'Payments', icon: Wallet, to: PATHS.financePayments, module: 'accounting', ready: true, phase: 3, description: 'Payments received with allocation to invoices, customer credit, refunds and receipts; post-dated cheques; online payment links.' },
+      { label: 'Receivables', icon: HandCoins, to: PATHS.financeReceivables, module: 'accounting', ready: true, phase: 3, description: 'Aging by customer, statements of account, credit limits and automatic payment reminders.' },
+      { label: 'Chart of accounts', icon: ListTree, to: PATHS.financeAccounts, module: 'accounting', ready: true, phase: 3, description: 'Accounts by type with balances, system roles, account ledgers and the country template.' },
+      { label: 'Journal', icon: BookOpen, to: PATHS.financeJournal, module: 'accounting', ready: true, phase: 3, description: 'Every posting: filters, manual journal entries, reversals, opening balances and the trial balance.' },
+      { label: 'Finance settings', icon: SlidersHorizontal, to: PATHS.financeSettings, module: 'accounting', ready: true, phase: 3, description: 'Fiscal year, VAT registration, invoice defaults, exchange rates and the lock date.' },
       { label: 'Expenses', icon: FileSpreadsheet, to: '/finance/expenses', module: 'accounting', phase: 3, description: 'Expenses with receipts, vendors and bank accounts.' },
     ],
   },
