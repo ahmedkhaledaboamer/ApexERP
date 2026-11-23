@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ClipboardEvent, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react'
 import { KeyRound } from 'lucide-react'
 import { cn } from '@/shared/lib/utils'
 import { DEMO_OTP, MOCK_API } from '@/modules/auth/constants'
@@ -18,7 +18,14 @@ interface OtpInputProps {
   describedBy?: string
 }
 
-/** Segmented one-time-code input: one box per digit, paste fills all, arrows and backspace move. */
+/**
+ * Segmented one-time-code input: one box per digit. Typing a digit moves straight to the next box,
+ * paste / autofill fills all, Backspace and the arrow keys move back and forth.
+ *
+ * The latest value is kept in a ref and updated synchronously on every change, so moving focus right
+ * after a keystroke never reads the previous render's value (which used to bounce focus back to the
+ * first box).
+ */
 export function OtpInput({
   value,
   onChange,
@@ -31,11 +38,26 @@ export function OtpInput({
   describedBy,
 }: OtpInputProps) {
   const refs = useRef<(HTMLInputElement | null)[]>([])
+  const valueRef = useRef(value)
+  valueRef.current = value
+  const [active, setActive] = useState<number | null>(null)
   const digits = Array.from({ length }, (_, i) => value[i] ?? '')
 
   useEffect(() => {
     if (autoFocus) refs.current[0]?.focus()
   }, [autoFocus])
+
+  // The boxes are disabled while a code is being checked, which drops focus. When they come back
+  // (e.g. a wrong code cleared them), put the cursor in the first empty box so the user can retype.
+  const wasDisabled = useRef(disabled)
+  useEffect(() => {
+    if (wasDisabled.current && !disabled && autoFocus) {
+      const el = refs.current[Math.min(valueRef.current.length, length - 1)]
+      el?.focus()
+      el?.select()
+    }
+    wasDisabled.current = disabled
+  }, [disabled, autoFocus, length])
 
   function focus(i: number) {
     const el = refs.current[Math.max(0, Math.min(length - 1, i))]
@@ -45,46 +67,55 @@ export function OtpInput({
 
   function commit(next: string) {
     const clean = next.replace(/\D/g, '').slice(0, length)
+    valueRef.current = clean
     onChange(clean)
     if (clean.length === length) onComplete?.(clean)
-  }
-
-  function setAt(i: number, d: string) {
-    const arr = digits.slice()
-    arr[i] = d
-    // Keep the value contiguous: anything after an empty box is dropped.
-    const firstEmpty = arr.indexOf('')
-    commit((firstEmpty === -1 ? arr : arr.slice(0, firstEmpty)).join(''))
+    return clean
   }
 
   function onInput(i: number, raw: string) {
-    const d = raw.replace(/\D/g, '')
-    if (!d) return
-    if (d.length > 1) {
-      // Autofill / fast typing delivered several digits into one box.
-      commit((value.slice(0, i) + d).slice(0, length))
-      focus(i + d.length)
+    const typed = raw.replace(/\D/g, '')
+    if (!typed) return
+    const current = valueRef.current
+    // Never leave a gap: a digit typed past the first empty box lands in that box.
+    const at = Math.min(i, current.length)
+    if (typed.length > 1) {
+      // Autofill, fast typing or typing into a filled box: take the new characters from this box on.
+      const incoming = current[at] && typed.startsWith(current[at]) && typed.length === 2 ? typed.slice(1) : typed
+      const next = commit(current.slice(0, at) + incoming)
+      focus(Math.min(next.length, length - 1))
       return
     }
-    setAt(Math.min(i, value.length), d)
-    focus(Math.min(i, value.length) + 1)
+    const next = commit(current.slice(0, at) + typed + current.slice(at + 1))
+    focus(Math.min(at + 1, next.length, length - 1))
   }
 
   function onKey(e: KeyboardEvent<HTMLInputElement>, i: number) {
+    const current = valueRef.current
     if (e.key === 'Backspace') {
       e.preventDefault()
-      if (digits[i]) {
-        commit(value.slice(0, i))
+      if (current[i]) {
+        commit(current.slice(0, i))
+        focus(i)
       } else if (i > 0) {
-        commit(value.slice(0, i - 1))
+        commit(current.slice(0, i - 1))
         focus(i - 1)
       }
+    } else if (e.key === 'Delete') {
+      e.preventDefault()
+      if (current[i]) commit(current.slice(0, i))
     } else if (e.key === 'ArrowLeft') {
       e.preventDefault()
       focus(i - 1)
     } else if (e.key === 'ArrowRight') {
       e.preventDefault()
-      focus(Math.min(i + 1, value.length))
+      focus(Math.min(i + 1, current.length))
+    } else if (e.key === 'Home') {
+      e.preventDefault()
+      focus(0)
+    } else if (e.key === 'End') {
+      e.preventDefault()
+      focus(Math.min(current.length, length - 1))
     }
   }
 
@@ -92,42 +123,70 @@ export function OtpInput({
     const text = e.clipboardData.getData('text').replace(/\D/g, '')
     if (!text) return
     e.preventDefault()
-    commit(text)
-    focus(text.length)
+    const next = commit(text)
+    focus(Math.min(next.length, length - 1))
   }
 
+  const half = Math.floor(length / 2)
+
   return (
-    <div role="group" aria-label={label} aria-describedby={describedBy} className="flex items-center gap-2">
-      {digits.map((d, i) => (
-        <input
-          key={i}
-          ref={(el) => {
-            refs.current[i] = el
-          }}
-          type="text"
-          inputMode="numeric"
-          autoComplete={i === 0 ? 'one-time-code' : 'off'}
-          pattern="[0-9]*"
-          maxLength={length}
-          aria-label={`Digit ${i + 1} of ${length}`}
-          aria-invalid={invalid || undefined}
-          disabled={disabled}
-          value={d}
-          onChange={(e) => onInput(i, e.target.value)}
-          onKeyDown={(e) => onKey(e, i)}
-          onPaste={onPaste}
-          onFocus={(e) => {
-            // Don't let focus skip ahead of the first empty box.
-            if (i > value.length) focus(value.length)
-            else e.target.select()
-          }}
-          className={cn(
-            'num h-12 w-full min-w-0 max-w-12 rounded-lg border bg-surface text-center text-xl font-semibold text-ink shadow-xs transition-[border-color,box-shadow] duration-150 focus-visible:border-brand-500 focus-visible:shadow-[var(--shadow-focus)] focus-visible:outline-none disabled:cursor-not-allowed disabled:bg-sunken disabled:opacity-70',
-            invalid ? 'border-danger-500' : d ? 'border-line-strong' : 'border-line-strong hover:border-subtle',
-            i === length / 2 - 1 && 'me-2',
-          )}
-        />
-      ))}
+    <div
+      role="group"
+      aria-label={label}
+      aria-describedby={describedBy}
+      dir="ltr"
+      className={cn('flex items-center justify-between gap-2 sm:gap-2.5', invalid && 'motion-safe:animate-otp-shake')}
+    >
+      {digits.map((d, i) => {
+        const isActive = active === i
+        return (
+          <div key={i} className="contents">
+            {i === half && <span aria-hidden className="h-0.5 w-3 shrink-0 rounded-full bg-line-strong" />}
+            <div className="relative min-w-0 flex-1">
+              <input
+                ref={(el) => {
+                  refs.current[i] = el
+                }}
+                type="text"
+                inputMode="numeric"
+                autoComplete={i === 0 ? 'one-time-code' : 'off'}
+                pattern="[0-9]*"
+                maxLength={length}
+                aria-label={`Digit ${i + 1} of ${length}`}
+                aria-invalid={invalid || undefined}
+                disabled={disabled}
+                value={d}
+                onChange={(e) => onInput(i, e.target.value)}
+                onKeyDown={(e) => onKey(e, i)}
+                onPaste={onPaste}
+                onFocus={(e) => {
+                  setActive(i)
+                  // Focus never skips ahead of the first empty box (reads the latest value).
+                  const len = valueRef.current.length
+                  if (i > len) focus(len)
+                  else e.target.select()
+                }}
+                onBlur={() => setActive((a) => (a === i ? null : a))}
+                className={cn(
+                  'num block aspect-[4/5] h-auto w-full max-w-14 rounded-xl border-[1.5px] bg-surface text-center text-2xl font-semibold text-ink caret-transparent shadow-xs outline-none transition-[border-color,box-shadow,background-color,transform] duration-150',
+                  'focus:border-brand-500 focus:shadow-[0_0_0_4px_color-mix(in_oklab,var(--color-brand-500)_18%,transparent)]',
+                  'disabled:cursor-not-allowed disabled:bg-sunken disabled:opacity-70',
+                  invalid
+                    ? 'border-danger-500 bg-danger-50/40 text-danger-600 dark:bg-danger-500/10'
+                    : d
+                      ? 'border-brand-300 bg-brand-50/50 dark:border-brand-500/50 dark:bg-brand-500/10'
+                      : 'border-line-strong hover:border-subtle',
+                  d && !invalid && 'motion-safe:animate-otp-pop',
+                )}
+              />
+              {/* A soft caret in the active empty box, since the native caret is hidden. */}
+              {isActive && !d && !disabled && (
+                <span aria-hidden className="pointer-events-none absolute inset-x-0 top-1/2 mx-auto h-6 w-0.5 -translate-y-1/2 rounded-full bg-brand-500 motion-safe:animate-pulse" />
+              )}
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -136,17 +195,25 @@ export function OtpInput({
 export function DemoOtpHint({ className, onUse }: { className?: string; onUse?: (code: string) => void }) {
   if (!MOCK_API) return null
   return (
-    <p className={cn('flex flex-wrap items-center gap-1.5 rounded-lg border border-dashed border-line-strong px-3 py-2 text-xs text-muted', className)}>
-      <KeyRound className="size-3.5 shrink-0" aria-hidden />
-      <span>
-        Demo code: <span className="num font-semibold tracking-[0.15em] text-ink">{DEMO_OTP}</span>
+    <div className={cn('flex items-center gap-3 rounded-xl border border-brand-100 bg-brand-50/60 px-3.5 py-2.5 dark:border-brand-500/20 dark:bg-brand-500/10', className)}>
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-surface text-brand-600 shadow-xs dark:text-brand-300">
+        <KeyRound className="size-4" aria-hidden />
       </span>
-      <span className="text-subtle">· no authenticator app is connected in the demo</span>
+      <div className="min-w-0 flex-1 leading-tight">
+        <p className="text-xs text-muted">
+          Demo code <span className="num ms-1 text-[0.8125rem] font-semibold tracking-[0.2em] text-ink">{DEMO_OTP}</span>
+        </p>
+        <p className="mt-0.5 text-[0.6875rem] text-subtle">No authenticator app is connected in the demo.</p>
+      </div>
       {onUse && (
-        <button type="button" onClick={() => onUse(DEMO_OTP)} className="ms-auto font-medium text-brand-600 hover:underline dark:text-brand-300">
+        <button
+          type="button"
+          onClick={() => onUse(DEMO_OTP)}
+          className="shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-medium text-brand-700 transition-colors hover:bg-brand-100 dark:text-brand-200 dark:hover:bg-brand-500/20"
+        >
           Use it
         </button>
       )}
-    </p>
+    </div>
   )
 }

@@ -84,6 +84,25 @@
   --animate-fade-in: fade-in 160ms var(--ease-out-strong);
   --animate-pop-in: pop-in 180ms var(--ease-out-strong);
   --animate-slide-in-end: slide-in-end 240ms var(--ease-out-strong);
+  --animate-otp-pop: otp-pop 150ms var(--ease-out-strong);
+  --animate-otp-shake: otp-shake 320ms ease-in-out;
+
+  /* One-time-code boxes: a digit lands with a small pop; a wrong code shakes the row. */
+  @keyframes otp-pop {
+    from {
+      transform: scale(0.92);
+    }
+  }
+  @keyframes otp-shake {
+    20%,
+    60% {
+      transform: translateX(-5px);
+    }
+    40%,
+    80% {
+      transform: translateX(5px);
+    }
+  }
 
   @keyframes fade-in {
     from {

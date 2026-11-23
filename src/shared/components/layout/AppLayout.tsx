@@ -1,4 +1,3 @@
-import { lazy, Suspense } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { can } from '@/shared/lib/permissions'
 import { useAppDispatch, useAppSelector, useCurrentUser } from '@/store/hooks'
@@ -22,15 +21,6 @@ import { useReadOnly } from '@/shared/lib/readOnly'
 import CancelledPage from '@/modules/billing/pages/CancelledPage'
 import { QuietBoundary, RouteErrorBoundary } from './ErrorBoundary'
 import { OfflineBanner } from './OfflineBanner'
-
-/**
- * Dev-only billing simulator (simulated clock, status, usage). `import.meta.env.DEV` is statically
- * false in a production build, so this branch and its dynamic import are dropped from the bundle.
- */
-const BillingSimulator =
-  import.meta.env.DEV && import.meta.env.VITE_API_MOCK !== 'false' && import.meta.env.MODE !== 'test'
-    ? lazy(() => import('@/modules/billing/dev/BillingSimulator'))
-    : null
 
 /** Sidebar, header, the routed page on the canvas, plus global overlays. */
 export function AppLayout() {
@@ -82,11 +72,6 @@ export function AppLayout() {
         <QuietBoundary name="lead-quick-add">
           <LeadQuickAdd open={quickAddOpen} onClose={() => dispatch(quickAddLeadSet(false))} />
         </QuietBoundary>
-      )}
-      {BillingSimulator && (
-        <Suspense fallback={null}>
-          <BillingSimulator />
-        </Suspense>
       )}
     </div>
   )

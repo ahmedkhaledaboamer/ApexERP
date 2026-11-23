@@ -39,20 +39,49 @@ export function refreshDelay(expiresAt: string | undefined, now = Date.now()): n
   return Math.min(MAX_TIMER_MS, Math.max(0, at - REFRESH_LEAD_MS - now))
 }
 
-export async function postRefresh(refreshToken: string): Promise<SessionTokens> {
+/** Rotated tokens plus whose session they belong to (from the refresh response). */
+export interface RefreshedTokens extends SessionTokens {
+  userId?: string
+  tenantId?: string
+}
+
+export async function postRefresh(refreshToken: string): Promise<RefreshedTokens> {
   const session = (await http.post<Session>('/auth/refresh', { refreshToken })).data
-  return { token: session.token, refreshToken: session.refreshToken, expiresAt: session.expiresAt }
+  return {
+    token: session.token,
+    refreshToken: session.refreshToken,
+    expiresAt: session.expiresAt,
+    userId: session.user?.id,
+    tenantId: session.tenant?.id,
+  }
+}
+
+/**
+ * Pure: do rotated tokens belong to the signed-in session? Compared by session IDENTITY (user +
+ * tenant from the refresh response), not by access-token equality: the token may legitimately have
+ * changed while the refresh was in flight, and dropping a rotated refresh token would sign the user
+ * out on the next refresh (a real backend revokes the used one). Without identity info, fall back to
+ * "the session still holds the token the refresh started from".
+ */
+export function acceptRotatedTokens(
+  session: Pick<Session, 'token' | 'user' | 'tenant'> | null,
+  previousToken: string,
+  tokens: RefreshedTokens,
+  storedToken?: string,
+): boolean {
+  if (!session) return false
+  if (tokens.userId || tokens.tenantId) return tokens.userId === session.user.id && tokens.tenantId === session.tenant.id
+  return session.token === previousToken || storedToken === previousToken
 }
 
 export function bindAuthSession(store: AppStore): () => void {
   const undoConfig = configureSession({
     refresh: postRefresh,
     saveTokens(previous, tokens) {
-      const session = store.getState().auth.session
-      // Signed out, or someone else signed in, while the refresh was in flight: drop the tokens.
-      if (!session) return
-      if (session.token !== previous && readStoredSession()?.token !== previous) return
-      store.dispatch(tokensRefreshed(tokens))
+      // Signed out, or another user / workspace signed in, while the refresh was in flight: drop them.
+      if (!acceptRotatedTokens(store.getState().auth.session, previous, tokens, readStoredSession()?.token)) return
+      const { token, refreshToken, expiresAt } = tokens
+      store.dispatch(tokensRefreshed({ token, refreshToken, expiresAt }))
     },
     expire() {
       if (!store.getState().auth.session) return
