@@ -16,6 +16,7 @@ import { Modal } from '@/shared/components/ui/Modal'
 import { Skeleton } from '@/shared/components/ui/Feedback'
 import { Field, SelectInput, TextInput } from '@/shared/components/form/Field'
 import { useToast } from '@/shared/components/ui/Toast'
+import { ApplyAdvanceModal } from '@/modules/finance/purchases/components/Advances'
 
 const MAX_FILE = 512 * 1024
 const FILE_TYPES = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp']
@@ -28,7 +29,9 @@ export default function BillDetailPage() {
   const q = useBill(id)
   const meta = usePurchasesMeta()
   const b = q.data
-  const [modal, setModal] = useState<'reject' | 'void' | 'debit' | null>(null)
+  const [modal, setModal] = useState<'reject' | 'void' | 'debit' | 'advance' | null>(null)
+  const [voidingDn, setVoidingDn] = useState<string | null>(null)
+  const voidDn = usePurchasesMutation((a: { id: string; reason: string }) => purchasesApi.voidDebitNote(a.id, a.reason))
   const [paying, setPaying] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -91,6 +94,7 @@ export default function BillDetailPage() {
             {b.can.reject && <Button variant="danger" write onClick={() => setModal('reject')}><X className="size-4" aria-hidden /> Reject</Button>}
             {b.can.approve && <Button write loading={act.isPending} onClick={() => run('approve', undefined, 'Approved')}><Check className="size-4" aria-hidden /> Approve</Button>}
             {b.can.pay && <Button write onClick={() => setPaying(true)}><Wallet className="size-4" aria-hidden /> Record payment</Button>}
+            {b.can.applyAdvance && <Button variant="secondary" write onClick={() => setModal('advance')}>Apply advance</Button>}
             {b.can.debitNote && <Button variant="secondary" write onClick={() => setModal('debit')}>Debit note</Button>}
             {b.can.attach && (
               <>
@@ -190,8 +194,8 @@ export default function BillDetailPage() {
           <Section title="Approvals">
             <ApprovalTimeline steps={b.approvals} baseCurrency={base} pending={b.status === 'pending_approval'} />
           </Section>
-          <Section title="Payments and debit notes">
-            {b.payments.length === 0 && b.debitNotes.length === 0 ? (
+          <Section title="Payments, advances and debit notes">
+            {b.payments.length === 0 && b.debitNotes.length === 0 && b.advances.length === 0 ? (
               <p className="text-[0.8125rem] text-muted">None yet.</p>
             ) : (
               <ul className="space-y-1.5 text-[0.8125rem]">
@@ -203,10 +207,19 @@ export default function BillDetailPage() {
                     <span className="num ms-auto">{fmt2(p.amount)} {b.currency}</span>
                   </li>
                 ))}
+                {b.advances.map((x, i) => (
+                  <li key={`${x.advanceId}-${i}`} className="flex items-center gap-2">
+                    <span className="num font-medium">{x.number}</span>
+                    <span className="text-muted">{fmtDay(x.date)} · advance applied</span>
+                    <span className="num ms-auto">{fmt2(x.amount)} {b.currency}</span>
+                  </li>
+                ))}
                 {b.debitNotes.map((d) => (
                   <li key={d.id} className="flex items-center gap-2">
                     <span className="num font-medium">{d.number}</span>
                     <span className="text-muted">{fmtDay(d.date)} · {d.reason}</span>
+                    {d.status === 'void' && <Badge tone="neutral">Void</Badge>}
+                    {d.canVoid && <Button size="xs" variant="ghost" write onClick={() => setVoidingDn(d.id)}>Void</Button>}
                     <span className="num ms-auto">{fmt2(d.total)} {b.currency}</span>
                   </li>
                 ))}
@@ -244,6 +257,16 @@ export default function BillDetailPage() {
       <ReasonModal open={modal === 'reject'} title="Reject bill" confirm="Reject" onClose={() => setModal(null)} onConfirm={(r) => run('reject', r, 'Rejected')} busy={act.isPending} error={error} />
       <ReasonModal open={modal === 'void'} title="Void bill" confirm="Void bill" onClose={() => setModal(null)} onConfirm={(r) => run('void', r, 'Bill voided')} busy={act.isPending} error={error} />
       <DebitNoteModal open={modal === 'debit'} onClose={() => setModal(null)} bill={b} today={meta.data?.today ?? ''} />
+      <ApplyAdvanceModal open={modal === 'advance'} onClose={() => setModal(null)} billId={b.id} balance={b.balanceDue} advances={b.unappliedAdvances} />
+      <ReasonModal
+        open={!!voidingDn}
+        title="Void debit note"
+        confirm="Void debit note"
+        onClose={() => setVoidingDn(null)}
+        busy={voidDn.isPending}
+        error={error}
+        onConfirm={(reason) => voidDn.mutate({ id: voidingDn!, reason }, { onSuccess: () => { toast.success('Debit note voided'); setVoidingDn(null) }, onError: (e) => setError(errMsg(e)) })}
+      />
       <PayDrawer open={paying} onClose={() => setPaying(false)} bill={b} />
     </>
   )

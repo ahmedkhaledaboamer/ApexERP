@@ -31,10 +31,12 @@ import { onPayrollEvent } from './hrPayroll'
  *       and the cash withdrawn for cash-paid lines.
  *   run REOPENED (approved → draft)                 the accrual is reversed (and posted again on the next approval).
  *   loan / advance created                          Dr 1410 / Cr default bank (cancelled: reversed).
- *   final settlement PAID                           Dr 6120 EOSB (gratuity) · Dr 6100 unpaid salary and leave encashment
- *       · Dr 6110 positive adjustments / Cr 1410 open loan balance · Cr 4900 negative adjustments · Cr bank (total).
- *       EOSB POLICY: expensed at settlement (Dr 6120). No monthly EOSB provision is accrued, so 2500 stays untouched
- *       (docs/DB-ALIGNMENT.md F-B5).
+ *   final settlement PAID                           Dr 2500 EOSB provision used (the employee's accrued provision)
+ *       · Dr 6120 the gratuity not covered by the provision (Cr 6120 when the provision was larger) · Dr 6100 unpaid
+ *       salary and leave encashment · Dr 6110 positive adjustments / Cr 1410 open loan balance · Cr 4900 negative
+ *       adjustments · Cr bank (total).
+ *       EOSB POLICY: accrued monthly (services/financeEosb.ts: Dr 6120 / Cr 2500 per month from the gratuity
+ *       calculator); the settlement consumes the provision (docs/DB-ALIGNMENT.md F-B5, done).
  *
  * Postings dated on or before the lock date are skipped (status `skipped_locked`), never shifted. The sync is idempotent
  * (state-based): it runs on every payroll event (services/hrPayroll.ts `onPayrollEvent`) and on every finance access,
@@ -46,6 +48,7 @@ const ACC = {
   salaries: 'ACC-6100',
   allowances: 'ACC-6110',
   eosb: 'ACC-6120',
+  eosbProvision: 'ACC-2500',
   employerSi: 'ACC-6130',
   salariesPayable: 'ACC-2400',
   siPayable: 'ACC-2410',
@@ -255,14 +258,20 @@ function syncLoan(co: string, l: Tenant<(typeof hrPayLoans)[number]>, by: string
   rec.updatedAt = nowIso()
 }
 
-/** The settlement payment lines (EOSB expensed at settlement — see the policy above). */
-export function settlementLines(f: Pick<SettlementRecord, 'gratuity' | 'unpaidSalary' | 'leaveEncashment' | 'loanBalance' | 'adjustments' | 'total'>, bank: string, name: string): JournalLine[] {
+/**
+ * The settlement payment lines: the gratuity is paid out of the employee's EOSB provision (Dr 2500 `provision`) and only
+ * the difference goes to 6120 (a credit when the provision was larger). `provision` 0 = nothing accrued (all to 6120).
+ */
+export function settlementLines(f: Pick<SettlementRecord, 'gratuity' | 'unpaidSalary' | 'leaveEncashment' | 'loanBalance' | 'adjustments' | 'total'>, bank: string, name: string, provision = 0): JournalLine[] {
   const lines: JournalLine[] = []
   const dr = (accountId: string, amount: number, description: string) => {
     if (amount > 0) lines.push({ accountId, debit: round2(amount), credit: 0, description })
     else if (amount < 0) lines.push({ accountId, debit: 0, credit: round2(-amount), description })
   }
-  dr(ACC.eosb, f.gratuity.amount, `End-of-service gratuity — ${name}`)
+  const used = round2(Math.max(0, provision))
+  if (used > 0) dr(ACC.eosbProvision, used, `End-of-service provision used — ${name}`)
+  const diff = round2(f.gratuity.amount - used)
+  dr(ACC.eosb, diff, diff >= 0 ? `End-of-service gratuity${used > 0 ? ' above the provision' : ''} — ${name}` : `End-of-service provision released (above the gratuity) — ${name}`)
   dr(ACC.salaries, f.unpaidSalary, `Unpaid salary to the exit date — ${name}`)
   dr(ACC.salaries, f.leaveEncashment, `Leave encashment — ${name}`)
   for (const a of f.adjustments) {
@@ -286,11 +295,19 @@ function syncSettlement(co: string, f: Tenant<SettlementRecord>, by: string | nu
   }
   const name = employeeById(co, f.employeeId)?.fullName ?? f.employeeId
   const bank = defaultBankOf(co)
-  const e = postJournal(co, { date, memo: `Final settlement — ${name}`, sourceType: 'payroll', sourceId: f.id, lines: settlementLines(f, bank, name), createdBy: by ?? f.paidBy })
+  const provision = eosbHooks.provision(co, f.employeeId)
+  const e = postJournal(co, { date, memo: `Final settlement — ${name}`, sourceType: 'payroll', sourceId: f.id, lines: settlementLines(f, bank, name, provision), createdBy: by ?? f.paidBy })
+  if (provision > 0) eosbHooks.used(co, f, round2(provision), date)
   rec.entryId = e.id
   rec.paidFromAccountId = bank
   rec.status = 'paid'
   rec.updatedAt = nowIso()
+}
+
+/** The EOSB provision service (financeEosb.ts) installs these (no import cycle): the employee's provision, and its use. */
+let eosbHooks: { provision: (co: string, employeeId: string) => number; used: (co: string, f: SettlementRecord, amount: number, date: string) => void } = { provision: () => 0, used: () => {} }
+export function setEosbSettlementHooks(h: typeof eosbHooks): void {
+  eosbHooks = h
 }
 
 /* ---------------- sync ---------------- */
@@ -343,6 +360,7 @@ registerJournalSource('payroll', (co, id) => {
   }
   if (id.startsWith('PLN-')) return { number: id, link: '/hr/salary?tab=loans' }
   if (id.startsWith('PFS-')) return { number: id, link: '/hr/salary?tab=settlements' }
+  if (id.startsWith('EOSB-')) return { number: `EOSB provision ${id.slice(5)}`, link: '/finance/banking?tab=eosb' }
   if (id.startsWith('CST-')) return { number: id, link: `/finance/commissions?statement=${encodeURIComponent(id)}` }
   return null
 })

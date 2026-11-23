@@ -23,6 +23,8 @@ const COMMON: Row[] = [
   ['1300', 'VAT recoverable (input)', 'asset', 'current_asset', '1000', 'vat_input'],
   ['1400', 'Prepaid expenses', 'asset', 'current_asset', '1000'],
   ['1410', 'Employee advances and loans', 'asset', 'current_asset', '1000'],
+  // Prepayments to suppliers before their bill (Purchases › Supplier advances); applied to bills or refunded.
+  ['1420', 'Supplier advances', 'asset', 'current_asset', '1000', 'supplier_advances'],
   ['1500', 'Fixed assets', 'asset', 'fixed_asset', '1000', undefined, true],
   ['1510', 'IT equipment', 'asset', 'fixed_asset', '1500'],
   ['1520', 'Furniture and fittings', 'asset', 'fixed_asset', '1500'],

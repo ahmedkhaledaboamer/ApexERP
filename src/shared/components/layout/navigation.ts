@@ -1,5 +1,8 @@
 import {
   BarChart3,
+  HeartPulse,
+  Gavel,
+  FileCheck2,
   Banknote,
   BadgePercent,
   Building,
@@ -515,6 +518,16 @@ export const NAV_SECTIONS: NavSection[] = [
         description: 'Review cycles with goals, self and manager reviews, HR calibration and shared results; probation reviews before probation ends.',
       },
       {
+        label: 'Engagement',
+        icon: HeartPulse,
+        to: PATHS.hrEngagement,
+        module: 'hr',
+        scopes: ['full', 'team'],
+        ready: true,
+        phase: 3,
+        description: 'Engagement surveys and eNPS pulses (anonymous, groups of 5+): response rate, drivers, trends and comment themes. Employees answer from My HR.',
+      },
+      {
         label: 'Company Assets',
         icon: Laptop,
         to: PATHS.hrAssets,
@@ -532,6 +545,26 @@ export const NAV_SECTIONS: NavSection[] = [
         ready: true,
         phase: 3,
         description: 'Profile changes and HR letter requests from My HR in one queue; letter templates and verification codes.',
+      },
+      {
+        label: 'Discipline',
+        icon: Gavel,
+        to: PATHS.hrDiscipline,
+        module: 'hr',
+        scopes: ['full', 'team'],
+        ready: true,
+        phase: 3,
+        description: 'Warnings and disciplinary actions with the employee’s acknowledgement, expiry, escalation, warning letters (EN / AR) and payroll deductions.',
+      },
+      {
+        label: 'Policies',
+        icon: FileCheck2,
+        to: PATHS.hrPolicies,
+        module: 'hr',
+        scopes: ['full', 'team'],
+        ready: true,
+        phase: 3,
+        description: 'Publish company policies, track who acknowledged each version by department, reminders and CSV export.',
       },
       // Keep HR Reports the last HR item.
       {
@@ -557,11 +590,11 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: 'Payments', icon: Wallet, to: PATHS.financePayments, module: 'accounting', ready: true, phase: 3, description: 'Payments received with allocation to invoices, customer credit, refunds and receipts; post-dated cheques; online payment links.' },
       { label: 'Receivables', icon: HandCoins, to: PATHS.financeReceivables, module: 'accounting', ready: true, phase: 3, description: 'Aging by customer, statements of account, credit limits and automatic payment reminders.' },
       { label: 'Suppliers', icon: Truck, to: PATHS.financeSuppliers, module: 'accounting', ready: true, phase: 3, description: 'The vendor directory with finance profiles (VAT number, terms, bank details), balances, statements and AP aging.' },
-      // Self-service: every employee requests purchases for their own department (plan gate only; the API scopes what each sees).
-      { label: 'Purchase orders', icon: ClipboardList, to: PATHS.financePurchaseOrders, planModule: 'accounting', ready: true, phase: 3, description: 'Purchase requests with amount-based approvals, printable POs and goods / service receipts.' },
+      // Finance roles only (accounting full / view). Employees request purchases from My HR / the user menu (“Request a purchase”); the route stays plan-gated and the API scopes what each sees.
+      { label: 'Purchase orders', icon: ClipboardList, to: PATHS.financePurchaseOrders, module: 'accounting', ready: true, phase: 3, description: 'Purchase requests with amount-based approvals, printable POs and goods / service receipts.' },
       { label: 'Bills', icon: FileInput, to: PATHS.financeBills, module: 'accounting', ready: true, phase: 3, description: 'Supplier bills with PO matching, approvals, debit notes, payment runs, payment vouchers and payables aging.' },
-      // Self-service too: every employee files expense claims here (plan gate only; company expenses need accounting, the API scopes the rest).
-      { label: 'Expenses', icon: FileSpreadsheet, to: PATHS.financeExpenses, planModule: 'accounting', ready: true, phase: 3, description: 'Company expenses with receipts and VAT, employee expense claims reimbursed now or through payroll, petty cash funds, categories and policy.' },
+      // Finance roles only. Employees file expense claims from My HR / the user menu (“My expense claims”); the route stays plan-gated (the API scopes the rest).
+      { label: 'Expenses', icon: FileSpreadsheet, to: PATHS.financeExpenses, module: 'accounting', ready: true, phase: 3, description: 'Company expenses with receipts and VAT, employee expense claims reimbursed now or through payroll, petty cash funds, categories and policy.' },
       { label: 'Banking', icon: Building, to: PATHS.financeBanking, module: 'accounting', ready: true, phase: 3, description: 'Bank and cash accounts, transfers (multi-currency), CSV statement import, reconciliation with bank rules, and payroll postings.' },
       { label: 'Commissions', icon: BadgePercent, to: PATHS.financeCommissions, module: 'accounting', ready: true, phase: 3, description: 'Commission plans (collected revenue or won deals, tiers by target achievement, caps, clawback), monthly statements approved by the Sales Manager and an Accountant, pushed to payroll.' },
       { label: 'Financial statements', icon: FileChartColumn, to: PATHS.financeStatements, module: 'accounting', ready: true, phase: 3, description: 'Profit and loss (comparisons, department / project / event / customer filters, 12-month trend), balance sheet, cash flow, general ledger and trial balance from the journal; CSV / Excel / print; year-end close.' },
@@ -622,8 +655,9 @@ export const NAV_SECTIONS: NavSection[] = [
         to: '/integrations',
         module: 'settings',
         planModule: 'integrations',
+        ready: true,
         phase: 1,
-        description: 'Email and website form now; WhatsApp, ads, calendar and payments in phase 3. Status and sync log.',
+        description: 'Email sending, WhatsApp, website forms, calendars, payment gateways, API keys and webhooks. Status and sync log.',
       },
       {
         label: 'Audit log',
@@ -637,8 +671,9 @@ export const NAV_SECTIONS: NavSection[] = [
         label: 'AI assistant',
         icon: Bot,
         to: '/ai',
-        // Hook point for the AI assistant: gated by useEntitlements().hasModule('ai').
+        // Gated by the plan module `ai` (useEntitlements().hasModule('ai')); every role, the API scopes the answers.
         planModule: 'ai',
+        ready: true,
         phase: 1,
         description: 'Drafts emails, suggests services, summarizes notes. Any change asks for your confirmation first.',
       },

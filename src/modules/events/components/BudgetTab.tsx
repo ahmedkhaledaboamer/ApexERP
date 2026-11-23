@@ -4,7 +4,7 @@ import { Link2, Plus, Star, Trash2, Wallet } from 'lucide-react'
 import { VENDOR_CATEGORY_LABEL } from '@/modules/events/libraryTypes'
 import { useVendorsQuery } from '@/modules/events/hooks/useEventLibrary'
 import { RateVendorModal } from '@/modules/events/components/library/RateVendorModal'
-import { vendorPath } from '@/app/paths'
+import { financeBillPath, vendorPath } from '@/app/paths'
 import type { BudgetCategory, EventDetail } from '@/modules/events/types'
 import { BUDGET_CATEGORIES, BUDGET_CATEGORY_LABEL } from '@/modules/events/types'
 import { useBudgetQuery, useLinkCampaign, useRemoveBudgetLine, useSaveBudgetLine } from '@/modules/events/hooks/useEventsAdvanced'
@@ -45,10 +45,18 @@ export function BudgetTab({ event: e }: { event: EventDetail }) {
 
   return (
     <div className="space-y-6">
-      <section aria-label="Budget totals" className={`grid grid-cols-1 gap-5 sm:grid-cols-3 ${b.sponsorshipIncome != null ? 'xl:grid-cols-4' : ''}`}>
+      <section aria-label="Budget totals" className="grid grid-cols-1 gap-5 sm:grid-cols-3 xl:grid-cols-4">
         <StatCard label="Planned" icon={<Wallet />} value={moneyIn(b.plannedTotal, b.currency)} hint={b.budget === null ? 'No event budget set' : `Event budget ${moneyIn(b.budget, b.currency)}`} />
         <StatCard label="Actual" icon={<Wallet />} value={moneyIn(b.actualTotal, b.currency)} hint={b.remaining === null ? undefined : b.remaining >= 0 ? `${moneyIn(b.remaining, b.currency)} left` : `${moneyIn(-b.remaining, b.currency)} over budget`} />
         {b.sponsorshipIncome != null && <StatCard label="Sponsorship income" icon={<Wallet />} value={moneyIn(b.sponsorshipIncome, b.currency)} hint="Signed + paid sponsors; counted in the ROI" />}
+        {!!b.billedTotal && (
+          <StatCard
+            label="Billed through finance"
+            icon={<Wallet />}
+            value={moneyIn(b.billedTotal, b.currency)}
+            hint={`Event cost without double counting: ${moneyIn(b.costTotal ?? b.actualTotal, b.currency)}${b.unlinkedBilled ? ` · ${moneyIn(b.unlinkedBilled, b.currency)} billed without a line` : ''}`}
+          />
+        )}
         <StatCard label="Posted to the campaign" icon={<Link2 />} value={b.campaignName ? moneyIn(b.postedTotal, b.currency) : '—'} hint={b.campaignName ?? 'Not linked to a campaign'} />
       </section>
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
@@ -60,13 +68,14 @@ export function BudgetTab({ event: e }: { event: EventDetail }) {
                 <th className="px-5 py-2 text-start font-medium">Category</th>
                 <th className="px-3 py-2 text-end font-medium">Planned</th>
                 <th className="px-3 py-2 text-end font-medium">Actual</th>
+                <th className="px-3 py-2 text-end font-medium" title="Posted supplier bills charged to the line (Accounts & finance). The line costs max(actual, billed).">Billed</th>
                 <th className="px-5 py-2" />
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
               {b.lines.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-5 py-4 text-muted">No budget lines yet.</td>
+                  <td colSpan={5} className="px-5 py-4 text-muted">No budget lines yet.</td>
                 </tr>
               )}
               {b.lines.map((l) => (
@@ -94,6 +103,14 @@ export function BudgetTab({ event: e }: { event: EventDetail }) {
                     ) : (
                       moneyIn(l.actual, b.currency)
                     )}
+                  </td>
+                  <td className="num px-3 py-2 text-end" data-testid={`billed-${l.id}`}>
+                    {l.billed ? moneyIn(l.billed, b.currency) : <span className="text-subtle">—</span>}
+                    {(l.bills ?? []).map((x) => (
+                      <Link key={x.id} to={financeBillPath(x.id)} className="block text-xs text-brand-700 hover:underline dark:text-brand-300">
+                        {x.number}
+                      </Link>
+                    ))}
                   </td>
                   <td className="px-5 py-2 text-end">
                     {l.source && <Badge tone="sky">From {l.source.kind === 'trip' ? 'a trip' : 'a shipment'}</Badge>}

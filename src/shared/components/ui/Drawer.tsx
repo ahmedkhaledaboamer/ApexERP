@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { cn } from '@/shared/lib/utils'
+import { onTopEscape } from './layerStack'
 import { Button } from '@/shared/components/ui/Button'
 
 interface DrawerProps {
@@ -29,12 +30,10 @@ export function Drawer({ open, onClose, title, description, children, footer, wi
     if (!open) return
     const prev = document.activeElement as HTMLElement | null
     panelRef.current?.focus()
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onCloseRef.current()
-    }
-    document.addEventListener('keydown', onKey)
+    // Escape closes the drawer only when nothing opened on top of it (a modal or menu closes first).
+    const offEscape = onTopEscape(() => onCloseRef.current())
     return () => {
-      document.removeEventListener('keydown', onKey)
+      offEscape()
       prev?.focus()
     }
   }, [open])

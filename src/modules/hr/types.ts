@@ -38,6 +38,9 @@ export interface Employee {
   employeeNo: string
   fullName: string
   jobTitle: string
+  /** Optional Arabic name and job title (Arabic / bilingual HR letters). Editable by HR full. */
+  fullNameAr?: string
+  jobTitleAr?: string
   departmentId: string | null
   /** Direct manager (an employee id). */
   managerId: string | null

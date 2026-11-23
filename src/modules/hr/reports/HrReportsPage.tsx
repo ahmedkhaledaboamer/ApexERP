@@ -13,6 +13,8 @@ import { fmtDate } from '@/shared/lib/utils'
 import { hrReportsApi, useReport, useReportOptions, useReportsScope, type ReportData } from './api'
 import { toCsv } from './calc'
 import { REPORT_LABEL, type ReportKey, type ReportOptions, type ReportQuery } from './types'
+// HR › Engagement (separate module) adds one tab here: ?tab=engagement, outside ReportKey / the reports API.
+import { ENGAGEMENT_TAB, EngagementReportTab } from '@/modules/hr/engagement/components/EngagementReportTab'
 import {
   AssetsView,
   AttendanceView,
@@ -68,10 +70,11 @@ function Reports() {
   const o = options.data
   const requested = params.get('tab') as ReportKey | null
   const tab: ReportKey = requested && o.reports.includes(requested) ? requested : 'overview'
-  return <ReportsBody o={o} tab={tab} setTab={(t) => setParams((p) => { p.set('tab', t); return p }, { replace: true })} />
+  const engagement = params.get('tab') === ENGAGEMENT_TAB
+  return <ReportsBody o={o} tab={tab} engagement={engagement} setTab={(t) => setParams((p) => { p.set('tab', t); return p }, { replace: true })} />
 }
 
-function ReportsBody({ o, tab, setTab }: { o: ReportOptions; tab: ReportKey; setTab: (t: ReportKey) => void }) {
+function ReportsBody({ o, tab, engagement, setTab }: { o: ReportOptions; tab: ReportKey; engagement: boolean; setTab: (t: ReportKey | typeof ENGAGEMENT_TAB) => void }) {
   const toast = useToast()
   const [preset, setPreset] = useState<Preset>('this_year')
   const [custom, setCustom] = useState({ from: o.defaultFrom, to: o.today })
@@ -80,7 +83,7 @@ function ReportsBody({ o, tab, setTab }: { o: ReportOptions; tab: ReportKey; set
   const range = rangeOf(preset, o.today, custom)
   const ready = !!range.from && !!range.to && range.from <= range.to
   const q: ReportQuery = useMemo(() => ({ from: range.from, to: range.to, departmentId: departmentId || undefined }), [range.from, range.to, departmentId])
-  const report = useReport(tab, q, ready)
+  const report = useReport(tab, q, ready && !engagement)
   const label = (k: ReportKey) => (k === 'nationalisation' ? o.nationalisationLabel : REPORT_LABEL[k])
 
   async function exportCsv() {
@@ -103,7 +106,7 @@ function ReportsBody({ o, tab, setTab }: { o: ReportOptions; tab: ReportKey; set
         description={o.scope === 'full' ? 'Headcount, turnover, attendance, leave, compliance, assets, recruitment, training and payroll cost.' : 'Reports for the departments you head.'}
         icon={<IconTile><BarChart3 aria-hidden /></IconTile>}
         actions={
-          <Button variant="secondary" onClick={exportCsv} loading={exporting} disabled={!ready}>
+          <Button variant="secondary" onClick={exportCsv} loading={exporting} disabled={!ready || engagement}>
             <Download />
             Export CSV
           </Button>
@@ -151,10 +154,12 @@ function ReportsBody({ o, tab, setTab }: { o: ReportOptions; tab: ReportKey; set
           )}
         </div>
         <div className="overflow-x-auto">
-          <Tabs label="Reports" items={o.reports.map((k) => ({ id: k, label: label(k) }))} value={tab} onChange={setTab} />
+          <Tabs label="Reports" items={[...o.reports.map((k) => ({ id: k as string, label: label(k) })), { id: ENGAGEMENT_TAB, label: 'Engagement' }]} value={engagement ? ENGAGEMENT_TAB : tab} onChange={(t) => setTab(t as ReportKey | typeof ENGAGEMENT_TAB)} />
         </div>
-        <section id={`tab-panel-${tab}`} role="tabpanel" aria-labelledby={`tab-${tab}`}>
-          {!ready ? (
+        <section id={`tab-panel-${engagement ? ENGAGEMENT_TAB : tab}`} role="tabpanel" aria-labelledby={`tab-${engagement ? ENGAGEMENT_TAB : tab}`}>
+          {engagement ? (
+            <EngagementReportTab />
+          ) : !ready ? (
             <EmptyState title="Pick a date range" body="Choose the first and last day (the first on or before the last)." />
           ) : report.isPending ? (
             <Skeleton className="h-96 rounded-card" />

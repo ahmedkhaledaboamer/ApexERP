@@ -7,7 +7,10 @@ import { platformLogin } from '@/modules/platform/api'
 import { platformHome, platformPermissions } from '@/modules/platform/permissions'
 import { DEV_TENANT_TOOLS } from '@/modules/tenancy/dev'
 import { PRODUCT_NAME } from '@/modules/tenancy/branding'
-import { DEMO_PASSWORD } from '@/shared/lib/constants'
+import { DEMO_PASSWORD as MOCK_DEMO_PASSWORD } from '@/shared/lib/constants'
+
+/** The mock's demo password; '' in a real-backend build (inline env check, so the bundler drops the constant). */
+const DEMO_PASSWORD = import.meta.env.VITE_API_MOCK !== 'false' ? MOCK_DEMO_PASSWORD : ''
 import { Button } from '@/shared/components/ui/Button'
 import { Field, SelectInput, TextInput } from '@/shared/components/form/Field'
 import { useAppDispatch, useAppSelector } from '@/store/hooks'

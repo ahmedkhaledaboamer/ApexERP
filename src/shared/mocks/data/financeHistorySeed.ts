@@ -15,7 +15,8 @@ import { eventStartDate } from '@/shared/mocks/data/eventSponsors'
  *  - ledger entries (`historyLedgerEntriesOf`, posted by the ledger seed): payroll before the HR payroll go-live (the
  *    payroll runs start three months ago; earlier months come from the payroll bureau as one summary per month, by
  *    department), cost of sales every month (5100 / 5200), and the running overheads (rent, utilities, depreciation,
- *    marketing, fees, end-of-service provision) of the months the other seeds don't cover.
+ *    marketing, fees) of the months the other seeds don't cover. The end-of-service provision is accrued per employee
+ *    and month by services/financeEosb.ts (the opening provision included), not here.
  * Sizing: Apex payroll ≈ 52 % of revenue, gross margin ≈ 75 %; Crest payroll ≈ 47 %, gross margin ≈ 72 %; both a
  * positive net margin of roughly 10–15 %. Synthetic data only.
  */
@@ -210,8 +211,6 @@ interface CostPlan {
   monthly: [string, string, number, boolean, string, number, number][]
   /** Quarterly costs: [account, memo, amount, VAT, dept, months]. */
   quarterly: [string, string, number, boolean, string, number[]][]
-  /** End-of-service provision per month (non-cash: Cr 2500), up to last month. */
-  eosb: { amount: number; dept: string }
   vatRate: number
   vatCode: string
 }
@@ -237,7 +236,6 @@ const PLANS: Record<string, CostPlan> = {
       ['ACC-6700', 'Legal and advisory fees', 7500, true, 'd-finance', [3, 6, 9]],
       ['ACC-6140', 'Visa and labour fees (renewals)', 9000, false, 'd-hr', [2, 5, 8]],
     ],
-    eosb: { amount: 9500, dept: 'd-hr' },
   },
   [CREST_ID]: {
     bank: 'ACC-1120',
@@ -256,7 +254,6 @@ const PLANS: Record<string, CostPlan> = {
       ['ACC-6570', 'Pool cars — fuel and service', 1800, true, 'c2-ops', 21, -2],
     ],
     quarterly: [['ACC-6140', 'Iqama and government fees', 16000, false, 'c2-management', [3, 6, 9]]],
-    eosb: { amount: 5500, dept: 'c2-management' },
   },
 }
 
@@ -300,9 +297,6 @@ export function historyLedgerEntriesOf(co: string, today: string): HistoryEntry[
       } else paid(dayOf(ym, day), `${memo} — ${monthName(ym)}`, account, amount, vat, dept)
     }
     for (const [account, memo, amount, vat, dept, months] of plan.quarterly) if (months.includes(month) && ym < cur) paid(dayOf(ym, 15), `${memo} — ${monthName(ym)}`, account, amount, vat, dept)
-    if (ym < cur) {
-      out.push({ date: dayOf(ym, 31), memo: `End-of-service benefits provision — ${monthName(ym)}`, sourceType: 'manual', sourceId: null, lines: [ln('ACC-6120', plan.eosb.amount, 0, 'Provision for the month', { departmentId: plan.eosb.dept }), ln('ACC-2500', 0, plan.eosb.amount, 'End-of-service provision')] })
-    }
   })
   return out.filter((e) => e.date <= today).sort((a, b) => a.date.localeCompare(b.date))
 }

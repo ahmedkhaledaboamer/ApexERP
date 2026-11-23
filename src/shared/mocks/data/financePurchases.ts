@@ -20,6 +20,8 @@ export interface SupplierProfileRecord {
   currency: string
   bankName: string
   iban: string
+  /** SWIFT / BIC of the supplier's bank (foreign-currency transfers: the MT103 payment file). */
+  swiftBic: string
   notes: string
   updatedAt: string
   updatedBy: string | null
@@ -69,6 +71,8 @@ export interface PoRecord extends ApprovalState {
   deliveryAddress: string
   rejectionReason: string | null
   cancelReason: string | null
+  /** Advance payable to the supplier on approval, % of the order total (null = none). */
+  advancePct: number | null
   receipts: PoReceiptRecord[]
   history: HistoryEntry[]
   createdAt: string
@@ -138,6 +142,11 @@ export interface DebitNoteRecord {
   total: number
   accountId: string
   journalEntryId: string | null
+  /** A void debit note is reversed in the ledger and gives the bill its balance back (financeBillBalance). */
+  status: 'posted' | 'void'
+  voidReason: string | null
+  voidedAt: string | null
+  voidJournalEntryId: string | null
   createdBy: string | null
   createdAt: string
 }
@@ -167,12 +176,68 @@ export interface BillPaymentRecord {
   createdAt: string
 }
 
+export type PaymentRunBankStatus = 'created' | 'sent' | 'confirmed'
+
 export interface PaymentRunRecord {
   id: string
   number: string
   date: string
   paymentAccountId: string
   paymentIds: string[]
+  /** Bank upload: created → sent to bank (after a file export) → confirmed by the bank. */
+  bankStatus: PaymentRunBankStatus
+  exports: { at: string; by: string; files: string[]; count: number }[]
+  sentAt: string | null
+  sentBy: string | null
+  confirmedAt: string | null
+  confirmedBy: string | null
+  bankReference: string
+  createdBy: string | null
+  createdAt: string
+}
+
+/**
+ * Supplier advance (prepayment) paid before a bill: Dr 1420 Supplier advances / Cr the payment account. Applied to
+ * bills later (Dr AP / Cr 1420, through `applyToBill`) or refunded by the supplier (Dr bank / Cr 1420).
+ */
+export interface AdvanceApplicationRecord {
+  id: string
+  billId: string
+  date: string
+  amount: number
+  fxDifference: number
+  journalEntryId: string
+  by: string | null
+  at: string
+}
+export interface AdvanceRefundRecord {
+  id: string
+  date: string
+  amount: number
+  accountId: string
+  exchangeRate: number
+  fxDifference: number
+  reference: string
+  journalEntryId: string
+  by: string | null
+  at: string
+}
+export interface SupplierAdvanceRecord {
+  id: string
+  number: string
+  vendorId: string
+  poId: string | null
+  date: string
+  method: BillPaymentMethod
+  reference: string
+  paymentAccountId: string
+  currency: string
+  exchangeRate: number
+  amount: number
+  applications: AdvanceApplicationRecord[]
+  refunds: AdvanceRefundRecord[]
+  notes: string
+  journalEntryId: string
   createdBy: string | null
   createdAt: string
 }
@@ -183,6 +248,7 @@ export const finBills = registerArray<Tenant<BillRecord>>('fin.bills', [])
 export const finDebitNotes = registerArray<Tenant<DebitNoteRecord>>('fin.debitNotes', [])
 export const finBillPayments = registerArray<Tenant<BillPaymentRecord>>('fin.billPayments', [])
 export const finPaymentRuns = registerArray<Tenant<PaymentRunRecord>>('fin.paymentRuns', [])
+export const finSupplierAdvances = registerArray<Tenant<SupplierAdvanceRecord>>('fin.supplierAdvances', [])
 
 /** Per-company purchases settings: match tolerance and who last edited the approval rules. */
 export const finPurchasesSettings = perTenant(

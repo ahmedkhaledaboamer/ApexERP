@@ -10,6 +10,7 @@ import {
   login,
   loginTwoFactor,
   platformLogin,
+  refreshSession,
   stopImpersonation,
   switchRole,
 } from '@/shared/mocks/services/auth'
@@ -24,6 +25,11 @@ export const authHandlers = [
   http.post(`${API}/auth/login/2fa`, async ({ request }) => {
     const { challengeId, code } = (await request.json()) as { challengeId: string; code: string }
     return respond(() => loginTwoFactor(challengeId, code))
+  }),
+  // Session refresh: a new access token for the refresh token (no access token needed; it may have expired).
+  http.post(`${API}/auth/refresh`, async ({ request }) => {
+    const body = (await request.json().catch(() => null)) as { refreshToken?: unknown } | null
+    return respond(() => refreshSession(body?.refreshToken))
   }),
   http.post(`${API}/auth/switch-role`, async ({ request }) => {
     const { role } = (await request.json()) as { role: Role }

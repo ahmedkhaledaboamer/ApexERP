@@ -74,6 +74,7 @@ function seedSettings(companyId: string): FinanceSettingsRecord {
       ...base,
       vatRegistered: true,
       vatNumber: '100234567800003',
+      legalNameAr: 'أبكس أورا لتقنية المعلومات ذ.م.م',
       invoiceNotes: 'Thank you for your business.',
       invoiceTerms: 'Payment by bank transfer within 30 days of the invoice date. Late payments may incur charges.',
       exchangeRates: [rate('FXR-101', 'USD', 3.6725, '2026-01-01'), rate('FXR-102', 'EUR', 3.98, '2026-01-01'), rate('FXR-103', 'EUR', 4.05, '2026-07-01'), rate('FXR-104', 'SAR', 0.9793, '2026-01-01')],

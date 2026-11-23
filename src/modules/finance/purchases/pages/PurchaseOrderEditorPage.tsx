@@ -32,6 +32,7 @@ export default function PurchaseOrderEditorPage() {
   const [rate, setRate] = useState('')
   const [deliveryAddress, setDeliveryAddress] = useState('')
   const [notes, setNotes] = useState('')
+  const [advancePct, setAdvancePct] = useState('')
   const [lines, setLines] = useState<LineDraft[]>([newLine()])
   const [error, setError] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
@@ -48,6 +49,7 @@ export default function PurchaseOrderEditorPage() {
       setRate(p.currency === m?.baseCurrency ? '' : String(p.exchangeRate))
       setDeliveryAddress(p.deliveryAddress)
       setNotes(p.notes)
+      setAdvancePct(p.advancePct ? String(p.advancePct) : '')
       setLines(p.lines.map((l) => draftFrom(l)))
       setLoaded(true)
     } else if (!id && m) {
@@ -75,6 +77,7 @@ export default function PurchaseOrderEditorPage() {
       exchangeRate: foreign && rate ? Number(rate) : null,
       deliveryAddress,
       notes,
+      advancePct: advancePct ? Number(advancePct) : null,
       lines: toInputs(lines),
     }
     let po = id ? await purchasesApi.updatePo(id, input) : await purchasesApi.createPo(input)
@@ -154,6 +157,9 @@ export default function PurchaseOrderEditorPage() {
               <TextInput id="po-rate" type="number" step="any" min="0" value={rate} placeholder={metaRate ? String(metaRate) : ''} onChange={(e) => setRate(e.target.value)} />
             </Field>
           )}
+          <Field id="po-advance" label="Advance on approval (%)" hint="e.g. 30 when the supplier asks for an advance; finance pays it once approved">
+            <TextInput id="po-advance" type="number" min="0" max="100" step="1" value={advancePct} onChange={(e) => setAdvancePct(e.target.value)} />
+          </Field>
           <Field id="po-address" label="Delivery address" className="md:col-span-2">
             <TextInput id="po-address" value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)} />
           </Field>

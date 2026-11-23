@@ -28,6 +28,8 @@ import type {
 import { BANK_ACCOUNT_KINDS, DATE_FORMATS } from '@/modules/finance/banking/types'
 import { buildLines, clearedBalance, detectDelimiter, lineIdOf, lineKey, maskTail, matchBalances, parseCsv, parseLineId, r2, suggestMapping, suggestMatches, transferLines } from '@/modules/finance/banking/calc'
 import { isLocked } from '@/modules/finance/ledger/calc'
+import { PAYMENT_FILE_COLUMNS, PAYMENT_FILE_TEMPLATES, columnsFor, defaultLocalTemplate } from '@/modules/finance/purchases/bankFile'
+import { companyById } from '@/shared/mocks/data/tenancy'
 import { ApiError } from '@/shared/lib/apiError'
 import { nowIso } from '@/shared/mocks/clock'
 import { recordAudit } from '@/shared/mocks/data/audit'
@@ -309,6 +311,8 @@ function accountView(co: string, b: Tenant<BankAccountRecord>): BankAccount {
     openingBalance: b.openingBalance,
     openingDate: b.openingDate,
     notes: b.notes,
+    paymentFileTemplate: b.paymentFileTemplate ?? null,
+    paymentFileColumns: columnsFor(b.paymentFileTemplate ?? defaultLocalTemplate(companyById(co)?.regional.country ?? 'AE'), b.paymentFileColumns),
     createdAt: b.createdAt,
   }
 }
@@ -430,9 +434,12 @@ export function createBankAccountFor(co: string, by: string | null, input: BankA
     openingEntryId: null,
     reconcileFrom,
     notes: str(i.notes, 1000),
+    paymentFileTemplate: null,
+    paymentFileColumns: null,
     createdAt: nowIso(),
     createdBy: by,
   }
+  applyPaymentFile(b, i)
   postOpening(co, b, by)
   finBankAccounts.push(b)
   return b
@@ -463,6 +470,7 @@ export function updateBankAccount(user: User, id: string, input: BankAccountInpu
   }
   Object.assign(b, cleanIdentifiers(i))
   if (i.notes !== undefined) b.notes = str(i.notes, 1000)
+  applyPaymentFile(b, i)
   if (i.active !== undefined) b.active = i.active === true
   if (i.reconcileFrom !== undefined) {
     if (lastRecon(co, b.id)) conflict('This account has finished reconciliations: undo them before moving “reconcile from”.', 'has_reconciliations')
@@ -472,6 +480,22 @@ export function updateBankAccount(user: User, id: string, input: BankAccountInpu
   if (i.currency !== undefined && i.currency !== b.currency) bad('The currency of a bank account can’t change.', 'validation_failed', { field: 'currency' })
   recordAudit(user, { action: 'update', entity: 'bank_account', entityId: b.id, summary: `Changed bank account ${b.name}` })
   return accountView(co, b)
+}
+
+/** Payment-file template / columns of a bank account (validated; [] or null columns = the template's defaults). */
+function applyPaymentFile(b: BankAccountRecord, i: BankAccountInput): void {
+  if (i.paymentFileTemplate !== undefined) {
+    const t = i.paymentFileTemplate
+    if (t !== null && !PAYMENT_FILE_TEMPLATES.includes(t)) bad('Unknown payment file template.', 'validation_failed', { field: 'payment_file_template' })
+    b.paymentFileTemplate = t
+  }
+  if (i.paymentFileColumns !== undefined) {
+    const cols = i.paymentFileColumns
+    if (cols !== null && (!Array.isArray(cols) || cols.some((c) => !PAYMENT_FILE_COLUMNS.includes(c)))) bad('Unknown payment file column.', 'validation_failed', { field: 'payment_file_columns' })
+    if (cols && cols.length && !cols.includes('iban')) bad('The payment file needs the beneficiary IBAN column.', 'validation_failed', { field: 'payment_file_columns' })
+    if (cols && cols.length && !cols.includes('amount')) bad('The payment file needs the amount column.', 'validation_failed', { field: 'payment_file_columns' })
+    b.paymentFileColumns = cols && cols.length ? [...new Set(cols)] : null
+  }
 }
 
 /** POST /finance/bank-accounts/:id/reveal (full) — the full account number and IBAN; audited. */

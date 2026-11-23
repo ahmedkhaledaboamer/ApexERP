@@ -60,6 +60,7 @@ import { useToast } from '@/shared/components/ui/Toast'
 import { PageBody } from '@/shared/components/layout/PageHeader'
 import { CreateInvoiceButton } from '@/modules/finance/invoices/components/CreateInvoiceButton'
 import { CustomerTasksPanel } from '@/modules/tasks/components/CustomerTasksPanel'
+import { AskAiButton } from '@/modules/ai-agent/components/AskAiButton'
 
 type Tab = 'overview' | 'activity' | 'contacts' | 'contracts' | 'quotations' | 'tasks' | 'notes'
 
@@ -166,6 +167,8 @@ function CustomerRecord({ id, canEdit }: { id: string; canEdit: boolean }) {
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              {/* AI assistant: summarize, draft a follow-up, contracts (plan module `ai`; hidden without it). */}
+              <AskAiButton record={{ type: 'customer', id: c.id }} label={c.name} />
               {canEdit && (
                 <Button write variant="secondary" size="sm" onClick={() => setEditing(true)}>
                   <Pencil />

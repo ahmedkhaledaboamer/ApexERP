@@ -16,6 +16,7 @@ import { addDaysIso } from '@/shared/lib/companyDay'
 import { APEX_ID } from '@/shared/mocks/data/tenancy'
 import { hrEmployees } from '@/shared/mocks/data/hrEmployees'
 import { registerArray } from '@/shared/mocks/persist/registry'
+import { hrComplianceStorageBytes } from '@/shared/mocks/data/hrCompliance'
 
 /**
  * HR › Employees, Employee contracts, Company assets: the stores behind services/hrEmployees.ts,
@@ -472,10 +473,12 @@ export const hrContracts = registerArray<Tenant<ContractRecord>>('hrContracts', 
 export const hrAssets = registerArray<Tenant<AssetRecord>>('hrAssets', seedAssets())
 export const hrActivity = registerArray<Tenant<ActivityRecord>>('hrActivity', seedActivity())
 
-/** Bytes of HR files (document scans, contract files) of a company: part of the plan's storageMb. */
+/** Bytes of HR files (document scans, contract files, discipline attachments, policy PDFs) of a company: part of the plan's storageMb. */
 export function hrStorageBytes(companyId: string): number {
   let bytes = 0
   for (const x of hrDocuments) if (x.companyId === companyId && x.file) bytes += x.file.sizeBytes
   for (const x of hrContracts) if (x.companyId === companyId && x.file) bytes += x.file.sizeBytes
+  // Discipline attachments and policy PDFs (data/hrCompliance.ts).
+  bytes += hrComplianceStorageBytes(companyId)
   return bytes
 }

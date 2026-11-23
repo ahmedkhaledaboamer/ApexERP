@@ -1,4 +1,5 @@
 import type { CurrencyCode } from '@/modules/finance/types'
+import type { PaymentFileTemplate } from './bankFile'
 
 /**
  * Accounts & finance › Purchases & payables (phase 2): suppliers (the event vendor directory + a finance profile),
@@ -64,6 +65,8 @@ export interface SupplierRow {
   openBalanceBase: number
   overdueBase: number
   lastBillDate: string | null
+  /** Unapplied supplier advances (prepayments) in base currency. */
+  advancesBase: number
 }
 
 export interface SupplierDetail extends SupplierRow {
@@ -72,6 +75,8 @@ export interface SupplierDetail extends SupplierRow {
   defaultExpenseAccountId: string | null
   defaultTaxCodeId: string | null
   notes: string
+  swiftBic: string
+  advances: SupplierAdvance[]
   bills: BillRow[]
   purchaseOrders: PoRow[]
   canEdit: boolean
@@ -88,6 +93,8 @@ export interface SupplierProfileInput {
   bankName?: string
   /** Full IBAN; '' clears it; omitted keeps it. */
   iban?: string
+  /** SWIFT / BIC (8 or 11 characters) for foreign-currency transfers; '' clears it. */
+  swiftBic?: string
   notes?: string
 }
 
@@ -176,6 +183,8 @@ export interface PoInput {
   exchangeRate?: number | null
   notes?: string
   deliveryAddress?: string
+  /** Advance to pay the supplier once approved, % of the order total (null / 0 = none). */
+  advancePct?: number | null
   lines: PoLineInput[]
 }
 
@@ -212,6 +221,13 @@ export interface PoReceipt {
 export interface PurchaseOrder extends Omit<PoRow, 'pendingStep'> {
   pendingStep: ApproverKind | null
   exchangeRate: number
+  advancePct: number | null
+  /** total × advance % (0 without). */
+  advanceDue: number
+  /** Advances paid on this order, less refunds. */
+  advancePaid: number
+  /** Advances linked to this order (finance roles only; [] for requesters / approvers without accounting access). */
+  advances: { id: string; number: string; date: string; amount: number; remaining: number }[]
   lines: PoLine[]
   subtotal: number
   taxTotal: number
@@ -227,7 +243,7 @@ export interface PurchaseOrder extends Omit<PoRow, 'pendingStep'> {
   vendorAddress: string
   vendorVatNumber: string
   company: { name: string; legalName: string; vatNumber: string; address: string }
-  can: { edit: boolean; submit: boolean; approve: boolean; reject: boolean; cancel: boolean; receive: boolean; close: boolean; bill: boolean; delete: boolean }
+  can: { edit: boolean; submit: boolean; approve: boolean; reject: boolean; cancel: boolean; receive: boolean; close: boolean; bill: boolean; delete: boolean; payAdvance: boolean }
 }
 
 /* ---------------- bills ---------------- */
@@ -343,10 +359,14 @@ export interface Bill extends BillRow {
   journal: JournalView | null
   voidJournal: JournalView | null
   payments: { id: string; number: string; date: string; amount: number; status: 'posted' | 'void' }[]
-  debitNotes: { id: string; number: string; date: string; total: number; reason: string }[]
+  debitNotes: { id: string; number: string; date: string; total: number; reason: string; status: 'posted' | 'void'; canVoid: boolean }[]
+  /** Supplier advances applied to this bill. */
+  advances: { advanceId: string; number: string; date: string; amount: number }[]
+  /** The supplier's advances in the bill's currency with an unapplied amount (accounting full only). */
+  unappliedAdvances: { id: string; number: string; date: string; remaining: number; currency: string }[]
   attachments: BillAttachment[]
   history: HistoryEntry[]
-  can: { edit: boolean; submit: boolean; post: boolean; approve: boolean; reject: boolean; void: boolean; pay: boolean; debitNote: boolean; attach: boolean; delete: boolean }
+  can: { edit: boolean; submit: boolean; post: boolean; approve: boolean; reject: boolean; void: boolean; pay: boolean; debitNote: boolean; attach: boolean; delete: boolean; applyAdvance: boolean }
 }
 
 export interface AttachmentInput {
@@ -382,6 +402,9 @@ export interface DebitNote {
   total: number
   accountId: string
   journalEntryId: string | null
+  status: 'posted' | 'void'
+  voidReason: string | null
+  voidJournalEntryId: string | null
   createdAt: string
 }
 
@@ -449,8 +472,77 @@ export interface PaymentRun {
   paymentIds: string[]
   payments: BillPayment[]
   totalBase: number
+  /** Bank upload: created → sent (after a file export) → confirmed. */
+  bankStatus: PaymentRunBankStatus
+  bankReference: string
+  exportCount: number
+  lastExportAt: string | null
+  sentAt: string | null
+  sentByName: string | null
+  confirmedAt: string | null
+  confirmedByName: string | null
+  /** The Banking account paying the run (its payment-file template), when the ledger account has one. */
+  bankAccountId: string | null
+  paymentFileTemplate: PaymentFileTemplate
   createdByName: string
   createdAt: string
+}
+
+export type PaymentRunBankStatus = 'created' | 'sent' | 'confirmed'
+export const PAYMENT_RUN_BANK_STATUS_LABEL: Record<PaymentRunBankStatus, string> = { created: 'Not sent', sent: 'Sent to bank', confirmed: 'Confirmed by bank' }
+
+/** POST /finance/payment-runs/:id/bank-file — the file(s) themselves (full IBANs; never part of a GET). */
+export interface PaymentRunFile {
+  runId: string
+  runNumber: string
+  files: { kind: 'local' | 'swift'; template: PaymentFileTemplate; fileName: string; mimeType: string; content: string; count: number; total: number; currency: string }[]
+  skipped: { paymentId: string; paymentNumber: string; vendorName: string; reason: string }[]
+}
+
+/* ---------------- supplier advances (prepayments) ---------------- */
+
+export interface SupplierAdvance {
+  id: string
+  number: string
+  vendorId: string
+  vendorName: string
+  poId: string | null
+  poNumber: string | null
+  date: string
+  method: BillPaymentMethod
+  reference: string
+  paymentAccountId: string
+  paymentAccountName: string
+  currency: string
+  exchangeRate: number
+  amount: number
+  baseAmount: number
+  applied: number
+  refunded: number
+  /** Unapplied = amount − applied − refunded. */
+  remaining: number
+  remainingBase: number
+  status: 'open' | 'closed'
+  applications: { id: string; billId: string; billNumber: string; date: string; amount: number; journalEntryId: string }[]
+  refunds: { id: string; date: string; amount: number; reference: string; accountId: string; journalEntryId: string }[]
+  notes: string
+  journal: JournalView | null
+  createdByName: string
+  createdAt: string
+}
+
+export interface SupplierAdvanceInput {
+  vendorId?: string
+  /** An approved PO of the supplier (the amount defaults to its advance %). */
+  poId?: string | null
+  date?: string
+  paymentAccountId: string
+  method?: BillPaymentMethod
+  reference?: string
+  currency?: string
+  exchangeRate?: number | null
+  amount?: number
+  notes?: string
 }
 
 /* ---------------- payables ---------------- */
@@ -463,6 +555,9 @@ export type ApAmounts = Record<ApBucket, number> & { total: number }
 export interface ApAgingRow extends ApAmounts {
   vendorId: string
   vendorName: string
+  /** Unapplied advances (base currency) and the net = open bills − advances. */
+  advances: number
+  net: number
   bills: { id: string; number: string; supplierInvoiceNumber: string; dueDate: string; currency: string; balance: number; balanceBase: number; daysOverdue: number; bucket: ApBucket }[]
 }
 
@@ -470,7 +565,7 @@ export interface ApAging {
   asOf: string
   baseCurrency: string
   rows: ApAgingRow[]
-  totals: ApAmounts
+  totals: ApAmounts & { advances: number; net: number }
 }
 
 export interface DueBill {
@@ -494,7 +589,7 @@ export interface SupplierStatement {
   to: string
   baseCurrency: string
   openingBalance: number
-  lines: { date: string; type: 'bill' | 'payment' | 'debit_note' | 'void'; reference: string; description: string; debit: number; credit: number; balance: number }[]
+  lines: { date: string; type: 'bill' | 'payment' | 'debit_note' | 'void' | 'advance' | 'advance_applied' | 'advance_refund'; reference: string; description: string; debit: number; credit: number; balance: number }[]
   closingBalance: number
   company: { name: string; legalName: string; vatNumber: string; address: string }
 }
@@ -535,7 +630,7 @@ export interface ApprovalRulesInput {
 export interface EventBilledCosts {
   eventId: string
   baseCurrency: string
-  lines: { budgetLineId: string; label: string; planned: number; actual: number; billed: number }[]
+  lines: { budgetLineId: string; label: string; planned: number; actual: number; billed: number; bills: { id: string; number: string; amount: number }[] }[]
   unlinkedBilled: number
   totalBilled: number
 }

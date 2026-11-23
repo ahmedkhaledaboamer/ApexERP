@@ -60,7 +60,6 @@ export function seedLedgerJournal(): void {
       ln('ACC-1520', 38000, 0, 'Office fit-out'),
       ln('ACC-1590', 0, 21000, 'Accumulated depreciation'),
       ln('ACC-2100', 0, 42300, 'Supplier balances'),
-      ln('ACC-2500', 0, 64000, 'End-of-service provision'),
       ln('ACC-3100', 0, 1800000, 'Share capital'),
     ])
     history(co, today, 'u8')

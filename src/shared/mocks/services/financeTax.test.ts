@@ -88,7 +88,7 @@ function bill(co: string, date: string, lines: { net: number; taxCodeId: string;
 }
 
 function debitNote(co: string, b: BillRecord, date: string, net: number, tax: number): Tenant<DebitNoteRecord> {
-  const dn: Tenant<DebitNoteRecord> = { companyId: co, id: nextId('debitNote', 'DN'), number: `TST-DN-${++n}`, billId: b.id, vendorId: b.vendorId, date, reason: 'Test', currency: b.currency, exchangeRate: 1, net, taxAmount: tax, total: net + tax, accountId: 'ACC-6600', journalEntryId: null, createdBy: 'u8', createdAt: date }
+  const dn: Tenant<DebitNoteRecord> = { companyId: co, id: nextId('debitNote', 'DN'), number: `TST-DN-${++n}`, billId: b.id, vendorId: b.vendorId, date, reason: 'Test', currency: b.currency, exchangeRate: 1, net, taxAmount: tax, total: net + tax, accountId: 'ACC-6600', journalEntryId: null, status: 'posted', voidReason: null, voidedAt: null, voidJournalEntryId: null, createdBy: 'u8', createdAt: date }
   finDebitNotes.push(dn)
   dn.journalEntryId = postJournal(co, {
     date, memo: 'Test debit note', sourceType: 'bill', sourceId: dn.id, createdBy: null,

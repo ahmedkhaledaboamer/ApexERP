@@ -17,7 +17,7 @@ import { assertNotDeleted, runLifecycle } from '@/shared/mocks/services/billing'
 import { createImpersonationSession, enableWriteMode, infoOf, reasonOk, stopImpersonationSession } from '@/shared/mocks/services/impersonation'
 import type { PlatformCtx } from '@/shared/mocks/services/platformAudit'
 import { scoped } from '@/shared/mocks/tenant'
-import { delay, platformTokenFor, tokenFor } from '@/shared/mocks/server'
+import { delay, platformTokenFor, readRefreshToken, sessionTokensFor, tokenFor } from '@/shared/mocks/server'
 
 const CHALLENGE_TTL_MS = 5 * 60_000
 const MAX_ATTEMPTS = 5
@@ -44,7 +44,32 @@ function companyFor(user: User): Company {
 function startSession(user: User, imp: ImpersonationInfo | null = null): Promise<Session> {
   const tenant = companyFor(user)
   if (!imp) user.lastLoginAt = new Date().toISOString()
-  return delay({ token: tokenFor(user, imp), user, tenant, impersonation: imp })
+  return delay({ ...sessionTokensFor(user, imp), user, tenant, impersonation: imp })
+}
+
+const SESSION_EXPIRED = 'Your session has expired. Sign in again.'
+
+/**
+ * POST /auth/refresh { refreshToken } — a new access token (and a rotated refresh token) for the same
+ * user and company. Refused (401 session_expired) when the refresh token is malformed or expired, the
+ * user is gone or deactivated, or their active membership is no longer the token's company; the
+ * workspace checks of sign-in apply (suspended 403, deleted 410). Stateless in the mock; a real
+ * backend also revokes a refresh token once used (reuse → revoke the whole session family).
+ */
+export async function refreshSession(refreshToken: unknown): Promise<Session> {
+  const claims = readRefreshToken(refreshToken)
+  const expired = () => new CodedApiError(SESSION_EXPIRED, 401, 'session_expired')
+  if (!claims || claims.exp <= Date.now()) {
+    await delay(null)
+    throw expired()
+  }
+  const user = users.find((u) => u.id === claims.sub)
+  if (!user || user.active === false || activeMembershipOf(user.id)?.companyId !== claims.co) {
+    await delay(null)
+    throw expired()
+  }
+  const tenant = companyFor(user)
+  return delay({ ...sessionTokensFor(user), user, tenant, impersonation: null })
 }
 
 /**
@@ -179,7 +204,7 @@ export async function devSignInAs(userId: string): Promise<Session> {
 export function demoSessionFor(role: Role): Session {
   const user = demoUserFor('co_apex', role) ?? users[0]
   const tenant = companyFor(user)
-  return { token: tokenFor(user), user: { ...user }, tenant, impersonation: null }
+  return { ...sessionTokensFor(user), user: { ...user }, tenant, impersonation: null }
 }
 
 /** Users of the caller's company only. */

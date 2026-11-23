@@ -7,6 +7,7 @@ import { eventBudgetLines, events } from '@/shared/mocks/data/events'
 import '@/shared/mocks/data/eventLibrarySeed'
 import { finPurchaseOrders, finBills, type BillRecord, type PoRecord } from './financePurchases'
 import {
+  advanceCore,
   approveBillCore,
   approvePoCore,
   debitNoteCore,
@@ -60,6 +61,8 @@ interface PoSpec {
   receive?: { ago: number; share: number[] }
   cancel?: string
   event?: boolean
+  /** Advance % on approval, paid `ago` days ago by the finance user from the main bank (Supplier advances). */
+  advance?: { pct: number; ago: number; by: string }
 }
 
 interface BillSpec {
@@ -104,7 +107,7 @@ const APEX: CompanySeed = {
     { id: 'PO-1002', requester: 'u14', vendor: 'VND-1005', ago: 4, lines: [['Team headshots — half-day shoot', 1, 3500]], submit: true },
     { id: 'PO-1003', requester: 'u15', vendor: 'VND-1001', ago: 6, lines: [['Demo pod for the client showcase', 1, 11000], ['Install and dismantle', 1, 2400]], submit: true, approvers: ['u10'] },
     { id: 'PO-1004', requester: 'u16', vendor: 'VND-1003', ago: 9, lines: [['Sprint review lunch (25 pax)', 25, 80]], submit: true, reject: { by: 'u10', reason: 'Use the in-house caterer for internal events.' } },
-    { id: 'PO-1005', requester: 'u7', vendor: 'VND-1002', ago: 12, lines: [['Brochures — Q1 campaign (5,000 copies)', 5000, 1.2]], submit: true, approvers: ['u2'] },
+    { id: 'PO-1005', requester: 'u7', vendor: 'VND-1002', ago: 12, lines: [['Brochures — Q1 campaign (5,000 copies)', 5000, 1.2]], submit: true, approvers: ['u2'], advance: { pct: 30, ago: 10, by: 'u8' } },
     {
       id: 'PO-1006', requester: 'u11', vendor: 'VND-1001', ago: 25, event: true,
       lines: [['Exhibition stand build (6 × 4 m)', 1, 9500], ['Stand graphics and branding', 1, 2500]],
@@ -143,7 +146,7 @@ const CREST: CompanySeed = {
     { id: 'PO-5002', requester: 'u104', vendor: 'VND-5003', ago: 3, lines: [['Screen rental for client pitch', 1, 5000]], submit: true },
     { id: 'PO-5003', requester: 'u107', vendor: 'VND-5001', ago: 7, lines: [['Cold-chain demo stand', 1, 18000]], submit: true, approvers: ['u106'] },
     { id: 'PO-5004', requester: 'u105', vendor: 'VND-5002', ago: 10, lines: [['Personal business cards (premium)', 10, 150]], submit: true, reject: { by: 'u103', reason: 'Standard cards only; order through the office.' } },
-    { id: 'PO-5005', requester: 'u107', vendor: 'VND-5003', ago: 14, lines: [['PA system for the depot open day', 1, 3000]], submit: true, approvers: ['u106'] },
+    { id: 'PO-5005', requester: 'u107', vendor: 'VND-5003', ago: 14, lines: [['PA system for the depot open day', 1, 3000]], submit: true, approvers: ['u106'], advance: { pct: 30, ago: 12, by: 'u101' } },
     {
       id: 'PO-5006', requester: 'u104', vendor: 'VND-5001', ago: 30, event: true,
       lines: [['Expo stand (9 × 3 m)', 1, 8000], ['Reefer demo integration', 1, 2500]],
@@ -169,7 +172,7 @@ const CREST: CompanySeed = {
   run: { ago: 2, items: [['BILL-5005', 'full'], ['BILL-5004', 8000]] },
 }
 
-const SERIES = ['purchaseOrder', 'bill', 'debitNote', 'billPayment', 'paymentRun'] as const
+const SERIES = ['purchaseOrder', 'bill', 'debitNote', 'billPayment', 'paymentRun', 'supplierAdvance'] as const
 
 function seedCompany(s: CompanySeed): void {
   const co = s.co
@@ -198,11 +201,15 @@ function seedCompany(s: CompanySeed): void {
     const req = who(p.requester)
     const dept = users.find((u) => u.id === p.requester)?.departmentId || null
     const ls = lines(p.lines).map((l, i) => (p.event && ev ? { ...l, eventId: ev.id, budgetLineId: i === 0 ? (evLine?.id ?? null) : null } : l))
-    const po = newPoRecord(co, { id: p.id, vendorId: p.vendor, requester: req, departmentId: dept, orderDate: day(p.ago), expectedDate: day(p.ago - 14), currency: co === APEX_ID ? 'AED' : 'SAR', exchangeRate: 1, notes: '', deliveryAddress: '', lines: ls, at: iso(p.ago) })
+    const po = newPoRecord(co, { id: p.id, vendorId: p.vendor, requester: req, departmentId: dept, orderDate: day(p.ago), expectedDate: day(p.ago - 14), currency: co === APEX_ID ? 'AED' : 'SAR', exchangeRate: 1, notes: '', deliveryAddress: '', advancePct: p.advance?.pct ?? null, lines: ls, at: iso(p.ago) })
     pos.set(p.id, po)
     if (p.submit) submitPoCore(co, po, req, iso(p.ago, 9))
     for (const a of p.approvers ?? []) approvePoCore(co, po, who(a), iso(p.ago - 1, 10))
     if (p.reject) rejectPoCore(co, po, who(p.reject.by), p.reject.reason, iso(p.ago - 1, 11))
+    if (p.advance && po.status === 'approved') {
+      const amount = Math.round(po.total * p.advance.pct) / 100
+      advanceCore(co, { vendorId: po.vendorId, poId: po.id, date: day(p.advance.ago), paymentAccountId: 'ACC-1120', method: 'bank_transfer', reference: `ADV-${po.number}`, currency: po.currency, exchangeRate: 1, amount, notes: `${p.advance.pct}% advance on approval` }, who(p.advance.by), iso(p.advance.ago, 10))
+    }
     if (p.receive) receivePoCore(co, po, { date: day(p.receive.ago), note: 'Delivered and checked', lines: po.lines.map((l, i) => ({ lineId: l.id, quantity: l.quantity * (p.receive!.share[i] ?? 0) })).filter((l) => l.quantity > 0) }, req, iso(p.receive.ago, 12))
     if (p.cancel) {
       po.status = 'cancelled'

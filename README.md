@@ -14,15 +14,32 @@ npm test           # vitest (mock services, tenancy, storage rules)
 npm run build
 ```
 
-### Connecting the real backend
+### Running against a real backend
+
+Set the two variables (in `.env.local`, `.env.production.local` or the shell; all of them are
+documented in [.env.example](.env.example) and validated at startup by `src/shared/lib/env.ts`):
 
 ```
-VITE_API_URL=https://your-backend/api
+VITE_API_URL=https://your-backend/api   # or /api behind a reverse proxy on the same origin
 VITE_API_MOCK=false
 ```
 
-With `VITE_API_MOCK=false` the mock code, the dev tenant tools and the dev data persistence are
-not loaded.
+```bash
+VITE_API_MOCK=false VITE_API_URL=http://localhost:8080/api npm run dev   # dev server, real API
+npm run build:prod      # production build with VITE_API_MOCK=false, then npm run check:bundle
+npm run check:bundle    # fails if dist/ contains mock code (MSW, seed data, dev hooks, demo password)
+```
+
+With `VITE_API_MOCK=false` none of the mock code is loaded or bundled: no MSW (and no
+`mockServiceWorker.js` in the output), no seed data, no dev tenant tools (demo account picker,
+role switcher, platform-console shortcut), no billing simulator, no dev data persistence and no
+`window.__apex*` hooks. Note that a plain `npm run build` keeps the mock (demo deployments).
+
+The backend must follow [docs/API.md](docs/API.md); for the shell in particular: `Auth › Session and Refresh`
+(`POST /auth/refresh`, `expiresAt`), the error body (`message`, `code`) and an `X-Request-Id` header
+exposed through CORS. How the client handles 401s, refresh, offline, 5xx and crashes:
+[docs/FRONTEND.md › Error handling](docs/FRONTEND.md#error-handling). If the backend can't be reached,
+every page shows a "Can’t reach the server" card with Retry / Reload instead of spinning.
 
 ## Tenants and demo accounts (mock)
 

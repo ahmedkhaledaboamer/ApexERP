@@ -48,6 +48,8 @@ export function apiPath(request: Request): string {
 export function userFrom(request: Request): User {
   const claims = readToken(request.headers.get('Authorization'))
   if (!claims || claims.kind !== 'user') throw new ApiError(EXPIRED, 401)
+  // Expired access token: the client refreshes it (POST /auth/refresh) and retries once.
+  if (claims.exp !== undefined && claims.exp <= Date.now()) throw new CodedApiError(EXPIRED, 401, 'session_expired')
   const session = claims.imp ? liveImpersonation(claims.imp) : null
   if (session && (session.userId !== claims.sub || session.companyId !== claims.co)) throw new ApiError(EXPIRED, 401)
   const user = users.find((u) => u.id === claims.sub)

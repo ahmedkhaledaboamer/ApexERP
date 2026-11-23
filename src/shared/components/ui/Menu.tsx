@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { cn } from '@/shared/lib/utils'
+import { onTopEscape } from './layerStack'
 
 interface MenuProps {
   /** Renders the trigger; spread `props` onto a button. */
@@ -21,14 +22,12 @@ export function Menu({ trigger, children, align = 'end', side = 'bottom', classN
     function onPointer(e: MouseEvent) {
       if (!ref.current?.contains(e.target as Node)) setOpen(false)
     }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') setOpen(false)
-    }
     document.addEventListener('mousedown', onPointer)
-    document.addEventListener('keydown', onKey)
+    // A menu inside a modal or drawer: Escape closes the menu, not the dialog under it.
+    const offEscape = onTopEscape(() => setOpen(false))
     return () => {
       document.removeEventListener('mousedown', onPointer)
-      document.removeEventListener('keydown', onKey)
+      offEscape()
     }
   }, [open])
 

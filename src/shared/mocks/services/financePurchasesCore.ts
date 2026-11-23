@@ -21,6 +21,7 @@ import {
   finPaymentRuns,
   finPurchaseOrders,
   finPurchasesSettings,
+  finSupplierAdvances,
   finSupplierProfiles,
   type ApprovalState,
   type BillPaymentRecord,
@@ -29,12 +30,14 @@ import {
   type PaymentRunRecord,
   type PoRecord,
   type SupplierProfileRecord,
+  type SupplierAdvanceRecord,
 } from '@/shared/mocks/data/financePurchases'
 import { approvalChain, canApproveStep, type ApprovalStep, type SpendDocType } from './financeApprovals'
 import { docNumber, nextId, postJournal, reverseJournal, round2, systemAccount } from './ledger'
 import { baseCurrencyOf, requireRate } from './financeRates'
 import { financeSettingsOf } from './financeLedger'
 import { applyToBill, isBillOverdue, openBill } from './financeBillBalance'
+import { billedByLine } from './financeEventCosts'
 
 /**
  * Accounts & finance › Purchases & payables — store-level rules shared by the endpoints (services/financePurchases.ts)
@@ -101,6 +104,7 @@ export function defaultProfile(co: string, vendorId: string): SupplierProfileRec
     currency: baseCurrencyOf(co),
     bankName: '',
     iban: '',
+    swiftBic: '',
     notes: '',
     updatedAt: '',
     updatedBy: null,
@@ -327,7 +331,7 @@ export function refreshPoStatus(co: string, po: PoRecord, at: string): void {
   po.updatedAt = at
 }
 
-export function newPoRecord(co: string, f: { id?: string; vendorId: string; requester: Actor & { id: string }; departmentId: string | null; orderDate: string; expectedDate: string | null; currency: string; exchangeRate: number; notes: string; deliveryAddress: string; lines: unknown; at: string }): Tenant<PoRecord> {
+export function newPoRecord(co: string, f: { id?: string; vendorId: string; requester: Actor & { id: string }; departmentId: string | null; orderDate: string; expectedDate: string | null; currency: string; exchangeRate: number; notes: string; deliveryAddress: string; advancePct?: number | null; lines: unknown; at: string }): Tenant<PoRecord> {
   const id = f.id ?? nextId('purchaseOrder', 'PO')
   const vat = effectiveProfile(co, f.vendorId).vatNumber
   const lines = buildLines(co, id, f.lines, { vendorId: f.vendorId, vatNumber: vat }).map(({ poLineId: _p, vatRecoverable: _v, ...l }) => ({ ...l, receivedQty: 0 })) // eslint-disable-line @typescript-eslint/no-unused-vars
@@ -349,6 +353,7 @@ export function newPoRecord(co: string, f: { id?: string; vendorId: string; requ
     deliveryAddress: f.deliveryAddress,
     rejectionReason: null,
     cancelReason: null,
+    advancePct: f.advancePct ?? null,
     receipts: [],
     history: [hist(f.requester, 'created', 'Purchase request created', f.at)],
     createdAt: f.at,
@@ -380,6 +385,7 @@ export function submitPoCore(co: string, po: PoRecord, by: Actor, at: string): P
     po.status = 'approved'
     po.approvedAt = at
     po.history.push(hist(by, 'approved', 'Submitted; no approval needed for this amount', at))
+    notifyAdvanceDue(co, po, at)
     return po
   }
   po.status = 'pending_approval'
@@ -403,6 +409,7 @@ export function approvePoCore(co: string, po: PoRecord, by: Actor & { id: string
     po.approvedAt = at
     po.history.push(hist(by, 'approved', 'Approved (final step)', at))
     notifyRequester(co, po, 'Purchase order approved', poWhat(co, po), poPathOf(po.id), at)
+    notifyAdvanceDue(co, po, at)
   } else {
     po.history.push(hist(by, 'approved_step', `Approved step ${po.decisions.length} of ${po.chain.length}`, at))
     notifyStep(co, po, `Purchase order ${poWhat(co, po)}`, poPathOf(po.id), at)
@@ -566,6 +573,7 @@ export function postBillCore(co: string, bill: BillRecord, by: Actor, at: string
   if (bill.poId) {
     const po = poOf(co, bill.poId)
     if (po) refreshPoStatus(co, po, at)
+    applyPoAdvances(co, bill, by, at)
   }
   return bill
 }
@@ -632,8 +640,8 @@ export function canDirectPost(co: string, bill: BillRecord): boolean {
 export function voidBillCore(co: string, bill: BillRecord, by: Actor, reason: string, at: string): BillRecord {
   if (bill.status === 'void') conflict('This bill is already void.', 'already_void')
   if (!isOpenBill(bill.status) && bill.status !== 'paid') conflict('Only a posted bill can be voided; delete a draft instead.', 'not_posted')
-  const hasPayments = finBillPayments.some((p) => p.companyId === co && p.status === 'posted' && p.allocations.some((a) => a.billId === bill.id))
-  if (hasPayments || finDebitNotes.some((d) => d.companyId === co && d.billId === bill.id)) conflict('A bill with payments or debit notes can’t be voided. Void the payments first, or raise a debit note.', 'has_settlements')
+  const hasPayments = finBillPayments.some((p) => p.companyId === co && p.status === 'posted' && p.allocations.some((a) => a.billId === bill.id)) || advanceAppliedTo(co, bill.id) > 0
+  if (hasPayments || finDebitNotes.some((d) => d.companyId === co && d.billId === bill.id && d.status !== 'void')) conflict('A bill with payments, applied advances or debit notes can’t be voided. Void the payments (and debit notes) first, or raise a debit note.', 'has_settlements')
   if (bill.journalEntryId) {
     const rev = reverseJournal(co, bill.journalEntryId, todayOf(co), `Void of bill ${bill.number}: ${reason}`, by.id)
     bill.voidJournalEntryId = rev.id
@@ -690,6 +698,10 @@ export function debitNoteCore(co: string, bill: BillRecord, input: { date: strin
     total,
     accountId,
     journalEntryId: entry.id,
+    status: 'posted',
+    voidReason: null,
+    voidedAt: null,
+    voidJournalEntryId: null,
     createdBy: by.id,
     createdAt: at,
   }
@@ -697,6 +709,27 @@ export function debitNoteCore(co: string, bill: BillRecord, input: { date: strin
   finDebitNotes.push(dn)
   applyToBill(bill, { credited: total }, at)
   bill.history.push(hist(by, 'debit_note', `Debit note ${dn.number}: ${total.toFixed(2)} ${bill.currency}`, at))
+  return dn
+}
+
+/**
+ * Void of a debit note (the purchases gap): the debit-note entry is reversed (dated today, or the note's date when that
+ * is later) and the credited amount goes back on the bill through `applyToBill` (a paid bill reopens). Not on a void bill.
+ */
+export function voidDebitNoteCore(co: string, dn: DebitNoteRecord, by: Actor, reason: string, at: string): DebitNoteRecord {
+  if (dn.status === 'void') conflict('This debit note is already void.', 'already_void')
+  const bill = billOf(co, dn.billId)
+  if (!bill || bill.status === 'void') return conflict('The bill of this debit note is void.', 'bill_void')
+  if (dn.journalEntryId) {
+    const today = todayOf(co)
+    const rev = reverseJournal(co, dn.journalEntryId, today < dn.date ? dn.date : today, `Void of debit note ${dn.number}: ${reason}`, by.id)
+    dn.voidJournalEntryId = rev.id
+  }
+  dn.status = 'void'
+  dn.voidReason = reason
+  dn.voidedAt = at
+  applyToBill(bill, { credited: -dn.total }, at)
+  bill.history.push(hist(by, 'debit_note_void', `Debit note ${dn.number} voided: ${reason}`, at))
   return dn
 }
 
@@ -800,7 +833,23 @@ export function voidPaymentCore(co: string, p: BillPaymentRecord, by: Actor, rea
 }
 
 export function newRunRecord(co: string, date: string, paymentAccountId: string, by: Actor, at: string): Tenant<PaymentRunRecord> {
-  const run: Tenant<PaymentRunRecord> = { companyId: co, id: nextId('paymentRun', 'PRUN'), number: docNumber(co, prefixOf(co), 'PRUN', date.slice(0, 4)), date, paymentAccountId, paymentIds: [], createdBy: by.id, createdAt: at }
+  const run: Tenant<PaymentRunRecord> = {
+    companyId: co,
+    id: nextId('paymentRun', 'PRUN'),
+    number: docNumber(co, prefixOf(co), 'PRUN', date.slice(0, 4)),
+    date,
+    paymentAccountId,
+    paymentIds: [],
+    bankStatus: 'created',
+    exports: [],
+    sentAt: null,
+    sentBy: null,
+    confirmedAt: null,
+    confirmedBy: null,
+    bankReference: '',
+    createdBy: by.id,
+    createdAt: at,
+  }
   finPaymentRuns.push(run)
   return run
 }
@@ -814,8 +863,10 @@ export function billBalanceAsOf(co: string, b: BillRecord, asOf: string): number
   if (!postedBill(b) || b.billDate > asOf) return 0
   if (asOf >= todayOf(co)) return Math.max(0, b.balanceDue)
   const paid = finBillPayments.filter((p) => p.companyId === co && p.status === 'posted' && p.date <= asOf).reduce((s, p) => s + p.allocations.filter((a) => a.billId === b.id).reduce((x, a) => x + a.amount, 0), 0)
-  const credited = finDebitNotes.filter((d) => d.companyId === co && d.billId === b.id && d.date <= asOf).reduce((s, d) => s + d.total, 0)
-  return Math.max(0, round2(b.total - paid - credited))
+  // A void debit note counted until the day it was voided.
+  const credited = finDebitNotes.filter((d) => d.companyId === co && d.billId === b.id && d.date <= asOf && (d.status !== 'void' || (d.voidedAt ?? '').slice(0, 10) > asOf)).reduce((s, d) => s + d.total, 0)
+  const advanced = advanceAppliedTo(co, b.id, asOf)
+  return Math.max(0, round2(b.total - paid - credited - advanced))
 }
 
 const zero = (): ApAmounts => ({ current: 0, d30: 0, d60: 0, d90: 0, over90: 0, total: 0 })
@@ -838,10 +889,18 @@ export function apAgingOf(co: string, asOf: string) {
       a.total = round2(a.total + x.balanceBase)
     }
     for (const k of [...AP_BUCKETS, 'total'] as const) totals[k] = round2(totals[k] + a[k])
-    return { vendorId, vendorName: vendorName(co, vendorId), ...a, bills: bills.sort((x, y) => x.dueDate.localeCompare(y.dueDate)) }
+    const advances = unappliedAdvancesBase(co, vendorId, asOf)
+    return { vendorId, vendorName: vendorName(co, vendorId), ...a, advances, net: round2(a.total - advances), bills: bills.sort((x, y) => x.dueDate.localeCompare(y.dueDate)) }
   })
+  // Suppliers with an unapplied advance and no open bill still show (a debit balance: they owe us goods or money).
+  for (const vendorId of new Set(finSupplierAdvances.filter((x) => x.companyId === co).map((x) => x.vendorId))) {
+    if (byVendor.has(vendorId)) continue
+    const advances = unappliedAdvancesBase(co, vendorId, asOf)
+    if (advances > 0) rows.push({ vendorId, vendorName: vendorName(co, vendorId), ...zero(), advances, net: round2(-advances), bills: [] })
+  }
+  const advancesTotal = round2(rows.reduce((s, r) => s + r.advances, 0))
   rows.sort((x, y) => y.total - x.total || x.vendorName.localeCompare(y.vendorName))
-  return { asOf, baseCurrency: baseCurrencyOf(co), rows, totals }
+  return { asOf, baseCurrency: baseCurrencyOf(co), rows, totals: { ...totals, advances: advancesTotal, net: round2(totals.total - advancesTotal) } }
 }
 
 export function dueBillsOf(co: string, days: number) {
@@ -855,7 +914,7 @@ export function dueBillsOf(co: string, days: number) {
 
 /** Supplier statement in base currency (credit = we owe more, debit = paid / credited). Void documents are left out. */
 export function statementOf(co: string, vendorId: string, from: string, to: string): Omit<SupplierStatement, 'company' | 'vendorName' | 'vendorVatNumber'> {
-  type Ev = { date: string; type: 'bill' | 'payment' | 'debit_note'; reference: string; description: string; debit: number; credit: number }
+  type Ev = { date: string; type: 'bill' | 'payment' | 'debit_note' | 'advance' | 'advance_applied' | 'advance_refund'; reference: string; description: string; debit: number; credit: number }
   const evs: Ev[] = []
   const bills = finBills.filter((b) => b.companyId === co && b.vendorId === vendorId && postedBill(b))
   for (const b of bills) evs.push({ date: b.billDate, type: 'bill', reference: b.number, description: `Supplier invoice ${b.supplierInvoiceNumber}`, debit: 0, credit: toBase(b.total, b.exchangeRate) })
@@ -865,8 +924,16 @@ export function statementOf(co: string, vendorId: string, from: string, to: stri
     evs.push({ date: p.date, type: 'payment', reference: p.number, description: `Payment${p.reference ? ` · ${p.reference}` : ''}`, debit: base, credit: 0 })
   }
   for (const d of finDebitNotes) {
-    if (d.companyId !== co || d.vendorId !== vendorId) continue
+    if (d.companyId !== co || d.vendorId !== vendorId || d.status === 'void') continue
     evs.push({ date: d.date, type: 'debit_note', reference: d.number, description: `Debit note: ${d.reason}`, debit: toBase(d.total, d.exchangeRate), credit: 0 })
+  }
+  // Advances: the prepayment lowers what we owe (debit); a refund by the supplier raises it again (credit). Applying an
+  // advance to a bill moves it from advances to the bill (net 0): listed for the trail with no amount.
+  for (const a of finSupplierAdvances) {
+    if (a.companyId !== co || a.vendorId !== vendorId) continue
+    evs.push({ date: a.date, type: 'advance', reference: a.number, description: `Advance paid${a.reference ? ` · ${a.reference}` : ''}`, debit: toBase(a.amount, a.exchangeRate), credit: 0 })
+    for (const x of a.applications) evs.push({ date: x.date, type: 'advance_applied', reference: a.number, description: `Advance applied to bill ${billOf(co, x.billId)?.number ?? x.billId} (${x.amount.toFixed(2)} ${a.currency})`, debit: 0, credit: 0 })
+    for (const r of a.refunds) evs.push({ date: r.date, type: 'advance_refund', reference: a.number, description: `Advance refunded by the supplier${r.reference ? ` · ${r.reference}` : ''}`, debit: 0, credit: toBase(r.amount, a.exchangeRate) })
   }
   evs.sort((a, b) => a.date.localeCompare(b.date) || (a.type === 'bill' ? -1 : 1))
   let opening = 0
@@ -930,20 +997,10 @@ export function supplierBalances(co: string): Map<string, { open: number; overdu
  * The Events budget screen can read it later (GET /finance/event-costs?event_id=) without changing its own data.
  */
 export function eventBilledCostsOf(co: string, eventId: string) {
-  const perLine = new Map<string, number>()
-  let unlinked = 0
-  for (const b of finBills) {
-    if (b.companyId !== co || !postedBill(b)) continue
-    for (const l of b.lines) {
-      if (l.eventId !== eventId) continue
-      const cost = toBase(lineCost(l), b.exchangeRate)
-      if (l.budgetLineId) perLine.set(l.budgetLineId, round2((perLine.get(l.budgetLineId) ?? 0) + cost))
-      else unlinked = round2(unlinked + cost)
-    }
-  }
+  const { perLine, unlinked } = billedByLine(co, eventId)
   const lines = eventBudgetLines
     .filter((l) => l.companyId === co && l.eventId === eventId)
-    .map((l) => ({ budgetLineId: l.id, label: `${l.category}${l.note ? ` · ${l.note}` : ''}`, planned: l.planned, actual: l.actual, billed: perLine.get(l.id) ?? 0 }))
+    .map((l) => ({ budgetLineId: l.id, label: `${l.category}${l.note ? ` · ${l.note}` : ''}`, planned: l.planned, actual: l.actual, billed: perLine.get(l.id)?.billed ?? 0, bills: (perLine.get(l.id)?.bills ?? []).map((b) => ({ id: b.id, number: b.number, amount: b.amount })) }))
   const totalBilled = round2(lines.reduce((s, l) => s + l.billed, 0) + unlinked)
   return { eventId, baseCurrency: baseCurrencyOf(co), lines, unlinkedBilled: unlinked, totalBilled }
 }
@@ -968,6 +1025,181 @@ export function runBillDueReminders(co: string, at: string): number {
     n++
   }
   return n
+}
+
+/* ---------------- supplier advances (prepayments) ---------------- */
+
+/**
+ * SUPPLIER ADVANCES (docs/API.md › Finance › Supplier advances). Paid before the bill, in the supplier's currency:
+ *   advance   Dr 1420 Supplier advances (amount × the advance's rate)        Cr the payment account
+ *   apply     Dr AP (amount × the bill's rate)   Cr 1420 (amount × the advance's rate)   ± exchange gain / loss
+ *             — the bill's balance moves through `applyToBill({ paid })`, like a payment
+ *   refund    Dr the receiving account (amount × the refund's rate)   Cr 1420 (amount × the advance's rate)   ± FX
+ * Remaining (unapplied) = amount − applied − refunded. A PO may carry an advance % (e.g. 30 % on approval): the
+ * accountants are told when it is approved, the advance paid against it is linked to the PO, and a bill posted from
+ * that PO uses the PO's remaining advances automatically.
+ */
+
+export const advanceApplied = (a: Pick<SupplierAdvanceRecord, 'applications'>, asOf?: string) => round2(a.applications.filter((x) => !asOf || x.date <= asOf).reduce((s, x) => s + x.amount, 0))
+export const advanceRefunded = (a: Pick<SupplierAdvanceRecord, 'refunds'>, asOf?: string) => round2(a.refunds.filter((x) => !asOf || x.date <= asOf).reduce((s, x) => s + x.amount, 0))
+/** Unapplied part of an advance (at the end of `asOf`, or now). */
+export function advanceRemaining(a: SupplierAdvanceRecord, asOf?: string): number {
+  if (asOf && a.date > asOf) return 0
+  return Math.max(0, round2(a.amount - advanceApplied(a, asOf) - advanceRefunded(a, asOf)))
+}
+export const advanceOf = (co: string, id: unknown) => (typeof id === 'string' ? finSupplierAdvances.find((a) => a.companyId === co && a.id === id) : undefined)
+
+/** Advances applied to a bill (bill currency), up to `asOf` when given. */
+export function advanceAppliedTo(co: string, billId: string, asOf?: string): number {
+  let n = 0
+  for (const a of finSupplierAdvances) if (a.companyId === co) for (const x of a.applications) if (x.billId === billId && (!asOf || x.date <= asOf)) n += x.amount
+  return round2(n)
+}
+
+/** Unapplied advances of a supplier in base currency (at each advance's rate), as of a date. */
+export function unappliedAdvancesBase(co: string, vendorId: string, asOf?: string): number {
+  return round2(finSupplierAdvances.filter((a) => a.companyId === co && a.vendorId === vendorId).reduce((s, a) => s + toBase(advanceRemaining(a, asOf), a.exchangeRate), 0))
+}
+
+function fxLine(co: string, fx: number): JournalLine[] {
+  if (fx > 0) return [{ accountId: systemAccount(co, 'fx_gain_loss'), debit: 0, credit: fx, description: 'Exchange gain' }]
+  if (fx < 0) return [{ accountId: systemAccount(co, 'fx_gain_loss'), debit: -fx, credit: 0, description: 'Exchange loss' }]
+  return []
+}
+
+export function advanceCore(
+  co: string,
+  input: { vendorId: string; poId: string | null; date: string; paymentAccountId: string; method: BillPaymentRecord['method']; reference: string; currency: string; exchangeRate: number; amount: number; notes: string },
+  by: Actor,
+  at: string,
+): Tenant<SupplierAdvanceRecord> {
+  const amount = round2(input.amount)
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000_000) bad('The advance must be greater than 0.', 'invalid_amount')
+  const id = nextId('supplierAdvance', 'ADV')
+  const vName = vendorName(co, input.vendorId)
+  const base = toBase(amount, input.exchangeRate)
+  const entry = postJournal(co, {
+    date: input.date,
+    memo: `Advance to ${vName}`,
+    sourceType: 'bill',
+    sourceId: id,
+    lines: [
+      { accountId: systemAccount(co, 'supplier_advances'), debit: base, credit: 0, description: `Supplier advance · ${vName}` },
+      { accountId: input.paymentAccountId, debit: 0, credit: base, description: `Advance paid to ${vName}` },
+    ],
+    createdBy: by.id,
+  })
+  const a: Tenant<SupplierAdvanceRecord> = {
+    companyId: co,
+    id,
+    number: docNumber(co, prefixOf(co), 'ADV', input.date.slice(0, 4)),
+    vendorId: input.vendorId,
+    poId: input.poId,
+    date: input.date,
+    method: input.method,
+    reference: input.reference,
+    paymentAccountId: input.paymentAccountId,
+    currency: input.currency,
+    exchangeRate: input.exchangeRate,
+    amount,
+    applications: [],
+    refunds: [],
+    notes: input.notes,
+    journalEntryId: entry.id,
+    createdBy: by.id,
+    createdAt: at,
+  }
+  entry.memo = `Supplier advance ${a.number} · ${vName}`
+  finSupplierAdvances.push(a)
+  if (input.poId) {
+    const po = poOf(co, input.poId)
+    po?.history.push(hist(by, 'advance', `Advance ${a.number} paid: ${amount.toFixed(2)} ${a.currency}`, at))
+  }
+  return a
+}
+
+/** Applies (part of) an advance to an open bill of the same supplier and currency. */
+export function applyAdvanceCore(co: string, a: SupplierAdvanceRecord, bill: BillRecord, amountIn: number, date: string, by: Actor, at: string): SupplierAdvanceRecord {
+  const amount = round2(amountIn)
+  if (bill.vendorId !== a.vendorId) bad('The bill is from another supplier.', 'vendor_mismatch')
+  if (bill.currency !== a.currency) bad(`The advance is in ${a.currency}; the bill is in ${bill.currency}.`, 'currency_mismatch')
+  if (!isOpenBill(bill.status)) conflict(`Bill ${bill.number} isn’t open.`, 'bill_not_open')
+  if (!Number.isFinite(amount) || amount <= 0) bad('The amount must be greater than 0.', 'invalid_amount')
+  const remaining = advanceRemaining(a)
+  if (amount > remaining + 1e-9) bad(`At most ${remaining.toFixed(2)} ${a.currency} of this advance is unapplied.`, 'exceeds_advance')
+  if (amount > bill.balanceDue + 1e-9) bad(`At most ${bill.balanceDue.toFixed(2)} ${bill.currency} is due on bill ${bill.number}.`, 'exceeds_balance')
+  if (date < a.date || date < bill.billDate) bad('The application date is before the advance or the bill.', 'invalid_date')
+  const apBase = toBase(amount, bill.exchangeRate)
+  const advBase = toBase(amount, a.exchangeRate)
+  const fx = round2(apBase - advBase)
+  const vName = vendorName(co, a.vendorId)
+  const entry = postJournal(co, {
+    date,
+    memo: `Advance ${a.number} applied to bill ${bill.number} · ${vName}`,
+    sourceType: 'bill',
+    sourceId: a.id,
+    lines: [
+      { accountId: systemAccount(co, 'accounts_payable'), debit: apBase, credit: 0, description: `Accounts payable · ${vName}` },
+      { accountId: systemAccount(co, 'supplier_advances'), debit: 0, credit: advBase, description: `Supplier advance ${a.number} applied` },
+      ...fxLine(co, fx),
+    ],
+    createdBy: by.id,
+  })
+  a.applications.push({ id: `${a.id}-A${a.applications.length + 1}`, billId: bill.id, date, amount, fxDifference: fx, journalEntryId: entry.id, by: by.id, at })
+  applyToBill(bill, { paid: amount }, at)
+  bill.history.push(hist(by, 'advance_applied', `Advance ${a.number} applied: ${amount.toFixed(2)} ${bill.currency}`, at))
+  return a
+}
+
+/** The supplier pays (part of) an unapplied advance back. */
+export function refundAdvanceCore(co: string, a: SupplierAdvanceRecord, input: { amount: number; date: string; accountId: string; exchangeRate: number; reference: string }, by: Actor, at: string): SupplierAdvanceRecord {
+  const amount = round2(input.amount)
+  if (!Number.isFinite(amount) || amount <= 0) bad('The amount must be greater than 0.', 'invalid_amount')
+  const remaining = advanceRemaining(a)
+  if (amount > remaining + 1e-9) bad(`At most ${remaining.toFixed(2)} ${a.currency} of this advance is unapplied.`, 'exceeds_advance')
+  if (input.date < a.date) bad('The refund is dated before the advance.', 'invalid_date')
+  const inBase = toBase(amount, input.exchangeRate)
+  const advBase = toBase(amount, a.exchangeRate)
+  const fx = round2(inBase - advBase)
+  const vName = vendorName(co, a.vendorId)
+  const entry = postJournal(co, {
+    date: input.date,
+    memo: `Refund of advance ${a.number} · ${vName}`,
+    sourceType: 'bill',
+    sourceId: a.id,
+    lines: [
+      { accountId: input.accountId, debit: inBase, credit: 0, description: `Advance refunded by ${vName}` },
+      { accountId: systemAccount(co, 'supplier_advances'), debit: 0, credit: advBase, description: `Supplier advance ${a.number} refunded` },
+      ...fxLine(co, fx),
+    ],
+    createdBy: by.id,
+  })
+  a.refunds.push({ id: `${a.id}-R${a.refunds.length + 1}`, date: input.date, amount, accountId: input.accountId, exchangeRate: input.exchangeRate, fxDifference: fx, reference: input.reference, journalEntryId: entry.id, by: by.id, at })
+  return a
+}
+
+/** A bill posted from a PO uses the PO's remaining advances (same currency), up to its balance. Never blocks the post. */
+export function applyPoAdvances(co: string, bill: BillRecord, by: Actor, at: string): void {
+  if (!bill.poId) return
+  for (const a of finSupplierAdvances) {
+    if (a.companyId !== co || a.poId !== bill.poId || a.currency !== bill.currency || a.vendorId !== bill.vendorId) continue
+    const amount = Math.min(advanceRemaining(a), bill.balanceDue)
+    if (amount <= 0 || !isOpenBill(bill.status)) continue
+    try {
+      applyAdvanceCore(co, a, bill, amount, a.date > bill.billDate ? a.date : bill.billDate, by, at)
+    } catch {
+      /* e.g. a locked period: the accountant applies it by hand */
+    }
+  }
+}
+
+/** PO with an advance %: once approved, the accountants are asked to pay it (once). */
+export function notifyAdvanceDue(co: string, po: PoRecord, at: string): void {
+  if (!po.advancePct || po.advancePct <= 0) return
+  const due = round2((po.total * po.advancePct) / 100)
+  for (const u of accountingUsers(co)) {
+    pushNotification({ userId: u.id, companyId: co, type: FINANCE_ALERT_TYPE, title: 'Supplier advance due', body: `${po.number} · ${vendorName(co, po.vendorId)} · ${po.advancePct}% advance = ${po.currency} ${due.toFixed(2)}`, link: poPathOf(po.id), at })
+  }
 }
 
 export const isDate = isIsoDay

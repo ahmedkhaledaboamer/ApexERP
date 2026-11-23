@@ -16,6 +16,7 @@ import { Drawer } from '@/shared/components/ui/Drawer'
 import { EmptyState, Skeleton } from '@/shared/components/ui/Feedback'
 import { Field, SearchInput, SelectInput, TextArea, TextInput } from '@/shared/components/form/Field'
 import { useToast } from '@/shared/components/ui/Toast'
+import { AdvancesTab } from '@/modules/finance/purchases/components/Advances'
 
 /**
  * `/finance/suppliers`: the company's vendor directory (Events › Vendors) with each vendor's finance profile — VAT
@@ -107,6 +108,7 @@ const formOf = (s: SupplierDetail): ProfileForm => ({
   currency: s.currency,
   bankName: s.bankName,
   iban: '',
+  swiftBic: s.swiftBic ?? '',
   notes: s.notes,
 })
 
@@ -149,6 +151,7 @@ function SupplierDrawer({ id, onClose }: { id: string | null; onClose: () => voi
                   currency: f.currency,
                   bankName: f.bankName,
                   ...(f.iban.trim() ? { iban: f.iban.trim() } : {}),
+                  swiftBic: f.swiftBic,
                   notes: f.notes,
                 },
                 { onSuccess: () => toast.success('Supplier profile saved'), onError: (e) => setError(errMsg(e)) },
@@ -167,7 +170,11 @@ function SupplierDrawer({ id, onClose }: { id: string | null; onClose: () => voi
           <div className="grid grid-cols-3 gap-3 text-[0.8125rem]">
             <div><p className="text-xs text-muted">Open</p><p className="num font-semibold">{fmt2(s.openBalanceBase)}</p></div>
             <div><p className="text-xs text-muted">Overdue</p><p className={`num font-semibold ${s.overdueBase > 0 ? 'text-danger-600' : ''}`}>{fmt2(s.overdueBase)}</p></div>
-            <div><Link to={financeSupplierStatementPath(s.id)} className="text-brand-700 hover:underline dark:text-brand-300">Statement</Link></div>
+            <div>
+              <p className="text-xs text-muted">Unapplied advances</p>
+              <p className="num font-semibold">{fmt2(s.advancesBase)}</p>
+              <Link to={financeSupplierStatementPath(s.id)} className="text-brand-700 hover:underline dark:text-brand-300">Statement</Link>
+            </div>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field id="sp-vat" label="VAT / TRN number" hint="VAT is recoverable only from VAT-registered suppliers">
@@ -195,6 +202,9 @@ function SupplierDrawer({ id, onClose }: { id: string | null; onClose: () => voi
             </Field>
             <Field id="sp-bank" label="Bank name">
               <TextInput id="sp-bank" value={f.bankName} disabled={ro} onChange={(e) => set('bankName', e.target.value)} />
+            </Field>
+            <Field id="sp-bic" label="SWIFT / BIC" hint="Needed for foreign-currency transfers (MT103 file)">
+              <TextInput id="sp-bic" value={f.swiftBic} disabled={ro} onChange={(e) => set('swiftBic', e.target.value)} />
             </Field>
             <div className="sm:col-span-2">
               <p className="mb-1.5 text-[0.8125rem] font-medium text-ink-2">IBAN</p>
@@ -231,6 +241,10 @@ function SupplierDrawer({ id, onClose }: { id: string | null; onClose: () => voi
                 ))}
               </ul>
             )}
+          </div>
+          <div>
+            <h3 className="mb-2 text-sm font-semibold text-ink">Advances</h3>
+            <AdvancesTab canWrite={!ro} vendorId={s.id} />
           </div>
           <div>
             <h3 className="mb-2 text-sm font-semibold text-ink">Purchase orders</h3>

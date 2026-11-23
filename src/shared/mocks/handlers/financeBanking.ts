@@ -1,6 +1,7 @@
 import { http, type HttpHandler } from 'msw'
 import * as bank from '@/shared/mocks/services/financeBanking'
 import * as pay from '@/shared/mocks/services/financePayrollGl'
+import * as eosb from '@/shared/mocks/services/financeEosb'
 import * as m from '@/shared/api/financeBankingMappers'
 import { API, bodyAs, respondAs, userFrom } from './utils'
 
@@ -93,5 +94,12 @@ export const financeBankingHandlers: HttpHandler[] = [
   http.put<Id>(`${F}/payroll-postings/:id/paid-from`, async ({ request, params }) => {
     const input = await body<{ accountId?: unknown }>(request, m.bankPlainMapper)
     return respondAs(m.payrollPostingMapper, () => pay.setPayrollPaidFrom(userFrom(request), params.id, input))
+  }),
+
+  /* ---- end-of-service provision (monthly accrual; per-employee rows: accounting full) ---- */
+  http.get(`${F}/eosb-provision`, ({ request }) => respondAs(m.eosbProvisionMapper, () => eosb.getEosbProvision(userFrom(request), { year: new URL(request.url).searchParams.get('year') }))),
+  http.post(`${F}/eosb-provision/run`, async ({ request }) => {
+    const input = await body<{ month?: unknown }>(request, m.bankPlainMapper)
+    return respondAs(m.eosbRunMapper, () => eosb.runEosbProvision(userFrom(request), input))
   }),
 ]

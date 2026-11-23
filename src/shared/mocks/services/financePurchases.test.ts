@@ -10,7 +10,7 @@ import { advanceClock, resetClock } from '@/shared/mocks/clock'
 import { addDaysIso, round2, toBase } from '@/modules/finance/invoices/calc'
 import { apBucketOf, isValidIban, matchLine, maskIban, purchaseLine, purchaseTotals } from '@/modules/finance/purchases/calc'
 import { approvalChain } from './financeApprovals'
-import { billPostingLines, todayOf, apAgingOf, statementOf, billBalanceAsOf } from './financePurchasesCore'
+import { billPostingLines, todayOf, apAgingOf, statementOf, billBalanceAsOf, unappliedAdvancesBase } from './financePurchasesCore'
 import { ibanFor } from '@/shared/mocks/data/financePurchasesSeed'
 import * as fin from './financePurchases'
 import '@/shared/mocks/handlers'
@@ -226,13 +226,16 @@ describe('AP aging and statement', () => {
     expect(later.totals.total).toBe(now.totals.total)
     expect(later.totals.current).toBeLessThan(now.totals.current)
   })
-  it('statement: opening + bills − payments − debit notes = closing', () => {
+  // Policy change (supplier advances): the statement is the net supplier balance, so unapplied advances (seeded on
+  // PO-1005) lower the closing balance below the open bills.
+  it('statement: opening + bills − payments − debit notes − advances = closing', () => {
     const today = todayOf(APEX_ID)
     const s = statementOf(APEX_ID, 'VND-1002', addDaysIso(today, -365), today)
     const net = round2(s.lines.reduce((x, l) => x + l.credit - l.debit, 0))
     expect(round2(s.openingBalance + net)).toBe(s.closingBalance)
     const open = finBills.filter((b) => b.companyId === APEX_ID && b.vendorId === 'VND-1002' && b.status !== 'void').reduce((x, b) => x + toBase(b.balanceDue, b.exchangeRate), 0)
-    expect(s.closingBalance).toBe(round2(open))
+    expect(s.closingBalance).toBe(round2(open - unappliedAdvancesBase(APEX_ID, 'VND-1002')))
+    expect(unappliedAdvancesBase(APEX_ID, 'VND-1002')).toBeGreaterThan(0)
   })
 })
 

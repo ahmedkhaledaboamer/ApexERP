@@ -57,12 +57,14 @@ import { StageChangeModal, type PendingMove } from '@/modules/leads/components/S
 import { moveActionFor } from '@/modules/leads/lib/transitions'
 import { useOpenWonDialog } from '@/modules/won/hooks'
 import { MessageComposer } from '@/modules/leads/components/MessageComposer'
+import { WhatsAppTemplateButton } from '@/modules/integrations/components/WhatsAppTemplateButton'
 import { recipientsFor } from '@/modules/leads/components/composer/compose'
 import type { MessageChannel } from '@/modules/leads/api/messagesApi'
 import { Tooltip } from '@/shared/components/ui/Kbd'
 import { useCatalog } from '@/modules/services/hooks/useServices'
 import { CategoryIcon, ServiceChip, UnmatchedChip } from '@/modules/leads/components/ServiceFields'
 import { isParkedType } from '@/shared/domain/leadStatus'
+import { AskAiButton } from '@/modules/ai-agent/components/AskAiButton'
 
 type Tab = 'overview' | 'activity' | 'notes' | 'tasks' | 'quotations'
 
@@ -204,10 +206,8 @@ function LeadRecord({ id, user, canEdit }: { id: string; user: User; canEdit: bo
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Button variant="secondary" size="sm" disabled title="AI drafting arrives with the AI agent">
-                <Sparkles className="text-brand-600" />
-                Write with AI
-              </Button>
+              {/* AI assistant: summarize, draft a follow-up, suggest services (plan module `ai`; hidden without it). */}
+              <AskAiButton record={{ type: 'lead', id: lead.id }} label={lead.company} />
               {/* md and up: one button per channel; tooltips explain why one is unavailable. */}
               {outreach.map((o) =>
                 o.blocked ? (
@@ -270,6 +270,8 @@ function LeadRecord({ id, user, canEdit }: { id: string; user: User; canEdit: bo
                   }
                 </Menu>
               </div>
+              {/* Integrations › WhatsApp Business: send an approved template (shown when a number is connected). */}
+              {canEdit && <WhatsAppTemplateButton lead={lead} onSent={() => setTab('activity')} />}
               {canEdit && (
                 <Button write variant="secondary" size="sm" onClick={() => navigate(leadEditPath(lead.id))}>
                   <Pencil />

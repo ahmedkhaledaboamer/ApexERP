@@ -72,6 +72,10 @@ export const PATHS = {
   hrTraining: '/hr/training',
   /** HR › Performance reviews (every employee: own reviews; managers; HR: cycles, templates). ?tab=, ?review=, ?cycle=. */
   hrPerformance: '/hr/performance',
+  /** HR › Engagement surveys / eNPS (every employee answers: ?answer=; HR full and Department Heads: results ?tab=, ?survey=). */
+  hrEngagement: '/hr/engagement',
+  /** HR › 360° feedback (every employee: requests to answer, nominations; managers / HR: rounds). ?tab=, ?invitation=, ?round=. */
+  hrFeedback: '/hr/feedback',
   /** HR › Employees (+ profile), Employee contracts, Company assets. */
   hrEmployees: '/hr/employees',
   hrEmployeeDetail: '/hr/employees/:id',
@@ -95,6 +99,15 @@ export const PATHS = {
   hrLetter: '/hr/letters/:id',
   /** HR › Employee requests (HR full): profile changes, letter requests, letter templates, verify (?tab=). */
   hrRequests: '/hr/requests',
+  /** HR › Discipline (HR full + Department Head team, read-only): warnings and disciplinary actions (?record=). */
+  hrDiscipline: '/hr/discipline',
+  /** A printable warning letter of a record (HR full or the employee; ?language=en|ar|bilingual&digits=). */
+  hrWarningLetter: '/hr/discipline/:id/letter',
+  /** HR › Policies (HR full + Department Head team numbers) and a policy's acknowledgement dashboard. */
+  hrPolicies: '/hr/policies',
+  hrPolicyDetail: '/hr/policies/:id',
+  /** My HR › My policies (every employee: read and acknowledge; ?policy=). */
+  hrMyPolicies: '/hr/me/policies',
   /** Accounts & finance › ledger core (plan module `accounting`; accounting full edits, view reads). ?account=, ?entry=, ?new=1, ?tab=trial-balance. */
   financeOverview: '/finance',
   financeAccounts: '/finance/accounts',
@@ -124,6 +137,8 @@ export const PATHS = {
   financeBillDetail: '/finance/bills/:id',
   financeBillEdit: '/finance/bills/:id/edit',
   financeBillVoucher: '/finance/bill-payments/:id/voucher',
+  /** Accounts & finance › the caller's approvals inbox (POs, bills, expense claims awaiting them; plan gate only — department heads without accounting access too). */
+  financeApprovals: '/finance/approvals',
   /** Accounts & finance › Expenses (?tab=expenses|claims|petty|policy, ?expense=, ?claim=, ?fund=, ?new=1; claims: every employee). */
   financeExpenses: '/finance/expenses',
   /** Accounts & finance › Banking (?tab=accounts|transfers|reconcile|rules|payroll, ?account=). */
@@ -147,9 +162,15 @@ export const PATHS = {
   myCommissions: '/sales/my-commissions',
   /** Public payment page of a payment link (no sign-in, no workspace). */
   publicPay: '/pay/:token',
+  /** Public verification of an HR letter (no sign-in; the QR code on the letter; ?code=&workspace= in development). */
+  publicLetterVerify: '/verify/letter',
   /** Platform console: outside any workspace (TenantProvider exempts /platform). */
   platform: '/platform',
   platformLogin: '/platform/login',
+  /** Insights & admin › Integrations (plan module `integrations`, settings column). `?tab=sync-log|email-log`, `?open=<key>`. */
+  integrations: '/integrations',
+  /** Insights & admin › AI assistant (plan module `ai`, every role; `?c=<conversation id>`). */
+  aiAssistant: '/ai',
 } as const
 
 const enc = encodeURIComponent

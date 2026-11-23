@@ -169,7 +169,12 @@ export interface Customer {
 }
 
 export interface Session {
+  /** Access token (Authorization: Bearer). */
   token: string
+  /** Long-lived token for POST /auth/refresh (absent for support sessions: they can't be extended). */
+  refreshToken?: string
+  /** ISO time the access token expires; the client refreshes a minute before (app/authSession.ts). */
+  expiresAt?: string
   user: User
   /** The tenant the session belongs to (resolved by the server from the user's membership). */
   tenant: import('@/modules/tenancy/types').Company

@@ -1,5 +1,5 @@
 import { http, type HttpHandler } from 'msw'
-import type { ApprovalRulesInput, AttachmentInput, BillInput, BillPaymentInput, DebitNoteInput, PaymentRunInput, PoInput, SupplierCreateInput, SupplierProfileInput } from '@/modules/finance/purchases/types'
+import type { ApprovalRulesInput, AttachmentInput, BillInput, BillPaymentInput, DebitNoteInput, PaymentRunInput, PoInput, SupplierAdvanceInput, SupplierCreateInput, SupplierProfileInput } from '@/modules/finance/purchases/types'
 import * as fin from '@/shared/mocks/services/financePurchases'
 import * as m from '@/shared/api/financePurchasesMappers'
 import { API, bodyAs, respondAs, userFrom } from './utils'
@@ -20,6 +20,7 @@ const B = `${API}/finance/bills`
 const DN = `${API}/finance/debit-notes`
 const BP = `${API}/finance/bill-payments`
 const P = `${API}/finance/payables`
+const ADV = `${API}/finance/supplier-advances`
 
 /**
  * Accounts & finance › Purchases & payables (docs/API.md › Finance › Suppliers, Purchase orders, Bills, Approval rules).
@@ -124,6 +125,29 @@ export const financePurchasesHandlers: HttpHandler[] = [
     const input = await body<DebitNoteInput>(request, m.debitNoteInputMapper)
     return respondAs(m.debitNoteMapper, () => fin.createDebitNote(userFrom(request), input))
   }),
+  http.post<Id>(`${DN}/:id/void`, async ({ request, params }) => {
+    const input = await body<{ reason?: unknown }>(request, m.purchasesPlainMapper)
+    return respondAs(m.debitNoteMapper, () => fin.voidDebitNote(userFrom(request), params.id, input))
+  }),
+
+  /* ---- supplier advances (prepayments) ---- */
+  http.get(ADV, ({ request }) => {
+    const q = query(request)
+    return respondAs(m.supplierAdvanceMapper, () => fin.listSupplierAdvances(userFrom(request), { vendorId: q.get('vendor_id'), status: q.get('status'), poId: q.get('po_id') }))
+  }),
+  http.post(ADV, async ({ request }) => {
+    const input = await body<SupplierAdvanceInput>(request, m.supplierAdvanceInputMapper)
+    return respondAs(m.supplierAdvanceMapper, () => fin.createSupplierAdvance(userFrom(request), input))
+  }),
+  http.get<Id>(`${ADV}/:id`, ({ request, params }) => respondAs(m.supplierAdvanceMapper, () => fin.getSupplierAdvance(userFrom(request), params.id))),
+  http.post<Id>(`${ADV}/:id/apply`, async ({ request, params }) => {
+    const input = await body<{ billId?: unknown; amount?: unknown; date?: unknown }>(request, m.purchasesPlainMapper)
+    return respondAs(m.supplierAdvanceMapper, () => fin.applySupplierAdvance(userFrom(request), params.id, input))
+  }),
+  http.post<Id>(`${ADV}/:id/refund`, async ({ request, params }) => {
+    const input = await body<{ amount?: unknown; date?: unknown; accountId?: unknown; exchangeRate?: unknown; reference?: unknown }>(request, m.purchasesPlainMapper)
+    return respondAs(m.supplierAdvanceMapper, () => fin.refundSupplierAdvance(userFrom(request), params.id, input))
+  }),
 
   /* ---- bill payments and payment runs ---- */
   http.get(BP, ({ request }) => {
@@ -139,6 +163,16 @@ export const financePurchasesHandlers: HttpHandler[] = [
     return respondAs(m.paymentRunMapper, () => fin.createPaymentRun(userFrom(request), input))
   }),
   http.get(`${API}/finance/payment-runs`, ({ request }) => respondAs(m.paymentRunMapper, () => fin.listPaymentRuns(userFrom(request)))),
+  // The bank upload file (full IBANs): POST only, accounting full, audited.
+  http.post<Id>(`${API}/finance/payment-runs/:id/bank-file`, ({ request, params }) => respondAs(m.paymentRunFileMapper, () => fin.exportPaymentRunFile(userFrom(request), params.id))),
+  http.post<Id>(`${API}/finance/payment-runs/:id/sent`, async ({ request, params }) => {
+    const input = await body<{ bankReference?: unknown }>(request, m.purchasesPlainMapper)
+    return respondAs(m.paymentRunMapper, () => fin.markPaymentRunSent(userFrom(request), params.id, input))
+  }),
+  http.post<Id>(`${API}/finance/payment-runs/:id/confirm`, async ({ request, params }) => {
+    const input = await body<{ bankReference?: unknown }>(request, m.purchasesPlainMapper)
+    return respondAs(m.paymentRunMapper, () => fin.confirmPaymentRun(userFrom(request), params.id, input))
+  }),
   http.get<Id>(`${BP}/:id`, ({ request, params }) => respondAs(m.billPaymentMapper, () => fin.getBillPayment(userFrom(request), params.id))),
   http.post<Id>(`${BP}/:id/void`, async ({ request, params }) => {
     const input = await body<{ reason?: unknown }>(request, m.purchasesPlainMapper)

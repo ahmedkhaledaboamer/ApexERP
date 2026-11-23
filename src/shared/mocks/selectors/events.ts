@@ -2,7 +2,7 @@ import type { User } from '@/shared/types'
 import { can, scopeOf, teamIdsFor } from '@/shared/lib/permissions'
 import { users } from '@/shared/mocks/db'
 import { departments } from '@/shared/mocks/data/departments'
-import { eventAttendees, eventBudgetLines, events, eventTeam, type EventRecord } from '@/shared/mocks/data/events'
+import { eventAttendees, events, eventTeam, type EventRecord } from '@/shared/mocks/data/events'
 import { subscriptionOf } from '@/shared/mocks/data/subscriptions'
 import { planAt } from '@/shared/mocks/data/plans'
 import { effectiveModules } from '@/shared/mocks/data/platform'
@@ -10,6 +10,7 @@ import { companyDayOf } from '@/shared/mocks/selectors/company'
 import { companyById } from '@/shared/mocks/data/tenancy'
 import { zonedParts } from '@/shared/lib/zonedTime'
 import type { Tenant } from '@/shared/mocks/tenant'
+import { budgetLinesCost } from '@/shared/mocks/services/financeEventCosts'
 
 /**
  * Event access rules, shared by the events API, task links and targets ("Events attended").
@@ -104,11 +105,11 @@ export function eventsAttendedBy(companyId: string, userId: string, month: strin
 }
 
 /**
- * The event's actual cost: the sum of its budget lines' actual amounts when it has lines, else the
- * event's own `actual_cost` (null = unknown). Used by the event stats (ROI) and Marketing Analytics.
+ * The event's actual cost: when it has budget lines, Σ per line max(actual, billed) — the cost billed through
+ * Accounts & finance replaces the typed actual up to its amount, never adds to it (the Profitability rule,
+ * services/financeEventCosts.ts) — else the event's own `actual_cost` (null = unknown). Used by the event stats
+ * (ROI) and Marketing Analytics.
  */
 export function eventActualCost(e: Pick<Tenant<EventRecord>, 'id' | 'companyId' | 'actualCost'>): number | null {
-  const lines = eventBudgetLines.filter((l) => l.eventId === e.id && l.companyId === e.companyId)
-  if (lines.length) return Math.round(lines.reduce((s, l) => s + l.actual, 0) * 100) / 100
-  return e.actualCost
+  return budgetLinesCost(e.companyId, e.id) ?? e.actualCost
 }

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { Check, Inbox, Plus, RotateCcw, ShieldCheck, X } from 'lucide-react'
+import { Ban, Check, Inbox, Plus, RotateCcw, ShieldCheck, X } from 'lucide-react'
 import { Badge } from '@/shared/components/ui/Badge'
 import { Button } from '@/shared/components/ui/Button'
 import { EmptyState, ErrorState, Skeleton } from '@/shared/components/ui/Feedback'
@@ -14,10 +14,12 @@ import { letterPath } from '@/app/paths'
 import { MaskedValue } from '@/modules/hr/components/PeopleBits'
 import { useEmployeesQuery } from '@/modules/hr/hooks/useHrPeople'
 import { errorMessage, F, Table, td } from '@/modules/hr/time/components/shared'
-import { PLACEHOLDERS, letterDate, renderTemplate, validateTemplate, type LetterValues } from '../letters'
+import { PLACEHOLDERS, letterDate, letterDateAr, renderTemplate, validateTemplate, type LetterValues } from '../letters'
+import { RevokeModal } from './LetterPage'
 import { selfServiceApi, useInbox, useLetterRequests, useLetterTypes, useProfileChanges, useSelfServiceMutation } from '../api'
 import { STATUS_TONE } from './MyHrPage'
 import {
+  LETTER_LANGUAGE_LABEL,
   LETTER_STATUS_LABEL,
   NOC_PURPOSES,
   NOC_PURPOSE_LABEL,
@@ -194,6 +196,7 @@ function DecideModal(props: { kind: 'profile' | 'letter'; id: string; action: 'a
 function LettersView() {
   const q = useLetterRequests()
   const [decide, setDecide] = useState<{ r: LetterRequestRow; action: 'approve' | 'reject' } | null>(null)
+  const [revoke, setRevoke] = useState<LetterRequestRow | null>(null)
   const [onBehalf, setOnBehalf] = useState(false)
   return (
     <>
@@ -220,6 +223,10 @@ function LettersView() {
               <td className={td}>
                 {r.typeName}
                 {r.includesSalary && <span className="block text-xs text-muted">Shows salary</span>}
+                <span className="block text-xs text-muted" data-testid="letter-language">
+                  {LETTER_LANGUAGE_LABEL[r.language]}
+                  {r.language !== 'en' && r.digits === 'arabic' ? ' · Arabic digits' : ''}
+                </span>
               </td>
               <td className={td}>
                 {r.addressee}
@@ -230,12 +237,19 @@ function LettersView() {
               <td className={td}>
                 <Badge tone={STATUS_TONE[r.status]}>{LETTER_STATUS_LABEL[r.status]}</Badge>
                 {r.rejectionReason && <span className="mt-0.5 block text-xs text-muted">{r.rejectionReason}</span>}
+                {r.revokeReason && <span className="mt-0.5 block text-xs text-muted">{r.revokedByName}: {r.revokeReason}</span>}
               </td>
               <td className={`${td} text-end whitespace-nowrap`}>
-                {r.status === 'issued' && (
+                {(r.status === 'issued' || r.status === 'revoked') && (
                   <Link to={letterPath(r.id)} className="text-[0.8125rem] font-medium text-accent-700 hover:underline dark:text-accent-300">
                     Open {r.referenceNo}
                   </Link>
+                )}
+                {r.canRevoke && (
+                  <Button size="sm" variant="ghost" className="ms-2" onClick={() => setRevoke(r)}>
+                    <Ban />
+                    Revoke
+                  </Button>
                 )}
                 {r.canDecide && (
                   <>
@@ -267,6 +281,7 @@ function LettersView() {
         />
       )}
       {onBehalf && <OnBehalfModal onClose={() => setOnBehalf(false)} />}
+      {revoke && <RevokeModal id={revoke.id} what={`${revoke.typeName} ${revoke.referenceNo ?? ''}`} onClose={() => setRevoke(null)} />}
     </>
   )
 }
@@ -400,6 +415,26 @@ const SAMPLE: LetterValues = {
   'signatory.title': 'HR Manager',
 }
 
+/** Arabic sample values for the Arabic template preview (synthetic). */
+const SAMPLE_AR: LetterValues = {
+  ...SAMPLE,
+  'employee.fullName': 'سامي مثال',
+  'employee.salutation': 'السيد',
+  'employee.jobTitle': 'محلل',
+  'employee.nationality': 'الهند',
+  'employee.hireDate': letterDateAr('2023-03-01'),
+  'employee.exitDate': letterDateAr('2026-12-31'),
+  'employee.employmentType': 'دوام كامل',
+  'salary.currency': 'درهم إماراتي',
+  'company.name': 'شركتكم',
+  'company.legalName': 'شركتكم ذ.م.م',
+  'company.country': 'الإمارات العربية المتحدة',
+  'letter.date': letterDateAr(new Date().toISOString().slice(0, 10)),
+  addressee: 'لمن يهمه الأمر',
+  purpose: 'تقديمها لمن يهمه الأمر',
+  'noc.purpose': 'السفر',
+}
+
 function TemplatesView() {
   const q = useLetterTypes()
   const [selected, setSelected] = useState<string>('')
@@ -431,11 +466,14 @@ function TemplateEditor({ t }: { t: LetterType }) {
   const [name, setName] = useState(t.name)
   const [description, setDescription] = useState(t.description)
   const [body, setBody] = useState(t.body)
+  const [nameAr, setNameAr] = useState(t.nameAr)
+  const [bodyAr, setBodyAr] = useState(t.bodyAr)
   const [active, setActive] = useState(t.active)
   const save = useSelfServiceMutation(selfServiceApi.saveLetterType)
   const reset = useSelfServiceMutation(selfServiceApi.resetLetterType)
-  const problems = validateTemplate(body, t.includesSalary)
+  const problems = [...validateTemplate(body, t.includesSalary), ...validateTemplate(bodyAr, t.includesSalary, { optional: true }).map((x) => `Arabic: ${x}`)]
   const preview = useMemo(() => renderTemplate(body, SAMPLE).text, [body])
+  const previewAr = useMemo(() => renderTemplate(bodyAr, SAMPLE_AR, { rtl: true }).text, [bodyAr])
   const allowed = PLACEHOLDERS.filter((p) => t.includesSalary || !p.salary)
   return (
     <section aria-label={`Template ${t.name}`} className="space-y-3 rounded-xl border border-line bg-surface p-4">
@@ -478,13 +516,29 @@ function TemplateEditor({ t }: { t: LetterType }) {
           </div>
         </div>
       </div>
+      <div className="grid gap-4 border-t border-line pt-3 xl:grid-cols-2">
+        <div className="space-y-3">
+          <F label="Arabic name">
+            <TextInput dir="rtl" lang="ar" value={nameAr} onChange={(e) => setNameAr(e.target.value)} />
+          </F>
+          <F label="Arabic template" hint="Same placeholders, filled with Arabic values (name and job title in Arabic, Arabic legal name). Leave empty to offer this letter in English only.">
+            <TextArea dir="rtl" lang="ar" value={bodyAr} onChange={(e) => setBodyAr(e.target.value)} rows={14} className="text-[0.8125rem]" />
+          </F>
+        </div>
+        <div>
+          <p className="mb-1 text-xs font-medium text-muted">Arabic preview with sample data</p>
+          <div className="min-h-64 rounded-lg border border-line bg-sunken p-3 text-[0.875rem] leading-loose whitespace-pre-line text-ink" dir="rtl" lang="ar" data-testid="template-preview-ar">
+            {previewAr || '—'}
+          </div>
+        </div>
+      </div>
       <div className="flex flex-wrap justify-end gap-2">
         <Button variant="ghost" onClick={() => reset.mutate(t.id, { onSuccess: () => toast.success('Template reset to the default') })} loading={reset.isPending} disabled={t.isDefault}>
           <RotateCcw />
           Reset to default
         </Button>
         <Button
-          onClick={() => save.mutate({ id: t.id, input: { name, description, body, active } }, { onSuccess: () => toast.success('Template saved'), onError: (e) => toast.error('Not saved', errorMessage(e)) })}
+          onClick={() => save.mutate({ id: t.id, input: { name, description, body, nameAr, bodyAr, active } }, { onSuccess: () => toast.success('Template saved'), onError: (e) => toast.error('Not saved', errorMessage(e)) })}
           loading={save.isPending}
           disabled={problems.length > 0}
         >
@@ -531,9 +585,9 @@ function VerifyView() {
       {error && <p className="text-[0.8125rem] text-danger-700 dark:text-danger-300" role="alert">{error}</p>}
       {result && (
         <div role="status" className={`rounded-lg p-3 text-[0.8125rem] ${result.valid ? 'bg-success-50 text-success-800 dark:bg-success-950 dark:text-success-200' : 'bg-danger-50 text-danger-800 dark:bg-danger-950 dark:text-danger-200'}`}>
-          {result.valid ? (
+          {result.status !== 'not_found' ? (
             <>
-              <p className="font-semibold">Authentic letter</p>
+              <p className="font-semibold">{result.valid ? 'Authentic letter' : `Revoked letter${result.revokedAt ? ` (revoked ${fmtDate(result.revokedAt)})` : ''}`}</p>
               <p>
                 {result.typeName} {result.referenceNo} for {result.employeeName} ({result.employeeNo}), issued {letterDate(result.issueDate)} by {result.issuedByName}.
               </p>

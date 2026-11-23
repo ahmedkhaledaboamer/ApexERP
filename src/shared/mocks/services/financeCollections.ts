@@ -984,6 +984,24 @@ export async function voidPaymentLink(user: User, id: string): Promise<PaymentLi
 
 /* ---------------- public pay page (no auth) ---------------- */
 
+/**
+ * SEAM(gateway) wiring (additive): Insights & admin › Integrations › Payments registers the company's default gateway
+ * (services/integrations.ts). The simulated checkout below keeps working without one; with one, the public page's
+ * test-mode flag follows the gateway's mode and a paid link is reported back (sync log). A real integration replaces
+ * the simulated card form with the gateway's hosted checkout + signed webhook.
+ */
+export interface PaymentGatewayInfo {
+  provider: string
+  label: string
+  testMode: boolean
+}
+let gatewayOf: (co: string) => PaymentGatewayInfo | null = () => null
+let gatewayPaid: (co: string, paid: { invoiceNumber: string; amount: number; currency: string; receiptNumber: string }) => void = () => {}
+export function registerPaymentGateway(resolve: typeof gatewayOf, onPaid: typeof gatewayPaid): void {
+  gatewayOf = resolve
+  gatewayPaid = onPaid
+}
+
 const LINK_INVALID = 'This payment link isn’t valid.'
 /** The link behind a token; unknown token, a company without accounting or a deleted / suspended workspace → the same 404. */
 function linkByToken(token: string): Tenant<PaymentLinkRecord> {
@@ -1019,7 +1037,7 @@ export async function getPublicPayment(token: string): Promise<PublicPayment> {
     companyName: c?.branding.displayName || c?.name || '',
     logoUrl: c?.branding.logoUrl ?? null,
     monogram: c?.branding.monogram ?? '',
-    testMode: true,
+    testMode: gatewayOf(l.companyId)?.testMode ?? true,
   })
 }
 
@@ -1079,6 +1097,7 @@ export async function payPublic(token: string, input: PublicPayInput | null, cli
   const owner = customerOf(co, inv.customerId)?.ownerId
   notify(co, [...accountantIds(co), ...(owner ? [owner] : [])], `Paid online: ${inv.number}`, `${customerName(co, inv.customerId)} · ${pay.currency} ${pay.amount.toFixed(2)} · receipt ${pay.number}`, `/finance/payments?payment=${encodeURIComponent(pay.id)}`)
   logOnCustomer(co, inv.customerId, 'system', `Paid ${inv.number} online (${pay.currency} ${pay.amount.toFixed(2)}, receipt ${pay.number})`, null)
+  gatewayPaid(co, { invoiceNumber: inv.number, amount: pay.amount, currency: pay.currency, receiptNumber: pay.number })
   return { paid: true, message: 'Payment received. Thank you!', receiptNumber: pay.number, amount: pay.amount, currency: pay.currency }
 }
 

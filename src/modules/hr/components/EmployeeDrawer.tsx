@@ -13,6 +13,8 @@ import { COUNTRIES, FormError, Section } from './PeopleBits'
 interface Draft {
   fullName: string
   jobTitle: string
+  fullNameAr: string
+  jobTitleAr: string
   departmentId: string
   managerId: string
   email: string
@@ -40,6 +42,8 @@ const todayIso = () => new Date().toISOString().slice(0, 10)
 const draftOf = (e: EmployeeDetail | null): Draft => ({
   fullName: e?.fullName ?? '',
   jobTitle: e?.jobTitle ?? '',
+  fullNameAr: e?.fullNameAr ?? '',
+  jobTitleAr: e?.jobTitleAr ?? '',
   departmentId: e?.departmentId ?? '',
   managerId: e?.managerId ?? '',
   email: e?.email ?? '',
@@ -94,6 +98,8 @@ export function EmployeeDrawer({ open, onClose, employee, onSaved }: { open: boo
     const input: Partial<EmployeeInput> = {
       fullName: d.fullName,
       jobTitle: d.jobTitle,
+      fullNameAr: d.fullNameAr,
+      jobTitleAr: d.jobTitleAr,
       departmentId: d.departmentId || null,
       managerId: d.managerId || null,
       email: d.email,
@@ -146,6 +152,14 @@ export function EmployeeDrawer({ open, onClose, employee, onSaved }: { open: boo
           <Field id="emp-name" label="Full name" required error={errs.fullName}>
             <TextInput id="emp-name" value={d.fullName} invalid={!!errs.fullName} onChange={(e) => set('fullName', e.target.value)} />
           </Field>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field id="emp-name-ar" label="Name in Arabic" hint="Optional; used by Arabic and bilingual HR letters.">
+              <TextInput id="emp-name-ar" dir="rtl" lang="ar" value={d.fullNameAr} onChange={(e) => set('fullNameAr', e.target.value)} />
+            </Field>
+            <Field id="emp-title-ar" label="Job title in Arabic" hint="Optional">
+              <TextInput id="emp-title-ar" dir="rtl" lang="ar" value={d.jobTitleAr} onChange={(e) => set('jobTitleAr', e.target.value)} />
+            </Field>
+          </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field id="emp-title" label="Job title" required error={errs.jobTitle}>
               <TextInput id="emp-title" value={d.jobTitle} invalid={!!errs.jobTitle} onChange={(e) => set('jobTitle', e.target.value)} />

@@ -89,3 +89,17 @@ export function usePublicUrls() {
       : `https://${sub}.${ROOT_DOMAIN}${path}`
   return { subdomain: sub, url }
 }
+
+/**
+ * Embed snippets of a lead form (hosted page URL, iframe, auto-height script). Shared by the form's Share & embed panel
+ * and Insights & admin › Integrations › Website & forms.
+ */
+export function embedSnippets(form: { name: string; publicKey: string }, hosted: string): { hosted: string; iframe: string; script: string } {
+  const frame = `${hosted}?embed=1`
+  const origin = new URL(hosted).origin
+  const iframe = `<iframe src="${frame}" title="${form.name.replace(/"/g, '&quot;')}" style="width:100%;min-height:560px;border:0" loading="lazy"></iframe>`
+  const box = `apex-form-${form.publicKey}`
+  const script = `<div id="${box}"></div>
+<script>(function(){var f=document.createElement('iframe');f.src='${frame}';f.title='Form';f.style.cssText='width:100%;min-height:480px;border:0';document.getElementById('${box}').appendChild(f);window.addEventListener('message',function(e){if(e.origin==='${origin}'&&e.data&&e.data.key==='${form.publicKey}'&&e.data.apexFormHeight){f.style.height=e.data.apexFormHeight+'px'}})})();</script>`
+  return { hosted, iframe, script }
+}

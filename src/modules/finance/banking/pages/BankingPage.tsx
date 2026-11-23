@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { ArrowLeftRight, Building2, Eye, FileUp, Landmark, ListChecks, Plus, Scale, Sparkles, Trash2, Undo2, Wallet } from 'lucide-react'
+import { ArrowLeftRight, PiggyBank, Building2, Eye, FileUp, Landmark, ListChecks, Plus, Scale, Sparkles, Trash2, Undo2, Wallet } from 'lucide-react'
 import type { BankAccount, ReconcileWorkspace } from '@/modules/finance/banking/types'
 import { BANK_ACCOUNT_KINDS, BANK_ACCOUNT_KIND_LABEL } from '@/modules/finance/banking/types'
 import { bankingApi, useBankAccounts, useBankingMutation, usePayrollPostings, useReconciliation, useReconciliations, useRules, useTransfers, useWorkspace } from '@/modules/finance/banking/api'
@@ -16,13 +16,15 @@ import { EmptyState, ErrorState, Skeleton } from '@/shared/components/ui/Feedbac
 import { Checkbox, Field, SelectInput, TextInput } from '@/shared/components/form/Field'
 import { useToast } from '@/shared/components/ui/Toast'
 import { ImportStatementModal } from '../components/ImportStatementModal'
+import { EosbProvisionTab } from '../components/EosbProvisionTab'
+import { PAYMENT_FILE_COLUMNS, PAYMENT_FILE_COLUMN_LABEL, PAYMENT_FILE_TEMPLATES, PAYMENT_FILE_TEMPLATE_DEF, type PaymentFileColumn, type PaymentFileTemplate } from '@/modules/finance/purchases/bankFile'
 
 /**
  * `/finance/banking`: bank and cash accounts on top of the ledger (?tab=accounts|transfers|reconcile|rules|payroll,
  * ?account=). Reconcile: import a CSV statement, auto-match, match by hand (1-to-many / many-to-1), create entries from
  * bank-only lines (bank rules suggest the account), finish at a zero difference. Sales Manager: read only.
  */
-type Tab = 'accounts' | 'transfers' | 'reconcile' | 'rules' | 'payroll'
+type Tab = 'accounts' | 'transfers' | 'reconcile' | 'rules' | 'payroll' | 'eosb'
 
 export default function BankingPage() {
   const [params, setParams] = useSearchParams()
@@ -51,6 +53,7 @@ export default function BankingPage() {
             { id: 'reconcile', label: 'Reconcile', icon: <Scale /> },
             { id: 'rules', label: 'Bank rules', icon: <ListChecks /> },
             { id: 'payroll', label: 'Payroll postings', icon: <Wallet /> },
+            { id: 'eosb', label: 'EOSB provision', icon: <PiggyBank /> },
           ]}
         />
         <div id={`tab-panel-${tab}`} role="tabpanel">
@@ -59,6 +62,7 @@ export default function BankingPage() {
           {tab === 'reconcile' && <ReconcileTab accountId={account} onAccount={(id) => go('reconcile', id)} />}
           {tab === 'rules' && <RulesTab />}
           {tab === 'payroll' && <PayrollTab />}
+          {tab === 'eosb' && <EosbProvisionTab />}
         </div>
       </PageBody>
     </>
@@ -146,9 +150,12 @@ function AccountsTab({ onReconcile }: { onReconcile: (id: string) => void }) {
 function AccountModal({ account, onClose }: { account: BankAccount | null; onClose: () => void }) {
   const toast = useToast()
   const [f, setF] = useState({ name: account?.name ?? '', bankName: account?.bankName ?? '', kind: account?.kind ?? 'current', currency: account?.currency ?? '', accountNumber: '', iban: '', openingBalance: '', openingDate: '', notes: account?.notes ?? '', active: account?.active ?? true })
+  // Bank upload file of supplier payment runs: template and its columns (subset / order).
+  const [template, setTemplate] = useState<PaymentFileTemplate | ''>(account?.paymentFileTemplate ?? '')
+  const [columns, setColumns] = useState<PaymentFileColumn[]>(account?.paymentFileColumns ?? [])
   const save = useBankingMutation(() =>
     account
-      ? bankingApi.updateAccount(account.id, { name: f.name, bankName: f.bankName, kind: f.kind, notes: f.notes, active: f.active, ...(f.accountNumber ? { accountNumber: f.accountNumber } : {}), ...(f.iban ? { iban: f.iban } : {}) })
+      ? bankingApi.updateAccount(account.id, { name: f.name, bankName: f.bankName, kind: f.kind, notes: f.notes, active: f.active, paymentFileTemplate: template || null, paymentFileColumns: template ? columns : null, ...(f.accountNumber ? { accountNumber: f.accountNumber } : {}), ...(f.iban ? { iban: f.iban } : {}) })
       : bankingApi.createAccount({ name: f.name, bankName: f.bankName, kind: f.kind, currency: f.currency || undefined, accountNumber: f.accountNumber, iban: f.iban, openingBalance: f.openingBalance ? Number(f.openingBalance) : undefined, openingDate: f.openingDate || undefined, notes: f.notes }),
   )
   const set = (k: keyof typeof f, v: string | boolean) => setF((x) => ({ ...x, [k]: v }))
@@ -184,6 +191,35 @@ function AccountModal({ account, onClose }: { account: BankAccount | null; onClo
         )}
         {account && (
           <label className="flex items-center gap-2 text-[0.8125rem]"><Checkbox checked={f.active} onChange={(e) => set('active', e.target.checked)} />Active</label>
+        )}
+        {account && (
+          <div className="space-y-2 sm:col-span-2">
+            <Field id="ba-template" label="Payment file template" hint="Bank upload file of supplier payment runs (Bills › Payment runs)">
+              <SelectInput id="ba-template" value={template} onChange={(e) => {
+                const t = e.target.value as PaymentFileTemplate | ''
+                setTemplate(t)
+                setColumns(t ? PAYMENT_FILE_TEMPLATE_DEF[t].columns : [])
+              }}>
+                <option value="">Country default</option>
+                {PAYMENT_FILE_TEMPLATES.map((t) => <option key={t} value={t}>{PAYMENT_FILE_TEMPLATE_DEF[t].label}</option>)}
+              </SelectInput>
+            </Field>
+            {template && (
+              <fieldset className="flex flex-wrap gap-x-4 gap-y-1 text-[0.8125rem]">
+                <legend className="mb-1 text-xs text-muted">Columns (beneficiary IBAN and amount are required)</legend>
+                {PAYMENT_FILE_COLUMNS.map((c) => (
+                  <label key={c} className="flex items-center gap-1.5">
+                    <Checkbox
+                      checked={columns.includes(c)}
+                      disabled={c === 'iban' || c === 'amount'}
+                      onChange={(e) => setColumns((x) => (e.target.checked ? [...x, c] : x.filter((y) => y !== c)))}
+                    />
+                    {PAYMENT_FILE_COLUMN_LABEL[c]}
+                  </label>
+                ))}
+              </fieldset>
+            )}
+          </div>
         )}
       </div>
     </Modal>

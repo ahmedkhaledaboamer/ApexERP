@@ -10,7 +10,7 @@ import { TextInput } from '@/shared/components/form/Field'
 import { PageBody } from '@/shared/components/layout/PageHeader'
 import { PrintStyles } from '@/shared/components/layout/PrintStyles'
 
-const TYPE_LABEL = { bill: 'Bill', payment: 'Payment', debit_note: 'Debit note', void: 'Void' } as const
+const TYPE_LABEL = { bill: 'Bill', payment: 'Payment', debit_note: 'Debit note', void: 'Void', advance: 'Advance', advance_applied: 'Advance applied', advance_refund: 'Advance refund' } as const
 
 /** `/finance/suppliers/:id/statement?from=&to=`: printable supplier statement in base currency. */
 export default function SupplierStatementPage() {

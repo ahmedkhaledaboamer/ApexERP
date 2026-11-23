@@ -34,6 +34,7 @@ import { TaskPageFrame } from '@/modules/tasks/components/TaskPageFrame'
 import { ISO, PRIORITY_CHIP, PRIORITY_RANK } from '@/modules/tasks/components/taskMeta'
 import { UndoToast, type UndoState } from '@/modules/tasks/components/UndoToast'
 import { useOpenTask, useTaskPermissions } from '@/modules/tasks/components/useTaskActions'
+import { CalendarSyncButton } from '@/modules/integrations/components/CalendarPanel'
 
 type View = 'month' | 'week'
 const MONTH_VISIBLE = 3
@@ -191,6 +192,8 @@ export default function TaskCalendarPage() {
             {title}
           </h2>
           <div className="ms-auto flex flex-wrap items-center gap-3">
+            {/* Integrations › Calendar sync: each user's own Google / Outlook connection (plan module `integrations`). */}
+            <CalendarSyncButton />
             <label className="flex items-center gap-2 text-[0.8125rem] text-muted">
               <Switch checked={mine} onChange={(v) => setParam({ mine: v ? '1' : null })} label="Only my tasks" />
               Only mine

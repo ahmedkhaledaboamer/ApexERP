@@ -131,20 +131,20 @@
   }
   /*
    * UI scale. Every size in the app is in rem, so this one value sets the density.
-   * Laptops (incl. 1920px screens at 125% Windows scaling ≈ 1536 CSS px) get the compact 80%;
-   * wide monitors 87.5%; phones a little larger for legibility.
+   * Laptops (incl. 1920px screens at 125% Windows scaling ≈ 1536 CSS px) get 87.5%;
+   * wide monitors 93.75%; phones the browser default for legibility.
    */
   html {
-    font-size: 87.5%;
+    font-size: 93.75%;
   }
   @media (max-width: 1600px) {
     html {
-      font-size: 80%;
+      font-size: 87.5%;
     }
   }
   @media (max-width: 640px) {
     html {
-      font-size: 93.75%;
+      font-size: 100%;
     }
   }
   body {

@@ -39,6 +39,8 @@ import { hrReportsHandlers } from './hrReports'
 import { hrSelfServiceHandlers } from './hrSelfService'
 import { hrJourneyHandlers } from './hrJourney'
 import { hrPerformanceHandlers } from './hrPerformance'
+import { hrEngagementHandlers } from './hrEngagement'
+import { hrComplianceHandlers } from './hrCompliance'
 import { financeLedgerHandlers } from './financeLedger'
 import { financeInvoicesHandlers } from './financeInvoices'
 import { financeCollectionsHandlers } from './financeCollections'
@@ -50,6 +52,8 @@ import { financeStatementsHandlers } from './financeStatements'
 import { financeProfitabilityHandlers } from './financeProfitability'
 import { financeTaxHandlers, financeBudgetsHandlers } from './financeTax'
 import { reportsPerformanceHandlers } from './reportsPerformance'
+import { integrationsHandlers } from './integrations'
+import { aiHandlers } from './ai'
 
 /**
  * Every mocked endpoint. Each module adds its handlers here.
@@ -109,6 +113,10 @@ export const handlers = [
   ...hrJourneyHandlers,
   // HR › Performance reviews (/hr/performance/*).
   ...hrPerformanceHandlers,
+  // HR › Engagement surveys (eNPS) and 360° feedback (/hr/engagement/*, /hr/feedback/*).
+  ...hrEngagementHandlers,
+  // HR › Discipline (warnings, disciplinary actions) and Policies (publish, acknowledge) (/hr/discipline/*, /hr/policies/*).
+  ...hrComplianceHandlers,
   // Accounts & finance › ledger core and setup (/finance/settings, /finance/accounts, /finance/journal, /finance/reports/*, /finance/overview).
   ...financeLedgerHandlers,
   // Accounts & finance › Invoices, credit notes, recurring invoices, ZATCA (/finance/invoices/*, /finance/credit-notes/*, /finance/recurring-invoices/*).
@@ -130,7 +138,11 @@ export const handlers = [
   // Accounts & finance › Tax (VAT returns, corporate tax / zakat) and planning (budgets, cash-flow forecast) (/finance/tax/*, /finance/vat-returns/*, /finance/budgets/*, /finance/forecast/*).
   ...financeTaxHandlers,
   ...financeBudgetsHandlers,
+  // Insights & admin › Integrations (/integrations/*, /public/integrations/forms/:token, /public/v1/leads).
+  ...integrationsHandlers,
   ...billingHandlers,
+  // AI assistant (/ai/me, /ai/settings, /ai/usage, /ai/conversations/*, /ai/actions/*); /ai/credits/consume is in billingHandlers.
+  ...aiHandlers,
   // Last: it ends with a catch-all for unknown /platform/* paths.
   ...platformHandlers,
 ]

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Check, ClipboardList, PackageCheck, Pencil, Printer, Receipt, Send, Trash2, X } from 'lucide-react'
 import { APPROVER_LABEL, BILL_STATUS_LABEL } from '@/modules/finance/purchases/types'
@@ -14,6 +14,7 @@ import { Drawer } from '@/shared/components/ui/Drawer'
 import { Skeleton } from '@/shared/components/ui/Feedback'
 import { Field, TextInput } from '@/shared/components/form/Field'
 import { useToast } from '@/shared/components/ui/Toast'
+import { AdvanceDrawer } from '@/modules/finance/purchases/components/Advances'
 
 /** `/finance/purchase-orders/:id`: one PO — lines, approvals, receipts, bills, history and the actions the caller may take. */
 export default function PurchaseOrderDetailPage() {
@@ -25,6 +26,7 @@ export default function PurchaseOrderDetailPage() {
   const po = q.data
   const [modal, setModal] = useState<'reject' | 'cancel' | null>(null)
   const [receiving, setReceiving] = useState(false)
+  const [payingAdvance, setPayingAdvance] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const act = usePurchasesMutation(async (a: { kind: 'submit' | 'approve' | 'close' | 'reject' | 'cancel' | 'delete'; reason?: string }) => {
     if (a.kind === 'reject') return purchasesApi.rejectPo(id, a.reason!)
@@ -73,6 +75,7 @@ export default function PurchaseOrderDetailPage() {
             {po.can.approve && <Button write loading={act.isPending} onClick={() => run('approve', undefined, 'Approved')}><Check className="size-4" aria-hidden /> Approve</Button>}
             {po.can.receive && <Button variant="secondary" write onClick={() => setReceiving(true)}><PackageCheck className="size-4" aria-hidden /> Receive goods</Button>}
             {po.can.bill && <Button variant="secondary" write onClick={() => navigate(`${PATHS.financeBillNew}?po=${encodeURIComponent(po.id)}`)}><Receipt className="size-4" aria-hidden /> Create bill</Button>}
+            {po.can.payAdvance && <Button variant="secondary" write onClick={() => setPayingAdvance(true)}>Pay advance</Button>}
             {po.can.close && <Button variant="ghost" write onClick={() => run('close', undefined, 'Order closed')}>Close</Button>}
           </div>
         }
@@ -92,6 +95,9 @@ export default function PurchaseOrderDetailPage() {
               ['Total in base', <span key="b" className="num">{fmt2(po.baseTotal)} {base}</span>],
               ['Waiting for', po.pendingStep ? APPROVER_LABEL[po.pendingStep] : '—'],
               ['Delivery address', po.deliveryAddress || '—'],
+              ...(po.advancePct
+                ? ([['Advance', <span key="adv" className="num">{po.advancePct}% = {fmt2(po.advanceDue)} {po.currency}{po.advances.length ? ` · paid ${fmt2(po.advancePaid)}` : ''}</span>]] as [string, ReactNode][])
+                : []),
             ]}
           />
           {po.notes && <p className="mt-3 text-[0.8125rem] text-ink-2">{po.notes}</p>}
@@ -173,6 +179,7 @@ export default function PurchaseOrderDetailPage() {
 
       <ReasonModal open={modal === 'reject'} title="Reject purchase order" confirm="Reject" onClose={() => setModal(null)} onConfirm={(r) => run('reject', r, 'Rejected')} busy={act.isPending} error={error} />
       <ReasonModal open={modal === 'cancel'} title="Cancel purchase order" confirm="Cancel order" onClose={() => setModal(null)} onConfirm={(r) => run('cancel', r, 'Order cancelled')} busy={act.isPending} error={error} />
+      <AdvanceDrawer open={payingAdvance} onClose={() => setPayingAdvance(false)} po={{ id: po.id, number: po.number, vendorId: po.vendorId, currency: po.currency, due: Math.max(0, Math.round((po.advanceDue - po.advancePaid) * 100) / 100) }} />
       <ReceiveDrawer open={receiving} onClose={() => setReceiving(false)} poId={po.id} lines={po.lines} today={meta.data?.today ?? ''} />
     </>
   )

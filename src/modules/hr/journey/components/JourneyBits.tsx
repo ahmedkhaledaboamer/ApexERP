@@ -23,6 +23,8 @@ export function actionLink(action: ItemAction | null, employeeId: string): { to:
       return { to: '/hr/training', label: ITEM_ACTION_LABEL.enrol_course }
     case 'upload_document':
       return { to: emp('documents'), label: ITEM_ACTION_LABEL.upload_document }
+    case 'acknowledge_policies':
+      return { to: '/hr/policies', label: ITEM_ACTION_LABEL.acknowledge_policies }
     case 'sign_contract':
     case 'probation_review':
       return { to: emp('contract'), label: ITEM_ACTION_LABEL[action.kind] }

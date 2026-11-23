@@ -13,6 +13,8 @@ import type {
   FinishReconciliationInput,
   MatchInput,
   PayrollPosting,
+  EosbProvisionReport,
+  EosbRunResult,
   ReconcileWorkspace,
   ReconciliationReport,
   StatementImportInput,
@@ -45,4 +47,6 @@ export const finishReconInputMapper = deep<FinishReconciliationInput>()
 export const reconciliationMapper = deep<BankReconciliation>()
 export const reconciliationReportMapper = deep<ReconciliationReport>()
 export const payrollPostingMapper = deep<PayrollPosting>()
+export const eosbProvisionMapper = deep<EosbProvisionReport>()
+export const eosbRunMapper = deep<EosbRunResult>()
 export const bankPlainMapper = deep<Record<string, unknown>>()

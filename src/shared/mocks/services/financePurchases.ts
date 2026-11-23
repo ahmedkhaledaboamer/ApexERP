@@ -28,6 +28,9 @@ import type {
   SupplierProfileInput,
   SupplierRow,
   SupplierStatement,
+  SupplierAdvance,
+  SupplierAdvanceInput,
+  PaymentRunFile,
   SpendDocType,
   ApproverKind,
 } from '@/modules/finance/purchases/types'
@@ -52,12 +55,17 @@ import {
   finPurchaseOrders,
   finPurchasesSettings,
   finSupplierProfiles,
+  finSupplierAdvances,
   type ApprovalState,
+  type SupplierAdvanceRecord,
+  type PaymentRunRecord,
   type BillPaymentRecord,
   type BillRecord,
   type PoRecord,
 } from '@/shared/mocks/data/financePurchases'
 import '@/shared/mocks/data/financePurchasesSeed'
+import { finBankAccounts } from '@/shared/mocks/data/financeBanking'
+import { PAYMENT_FILE_TEMPLATE_DEF, buildPaymentFile, columnsFor, defaultLocalTemplate, type PaymentFileRow, type PaymentFileTemplate } from '@/modules/finance/purchases/bankFile'
 import { cleanVendor } from './eventLibraryCore'
 import { SPEND_DOC_LABEL, approvalRules, assertCanApprove, departmentHeadOf, paymentAccountsOf } from './financeApprovals'
 import { assertCapacity, onLifecycleTick } from './billing'
@@ -118,6 +126,15 @@ import {
   vendorOf,
   voidBillCore,
   voidPaymentCore,
+  voidDebitNoteCore,
+  advanceCore,
+  applyAdvanceCore,
+  refundAdvanceCore,
+  advanceOf,
+  advanceApplied,
+  advanceRefunded,
+  advanceRemaining,
+  unappliedAdvancesBase,
   departmentName,
   billedQtyOf,
 } from './financePurchasesCore'
@@ -144,38 +161,38 @@ const RULE_EDITORS = new Set(['Company Admin', 'Accountant'])
 const MAX_ATTACHMENT_BYTES = 512 * 1024
 const ATTACHMENT_TYPES = new Set(['application/pdf', 'image/png', 'image/jpeg', 'image/webp'])
 
-type Scope = 'full' | 'view' | 'hidden'
-function scopeOfUser(user: User): Scope {
+export type Scope = 'full' | 'view' | 'hidden'
+export function scopeOfUser(user: User): Scope {
   runFinanceHooks(tenantOf(user))
   const s = scopeOf(user.role, 'accounting')
   return s === 'full' ? 'full' : s === 'hidden' ? 'hidden' : 'view'
 }
-function readCo(user: User): string {
+export function readCo(user: User): string {
   if (scopeOfUser(user) === 'hidden') throw new CodedApiError(PURCHASES_FORBIDDEN, 403, 'forbidden')
   return tenantOf(user)
 }
-function fullCo(user: User): string {
+export function fullCo(user: User): string {
   const s = scopeOfUser(user)
   if (s === 'hidden') throw new CodedApiError(PURCHASES_FORBIDDEN, 403, 'forbidden')
   if (s !== 'full') throw new CodedApiError(PURCHASES_WRITE_ONLY, 403, 'forbidden')
   return tenantOf(user)
 }
-const notFound = (): never => {
+export const notFound = (): never => {
   throw new ApiError(NOT_FOUND, 404)
 }
-const str = (v: unknown, max = 2000) => (typeof v === 'string' ? v.trim().slice(0, max) : '')
+export const str = (v: unknown, max = 2000) => (typeof v === 'string' ? v.trim().slice(0, max) : '')
 const at = () => nowIso()
-const dateOr = (co: string, v: unknown, field: string): string => {
+export const dateOr = (co: string, v: unknown, field: string): string => {
   if (v === undefined || v === null || v === '') return todayOf(co)
   if (!isIsoDay(v)) return bad(`${field} must be a date (yyyy-MM-dd).`, 'invalid_date')
   return v
 }
-const reasonOf = (input: { reason?: unknown } | null, what: string): string => {
+export const reasonOf = (input: { reason?: unknown } | null, what: string): string => {
   const r = str(input?.reason, 500)
   if (r.length < 3) bad(`Give a reason for the ${what} (at least 3 characters).`, 'reason_required')
   return r
 }
-function companyBlock(co: string) {
+export function companyBlock(co: string) {
   const s = invoiceSettingsFor(co)
   return { name: companyById(co)?.name ?? s.legalName, legalName: s.legalName, vatNumber: s.vatNumber, address: s.addressLines.join(', ') }
 }
@@ -183,7 +200,7 @@ const self = (u: User) => ({ ...actorOf(u), id: u.id })
 
 /* ================= views ================= */
 
-function journalView(co: string, id: string | null): JournalView | null {
+export function journalView(co: string, id: string | null): JournalView | null {
   const e = id ? financeJournal.find((x) => x.companyId === co && x.id === id) : undefined
   if (!e) return null
   return {
@@ -253,9 +270,18 @@ function poDetail(user: User, po: PoRecord): PurchaseOrder {
   const editable = po.status === 'draft' || po.status === 'rejected'
   const receivable = po.status === 'approved' || po.status === 'partially_received'
   const awaiting = canActOn(user, co, po)
+  const advances = finSupplierAdvances.filter((a) => a.companyId === co && a.poId === po.id)
+  const advanceDue = po.advancePct ? round2((po.total * po.advancePct) / 100) : 0
+  const advancePaid = round2(advances.reduce((sum, a) => sum + a.amount - advanceRefunded(a), 0))
+  const open = ['approved', 'partially_received', 'received'].includes(po.status)
   return {
     ...poRow(user, po),
     exchangeRate: po.exchangeRate,
+    advancePct: po.advancePct,
+    advanceDue,
+    advancePaid,
+    // Amounts of the advances are finance data: the requester / approvers without accounting access see the % only.
+    advances: s === 'hidden' ? [] : advances.map((a) => ({ id: a.id, number: a.number, date: a.date, amount: a.amount, remaining: advanceRemaining(a) })),
     lines: po.lines.map((l) => ({ ...l, billedQty: billedQtyOf(co, po.id, l.id) })),
     subtotal: po.subtotal,
     taxTotal: po.taxTotal,
@@ -276,11 +302,12 @@ function poDetail(user: User, po: PoRecord): PurchaseOrder {
       submit: editable && (full || owner),
       approve: awaiting,
       reject: awaiting,
-      cancel: ['draft', 'pending_approval', 'rejected', 'approved'].includes(po.status) && po.receipts.length === 0 && bills.every((b) => b.status === 'void') && (full || owner),
+      cancel: ['draft', 'pending_approval', 'rejected', 'approved'].includes(po.status) && po.receipts.length === 0 && bills.every((b) => b.status === 'void') && advances.every((a) => advanceRemaining(a) === 0) && (full || owner),
       receive: receivable && (full || owner),
-      close: full && ['approved', 'partially_received', 'received'].includes(po.status),
-      bill: full && ['approved', 'partially_received', 'received'].includes(po.status),
+      close: full && open,
+      bill: full && open,
       delete: po.status === 'draft' && (full || owner),
+      payAdvance: full && open && !!po.advancePct && advancePaid < advanceDue - 0.005,
     },
   }
 }
@@ -326,6 +353,11 @@ function billDetail(user: User, b: BillRecord): Bill {
   const open = isOpenBill(b.status)
   const payments = finBillPayments.filter((p) => p.companyId === co && p.allocations.some((a) => a.billId === b.id))
   const dns = finDebitNotes.filter((d) => d.companyId === co && d.billId === b.id)
+  const vendorAdvances = finSupplierAdvances.filter((a) => a.companyId === co && a.vendorId === b.vendorId)
+  const applied = vendorAdvances.flatMap((a) => a.applications.filter((x) => x.billId === b.id).map((x) => ({ a, date: x.date, amount: x.amount })))
+  const availableAdvances = full
+    ? vendorAdvances.filter((a) => a.currency === b.currency && advanceRemaining(a) > 0).map((a) => ({ id: a.id, number: a.number, date: a.date, remaining: advanceRemaining(a), currency: a.currency }))
+    : []
   return {
     ...billRow(user, b),
     termsDays: b.termsDays,
@@ -344,7 +376,9 @@ function billDetail(user: User, b: BillRecord): Bill {
     journal: journalView(co, b.journalEntryId),
     voidJournal: journalView(co, b.voidJournalEntryId),
     payments: payments.map((p) => ({ id: p.id, number: p.number, date: p.date, amount: p.allocations.filter((a) => a.billId === b.id).reduce((s, a) => s + a.amount, 0), status: p.status })),
-    debitNotes: dns.map((d) => ({ id: d.id, number: d.number, date: d.date, total: d.total, reason: d.reason })),
+    debitNotes: dns.map((d) => ({ id: d.id, number: d.number, date: d.date, total: d.total, reason: d.reason, status: d.status ?? 'posted', canVoid: full && d.status !== 'void' && b.status !== 'void' })),
+    advances: applied.map((x) => ({ advanceId: x.a.id, number: x.a.number, date: x.date, amount: x.amount })),
+    unappliedAdvances: availableAdvances,
     attachments: b.attachments.map((a) => ({ id: a.id, name: a.name, mimeType: a.mimeType, sizeBytes: a.sizeBytes, dataUrl: a.dataUrl, uploadedByName: userName(co, a.uploadedBy), uploadedAt: a.uploadedAt })),
     history: b.history.map((h) => ({ ...h })),
     can: {
@@ -353,7 +387,8 @@ function billDetail(user: User, b: BillRecord): Bill {
       post: full && canDirectPost(co, b),
       approve: canActOn(user, co, b),
       reject: canActOn(user, co, b),
-      void: full && (open || b.status === 'paid') && !payments.some((p) => p.status === 'posted') && dns.length === 0,
+      void: full && (open || b.status === 'paid') && !payments.some((p) => p.status === 'posted') && applied.length === 0 && dns.every((d) => d.status === 'void'),
+      applyAdvance: full && open && b.balanceDue > 0 && availableAdvances.length > 0,
       pay: full && open && b.balanceDue > 0,
       debitNote: full && open && b.balanceDue > 0,
       attach: full && b.status !== 'void',
@@ -414,6 +449,9 @@ function debitNoteView(co: string, d: Tenant<import('@/shared/mocks/data/finance
     total: d.total,
     accountId: d.accountId,
     journalEntryId: d.journalEntryId,
+    status: d.status ?? 'posted',
+    voidReason: d.voidReason ?? null,
+    voidJournalEntryId: d.voidJournalEntryId ?? null,
     createdAt: d.createdAt,
   }
 }
@@ -442,6 +480,7 @@ function supplierRow(co: string, vendorId: string, balances = supplierBalances(c
     openBalanceBase: bal?.open ?? 0,
     overdueBase: bal?.overdue ?? 0,
     lastBillDate: bal?.last ?? null,
+    advancesBase: unappliedAdvancesBase(co, vendorId),
   }
 }
 
@@ -465,6 +504,11 @@ function supplierDetail(user: User, co: string, vendorId: string): SupplierDetai
     defaultExpenseAccountId: p.defaultExpenseAccountId,
     defaultTaxCodeId: p.defaultTaxCodeId,
     notes: p.notes,
+    swiftBic: p.swiftBic ?? '',
+    advances: finSupplierAdvances
+      .filter((a) => a.companyId === co && a.vendorId === vendorId)
+      .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id))
+      .map((a) => advanceView(co, a)),
     bills: finBills.filter((b) => b.companyId === co && b.vendorId === vendorId).sort((a, b) => b.billDate.localeCompare(a.billDate)).slice(0, 50).map((b) => billRow(user, b)),
     purchaseOrders: finPurchaseOrders.filter((x) => x.companyId === co && x.vendorId === vendorId).sort((a, b) => b.orderDate.localeCompare(a.orderDate)).slice(0, 50).map((x) => poRow(user, x)),
     canEdit: full,
@@ -518,6 +562,11 @@ function applyProfile(co: string, p: ReturnType<typeof ensureProfile>, input: Su
       changed.push('iban')
       p.iban = iban
     }
+  }
+  if (input.swiftBic !== undefined) {
+    const bic = str(input.swiftBic, 20).replace(/\s+/g, '').toUpperCase()
+    if (bic && !/^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$/.test(bic)) bad('A SWIFT / BIC code has 8 or 11 letters and digits (e.g. EBILAEAD).', 'invalid_bic')
+    set('swiftBic', bic)
   }
   if (input.notes !== undefined) set('notes', str(input.notes, 1000))
   return changed
@@ -682,7 +731,17 @@ function poFields(user: User, co: string, input: Partial<PoInput> | null, existi
   const expectedDate = input?.expectedDate !== undefined ? (input.expectedDate ? dateOr(co, input.expectedDate, 'Expected date') : null) : (existing?.expectedDate ?? null)
   const currency = cleanCurrency(co, input?.currency, existing?.currency ?? effectiveProfile(co, v!.id).currency)
   const exchangeRate = rateOrDefault(co, currency, input?.exchangeRate, orderDate)
-  return { vendorId: v!.id, departmentId, orderDate, expectedDate, currency, exchangeRate, notes: input?.notes !== undefined ? str(input.notes) : (existing?.notes ?? ''), deliveryAddress: input?.deliveryAddress !== undefined ? str(input.deliveryAddress, 500) : (existing?.deliveryAddress ?? '') }
+  let advancePct = existing?.advancePct ?? null
+  if (input && input.advancePct !== undefined) {
+    const raw = input.advancePct
+    if (raw === null || (raw as unknown) === '' || Number(raw) === 0) advancePct = null
+    else {
+      const n = Number(raw)
+      if (!Number.isFinite(n) || n <= 0 || n > 100) bad('The advance is 1–100 % of the order.', 'invalid_advance_pct')
+      advancePct = Math.round(n * 100) / 100
+    }
+  }
+  return { vendorId: v!.id, departmentId, orderDate, expectedDate, currency, exchangeRate, advancePct, notes: input?.notes !== undefined ? str(input.notes) : (existing?.notes ?? ''), deliveryAddress: input?.deliveryAddress !== undefined ? str(input.deliveryAddress, 500) : (existing?.deliveryAddress ?? '') }
 }
 
 /** POST /finance/purchase-orders — any employee (self-service request for their own department). */
@@ -747,6 +806,7 @@ export function cancelPurchaseOrder(user: User, id: string, input: { reason?: un
   const co = tenantOf(user)
   if (!['draft', 'pending_approval', 'rejected', 'approved'].includes(po.status)) conflict('This order can’t be cancelled any more (goods received or closed).', 'not_cancellable')
   if (po.receipts.length || finBills.some((b) => b.companyId === co && b.poId === po.id && b.status !== 'void')) conflict('An order with receipts or bills can’t be cancelled; close it instead.', 'has_activity')
+  if (finSupplierAdvances.some((a) => a.companyId === co && a.poId === po.id && advanceRemaining(a) > 0)) conflict('An advance was paid on this order: have it refunded (or close the order) first.', 'has_advance')
   const reason = reasonOf(input, 'cancellation')
   po.status = 'cancelled'
   po.cancelReason = reason
@@ -975,12 +1035,12 @@ export function createDebitNote(user: User, input: DebitNoteInput | null): Debit
 
 /* ================= bill payments ================= */
 
-function paymentAccountIn(co: string, id: unknown): string {
+export function paymentAccountIn(co: string, id: unknown): string {
   if (typeof id !== 'string' || !paymentAccountsOf(co).some((a) => a.id === id)) bad('Choose a cash or bank account to pay from.', 'invalid_payment_account')
   return id as string
 }
 const METHODS: BillPaymentMethod[] = ['bank_transfer', 'cheque', 'cash']
-const methodOf = (v: unknown): BillPaymentMethod => (v === undefined || v === null || v === '' ? 'bank_transfer' : METHODS.includes(v as BillPaymentMethod) ? (v as BillPaymentMethod) : bad('Unknown payment method.', 'invalid_method'))
+export const methodOf = (v: unknown): BillPaymentMethod => (v === undefined || v === null || v === '' ? 'bank_transfer' : METHODS.includes(v as BillPaymentMethod) ? (v as BillPaymentMethod) : bad('Unknown payment method.', 'invalid_method'))
 
 export function listBillPayments(user: User, q: { vendorId?: string | null; billId?: string | null; runId?: string | null } = {}): BillPayment[] {
   const co = readCo(user)
@@ -1070,6 +1130,16 @@ function runView(co: string, run: Tenant<import('@/shared/mocks/data/financePurc
     paymentIds: [...run.paymentIds],
     payments: payments.map((p) => paymentView(co, p)),
     totalBase: round2(payments.filter((p) => p.status === 'posted').reduce((s, p) => s + toBase(p.amount, p.exchangeRate), 0)),
+    bankStatus: run.bankStatus ?? 'created',
+    bankReference: run.bankReference ?? '',
+    exportCount: (run.exports ?? []).length,
+    lastExportAt: (run.exports ?? []).slice(-1)[0]?.at ?? null,
+    sentAt: run.sentAt ?? null,
+    sentByName: run.sentBy ? userName(co, run.sentBy) : null,
+    confirmedAt: run.confirmedAt ?? null,
+    confirmedByName: run.confirmedBy ? userName(co, run.confirmedBy) : null,
+    bankAccountId: runBankAccount(co, run)?.id ?? null,
+    paymentFileTemplate: runTemplate(co, run),
     createdByName: userName(co, run.createdBy),
     createdAt: run.createdAt,
   }
@@ -1170,6 +1240,206 @@ export function saveApprovalRules(user: User, input: ApprovalRulesInput | null):
   return rulesView(user, co)
 }
 
+/* ================= debit-note void ================= */
+
+/** POST /finance/debit-notes/:id/void { reason } — accounting full: reverses the entry and restores the bill's balance. */
+export function voidDebitNote(user: User, id: string, input: { reason?: unknown } | null): DebitNote {
+  const co = fullCo(user)
+  const d = finDebitNotes.find((x) => x.companyId === co && x.id === id) ?? notFound()
+  voidDebitNoteCore(co, d, actorOf(user), reasonOf(input, 'void'), at())
+  return debitNoteView(co, d)
+}
+
+/* ================= supplier advances ================= */
+
+function advanceView(co: string, a: Tenant<SupplierAdvanceRecord>): SupplierAdvance {
+  const remaining = advanceRemaining(a)
+  const po = a.poId ? poOf(co, a.poId) : undefined
+  return {
+    id: a.id,
+    number: a.number,
+    vendorId: a.vendorId,
+    vendorName: vendorName(co, a.vendorId),
+    poId: a.poId,
+    poNumber: po?.number ?? null,
+    date: a.date,
+    method: a.method,
+    reference: a.reference,
+    paymentAccountId: a.paymentAccountId,
+    paymentAccountName: accountOf(co, a.paymentAccountId)?.name ?? a.paymentAccountId,
+    currency: a.currency,
+    exchangeRate: a.exchangeRate,
+    amount: a.amount,
+    baseAmount: toBase(a.amount, a.exchangeRate),
+    applied: advanceApplied(a),
+    refunded: advanceRefunded(a),
+    remaining,
+    remainingBase: toBase(remaining, a.exchangeRate),
+    status: remaining > 0 ? 'open' : 'closed',
+    applications: a.applications.map((x) => ({ id: x.id, billId: x.billId, billNumber: billOf(co, x.billId)?.number ?? x.billId, date: x.date, amount: x.amount, journalEntryId: x.journalEntryId })),
+    refunds: a.refunds.map((r) => ({ id: r.id, date: r.date, amount: r.amount, reference: r.reference, accountId: r.accountId, journalEntryId: r.journalEntryId })),
+    notes: a.notes,
+    journal: journalView(co, a.journalEntryId),
+    createdByName: userName(co, a.createdBy),
+    createdAt: a.createdAt,
+  }
+}
+
+/** GET /finance/supplier-advances?vendor_id=&status=open|closed&po_id= — accounting full / view. */
+export function listSupplierAdvances(user: User, q: { vendorId?: string | null; status?: string | null; poId?: string | null } = {}): SupplierAdvance[] {
+  const co = readCo(user)
+  return finSupplierAdvances
+    .filter((a) => a.companyId === co && (!q.vendorId || a.vendorId === q.vendorId) && (!q.poId || a.poId === q.poId))
+    .map((a) => advanceView(co, a))
+    .filter((a) => !q.status || a.status === q.status)
+    .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id))
+}
+
+export function getSupplierAdvance(user: User, id: string): SupplierAdvance {
+  const co = readCo(user)
+  return advanceView(co, advanceOf(co, id) ?? notFound())
+}
+
+/** POST /finance/supplier-advances — accounting full: pays a supplier before the bill (Dr 1420 / Cr bank). */
+export function createSupplierAdvance(user: User, input: SupplierAdvanceInput | null): SupplierAdvance {
+  const co = fullCo(user)
+  let vendorId = input?.vendorId
+  let po: PoRecord | null = null
+  if (input?.poId) {
+    po = poOf(co, input.poId) ?? null
+    if (!po) bad('Purchase order not found.', 'po_not_found')
+    if (!['approved', 'partially_received', 'received'].includes(po!.status)) conflict('Advances can be paid on an approved, open purchase order only.', 'po_not_open')
+    if (vendorId && vendorId !== po!.vendorId) bad('The advance’s supplier must be the purchase order’s.', 'vendor_mismatch')
+    vendorId = po!.vendorId
+  }
+  const v = vendorOf(co, vendorId)
+  if (!v) bad('Choose a supplier.', 'vendor_not_found')
+  const date = dateOr(co, input?.date, 'Date')
+  if (date > todayOf(co)) bad('The advance date can’t be in the future.', 'future_date')
+  const currency = po ? po.currency : cleanCurrency(co, input?.currency, effectiveProfile(co, v!.id).currency)
+  const exchangeRate = rateOrDefault(co, currency, input?.exchangeRate, date)
+  const amount = input?.amount !== undefined && input?.amount !== null ? Number(input.amount) : po?.advancePct ? round2((po.total * po.advancePct) / 100) : NaN
+  const a = advanceCore(
+    co,
+    { vendorId: v!.id, poId: po?.id ?? null, date, paymentAccountId: paymentAccountIn(co, input?.paymentAccountId), method: methodOf(input?.method), reference: str(input?.reference, 120), currency, exchangeRate, amount, notes: str(input?.notes, 1000) },
+    actorOf(user),
+    at(),
+  )
+  recordAudit(user, { action: 'create', entity: 'supplier_advance', entityId: a.id, summary: `Paid advance ${a.number} to ${vendorName(co, a.vendorId)}: ${a.currency} ${a.amount.toFixed(2)}` })
+  return advanceView(co, a)
+}
+
+/** POST /finance/supplier-advances/:id/apply { bill_id, amount?, date? } — accounting full (amount default: what fits). */
+export function applySupplierAdvance(user: User, id: string, input: { billId?: unknown; amount?: unknown; date?: unknown } | null): SupplierAdvance {
+  const co = fullCo(user)
+  const a = advanceOf(co, id) ?? notFound()
+  const bill = billOf(co, input?.billId)
+  if (!bill) bad('Bill not found.', 'bill_not_found')
+  const amount = input?.amount !== undefined && input?.amount !== null && input?.amount !== '' ? Number(input.amount) : Math.min(advanceRemaining(a), bill!.balanceDue)
+  const date = input?.date ? dateOr(co, input.date, 'Date') : [todayOf(co), a.date, bill!.billDate].sort().slice(-1)[0]
+  applyAdvanceCore(co, a, bill!, amount, date, actorOf(user), at())
+  return advanceView(co, a)
+}
+
+/** POST /finance/supplier-advances/:id/refund { amount, date?, account_id?, exchange_rate?, reference? } — accounting full. */
+export function refundSupplierAdvance(user: User, id: string, input: { amount?: unknown; date?: unknown; accountId?: unknown; exchangeRate?: unknown; reference?: unknown } | null): SupplierAdvance {
+  const co = fullCo(user)
+  const a = advanceOf(co, id) ?? notFound()
+  const date = dateOr(co, input?.date, 'Date')
+  if (date > todayOf(co)) bad('The refund date can’t be in the future.', 'future_date')
+  const accountId = input?.accountId ? paymentAccountIn(co, input.accountId) : a.paymentAccountId
+  const amount = input?.amount !== undefined && input?.amount !== null && input?.amount !== '' ? Number(input.amount) : advanceRemaining(a)
+  refundAdvanceCore(co, a, { amount, date, accountId, exchangeRate: rateOrDefault(co, a.currency, input?.exchangeRate, date), reference: str(input?.reference, 120) }, actorOf(user), at())
+  recordAudit(user, { action: 'update', entity: 'supplier_advance', entityId: a.id, summary: `Recorded a refund of advance ${a.number}: ${a.currency} ${round2(amount).toFixed(2)}` })
+  return advanceView(co, a)
+}
+
+/* ================= payment runs: bank upload file ================= */
+
+function runBankAccount(co: string, run: PaymentRunRecord) {
+  return finBankAccounts.find((b) => b.companyId === co && b.ledgerAccountId === run.paymentAccountId)
+}
+function runTemplate(co: string, run: PaymentRunRecord): PaymentFileTemplate {
+  return runBankAccount(co, run)?.paymentFileTemplate ?? defaultLocalTemplate(companyById(co)?.regional.country ?? 'AE')
+}
+const ownRun = (co: string, id: string) => finPaymentRuns.find((r) => r.companyId === co && r.id === id) ?? notFound()
+
+/**
+ * POST /finance/payment-runs/:id/bank-file — accounting full; audited. The answer IS the file(s): local transfers in the
+ * bank account's template (base currency), foreign-currency vouchers in the SWIFT MT103-lite CSV. Full IBANs appear only
+ * here (never in a GET). Skipped: void vouchers, cheque / cash payments, suppliers without an IBAN (or a BIC for SWIFT).
+ */
+export function exportPaymentRunFile(user: User, id: string): PaymentRunFile {
+  const co = fullCo(user)
+  const run = ownRun(co, id)
+  const base = baseCurrencyOf(co)
+  const bank = runBankAccount(co, run)
+  const localTemplate = runTemplate(co, run)
+  const meta = { debitAccount: bank?.iban || bank?.accountNumber || '', purposeCode: 'SUP' }
+  const skipped: PaymentRunFile['skipped'] = []
+  const local: PaymentFileRow[] = []
+  const foreign: PaymentFileRow[] = []
+  for (const pid of run.paymentIds) {
+    const p = finBillPayments.find((x) => x.companyId === co && x.id === pid)
+    if (!p) continue
+    const name = vendorName(co, p.vendorId)
+    const prof = effectiveProfile(co, p.vendorId)
+    const isForeign = p.currency !== base || PAYMENT_FILE_TEMPLATE_DEF[localTemplate].foreign
+    const reason = p.status !== 'posted' ? 'Voided' : p.method !== 'bank_transfer' ? `Paid by ${p.method === 'cheque' ? 'cheque' : 'cash'}` : !prof.iban ? 'No IBAN on the supplier' : isForeign && !prof.swiftBic ? 'No SWIFT / BIC on the supplier' : null
+    if (reason) {
+      skipped.push({ paymentId: p.id, paymentNumber: p.number, vendorName: name, reason })
+      continue
+    }
+    const row: PaymentFileRow = { beneficiaryName: name, iban: prof.iban, bankName: prof.bankName, swiftBic: prof.swiftBic ?? '', amount: p.amount, currency: p.currency, valueDate: run.date, reference: `${p.number} ${run.number}` }
+    ;(isForeign ? foreign : local).push(row)
+  }
+  if (!local.length && !foreign.length) conflict('Nothing in this run can be paid by bank transfer (see the skipped payments).', 'nothing_to_export', { skipped })
+  const files: PaymentRunFile['files'] = []
+  const stamp = run.number.replace(/[^A-Za-z0-9-]/g, '')
+  if (local.length && !PAYMENT_FILE_TEMPLATE_DEF[localTemplate].foreign) {
+    const f = buildPaymentFile(localTemplate, columnsFor(localTemplate, bank?.paymentFileColumns), local, meta)
+    files.push({ kind: 'local', template: localTemplate, fileName: `${stamp}-${localTemplate}.csv`, mimeType: 'text/csv', content: f.content, count: f.count, total: f.total, currency: base })
+  }
+  const swiftRows = PAYMENT_FILE_TEMPLATE_DEF[localTemplate].foreign ? [...local, ...foreign] : foreign
+  if (swiftRows.length) {
+    const cols = localTemplate === 'swift_mt103' ? columnsFor('swift_mt103', bank?.paymentFileColumns) : columnsFor('swift_mt103', null)
+    const f = buildPaymentFile('swift_mt103', cols, swiftRows, meta)
+    const cur = [...new Set(swiftRows.map((r) => r.currency))]
+    files.push({ kind: 'swift', template: 'swift_mt103', fileName: `${stamp}-swift_mt103.csv`, mimeType: 'text/csv', content: f.content, count: f.count, total: f.total, currency: cur.length === 1 ? cur[0] : 'MIXED' })
+  }
+  const now = at()
+  run.exports = [...(run.exports ?? []), { at: now, by: user.id, files: files.map((f) => f.fileName), count: files.reduce((s, f) => s + f.count, 0) }]
+  recordAudit(user, { action: 'security', entity: 'payment_run', entityId: run.id, summary: `Exported the bank file of payment run ${run.number} (${files.map((f) => `${f.count} × ${f.template}`).join(', ')}; full bank details)`, changes: [] })
+  return { runId: run.id, runNumber: run.number, files, skipped }
+}
+
+/** POST /finance/payment-runs/:id/sent { bank_reference? } — accounting full: the file was uploaded to the bank. */
+export function markPaymentRunSent(user: User, id: string, input: { bankReference?: unknown } | null): PaymentRun {
+  const co = fullCo(user)
+  const run = ownRun(co, id)
+  if ((run.bankStatus ?? 'created') !== 'created') conflict('This run is already sent to the bank.', 'already_sent')
+  if (!(run.exports ?? []).length) conflict('Export the bank file first.', 'not_exported')
+  run.bankStatus = 'sent'
+  run.sentAt = at()
+  run.sentBy = user.id
+  run.bankReference = str(input?.bankReference, 80) || run.bankReference || ''
+  recordAudit(user, { action: 'update', entity: 'payment_run', entityId: run.id, summary: `Marked payment run ${run.number} as sent to the bank` })
+  return runView(co, run)
+}
+
+/** POST /finance/payment-runs/:id/confirm { bank_reference? } — accounting full: the bank confirmed the transfers. */
+export function confirmPaymentRun(user: User, id: string, input: { bankReference?: unknown } | null): PaymentRun {
+  const co = fullCo(user)
+  const run = ownRun(co, id)
+  if ((run.bankStatus ?? 'created') !== 'sent') conflict('Only a run sent to the bank can be confirmed.', 'not_sent')
+  run.bankStatus = 'confirmed'
+  run.confirmedAt = at()
+  run.confirmedBy = user.id
+  run.bankReference = str(input?.bankReference, 80) || run.bankReference || ''
+  recordAudit(user, { action: 'update', entity: 'payment_run', entityId: run.id, summary: `Payment run ${run.number} confirmed by the bank` })
+  return runView(co, run)
+}
+
 /* ================= wiring ================= */
 
 /** How purchases documents show in the journal (bills, debit notes and payments all post as source type `bill`). */
@@ -1180,6 +1450,8 @@ registerJournalSource('bill', (co, id) => {
   if (d) return { number: d.number, link: `/finance/bills/${encodeURIComponent(d.billId)}` }
   const p = finBillPayments.find((x) => x.companyId === co && x.id === id)
   if (p) return { number: p.number, link: `/finance/bill-payments/${encodeURIComponent(p.id)}/voucher` }
+  const a = advanceOf(co, id)
+  if (a) return { number: a.number, link: `/finance/suppliers?supplier=${encodeURIComponent(a.vendorId)}` }
   return null
 })
 

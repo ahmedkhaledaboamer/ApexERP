@@ -27,11 +27,15 @@ import { Drawer } from '@/shared/components/ui/Drawer'
 import { EmptyState, Skeleton } from '@/shared/components/ui/Feedback'
 import { Checkbox, Field, SearchInput, SelectInput, TextInput } from '@/shared/components/form/Field'
 import { useToast } from '@/shared/components/ui/Toast'
+import { PaymentRunsTab } from '@/modules/finance/purchases/components/PaymentRunsTab'
+import { AdvancesTab } from '@/modules/finance/purchases/components/Advances'
 
-type Tab = 'bills' | 'payments' | 'debit-notes' | 'payables'
+type Tab = 'bills' | 'payments' | 'runs' | 'advances' | 'debit-notes' | 'payables'
 const TABS: { id: Tab; label: string }[] = [
   { id: 'bills', label: 'Bills' },
   { id: 'payments', label: 'Payments' },
+  { id: 'runs', label: 'Payment runs' },
+  { id: 'advances', label: 'Advances' },
   { id: 'debit-notes', label: 'Debit notes' },
   { id: 'payables', label: 'Payables' },
 ]
@@ -67,7 +71,9 @@ export default function BillsPage() {
         <div role="tabpanel" id={`tab-panel-${tab}`}>
           {tab === 'bills' && <BillsTab canWrite={canWrite} />}
           {tab === 'payments' && <PaymentsTab canWrite={canWrite} />}
-          {tab === 'debit-notes' && <DebitNotesTab />}
+          {tab === 'runs' && <PaymentRunsTab canWrite={canWrite} />}
+          {tab === 'advances' && <AdvancesTab canWrite={canWrite} />}
+          {tab === 'debit-notes' && <DebitNotesTab canWrite={canWrite} />}
           {tab === 'payables' && <PayablesTab />}
         </div>
       </PageBody>
@@ -320,29 +326,45 @@ function PaymentsTab({ canWrite }: { canWrite: boolean }) {
   )
 }
 
-function DebitNotesTab() {
+function DebitNotesTab({ canWrite }: { canWrite: boolean }) {
   const list = useDebitNotes()
+  const toast = useToast()
+  const [voiding, setVoiding] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const voidIt = usePurchasesMutation((a: { id: string; reason: string }) => purchasesApi.voidDebitNote(a.id, a.reason))
   if (list.isLoading) return <Skeleton className="h-48" />
   if (list.error) return <FinError error={list.error as Error} onRetry={() => void list.refetch()} />
   const rows = list.data ?? []
   if (!rows.length) return <EmptyState title="No debit notes" body="Record a supplier’s credit from an open bill (Debit note)." icon={<FileInput />} />
   return (
+    <>
     <SimpleTable
       label="Debit notes"
-      head={<tr><th className={th}>Number</th><th className={th}>Bill</th><th className={th}>Supplier</th><th className={th}>Date</th><th className={th}>Reason</th><th className={thEnd}>VAT</th><th className={thEnd}>Total</th></tr>}
+      head={<tr><th className={th}>Number</th><th className={th}>Bill</th><th className={th}>Supplier</th><th className={th}>Date</th><th className={th}>Reason</th><th className={thEnd}>VAT</th><th className={thEnd}>Total</th>{canWrite && <th className={thEnd}><span className="sr-only">Actions</span></th>}</tr>}
     >
       {rows.map((d) => (
         <tr key={d.id}>
-          <td className={`${td} num font-medium`}>{d.number}</td>
+          <td className={`${td} num font-medium`}>{d.number}{d.status === 'void' && <Badge tone="neutral" className="ms-2">Void</Badge>}</td>
           <td className={td}><Link to={financeBillPath(d.billId)} className="num text-brand-700 hover:underline dark:text-brand-300">{d.billNumber}</Link></td>
           <td className={td}>{d.vendorName}</td>
           <td className={`${td} num`}>{fmtDay(d.date)}</td>
           <td className={td}>{d.reason}</td>
           <td className={`${tdEnd} num`}>{fmt2(d.taxAmount)}</td>
           <td className={`${tdEnd} num whitespace-nowrap`}>{fmt2(d.total)} {d.currency}</td>
+          {canWrite && <td className={tdEnd}>{d.status !== 'void' && <Button size="xs" variant="ghost" write onClick={() => setVoiding(d.id)}>Void</Button>}</td>}
         </tr>
       ))}
     </SimpleTable>
+    <ReasonModal
+      open={!!voiding}
+      title="Void debit note"
+      confirm="Void debit note"
+      onClose={() => { setVoiding(null); setError(null) }}
+      busy={voidIt.isPending}
+      error={error}
+      onConfirm={(reason) => voidIt.mutate({ id: voiding!, reason }, { onSuccess: () => { toast.success('Debit note voided: the bill’s balance is back'); setVoiding(null) }, onError: (e) => setError(errMsg(e)) })}
+    />
+    </>
   )
 }
 
@@ -355,9 +377,9 @@ function PayablesTab() {
   const a = aging.data
   const exportCsv = () => {
     if (!a) return
-    const rows: (string | number)[][] = [['Supplier', ...AP_BUCKETS.map((b) => AP_BUCKET_LABEL[b]), `Total (${a.baseCurrency})`]]
-    for (const r of a.rows) rows.push([r.vendorName, ...AP_BUCKETS.map((b) => r[b].toFixed(2)), r.total.toFixed(2)])
-    rows.push(['Total', ...AP_BUCKETS.map((b) => a.totals[b].toFixed(2)), a.totals.total.toFixed(2)])
+    const rows: (string | number)[][] = [['Supplier', ...AP_BUCKETS.map((b) => AP_BUCKET_LABEL[b]), `Total (${a.baseCurrency})`, 'Unapplied advances', 'Net']]
+    for (const r of a.rows) rows.push([r.vendorName, ...AP_BUCKETS.map((b) => r[b].toFixed(2)), r.total.toFixed(2), r.advances.toFixed(2), r.net.toFixed(2)])
+    rows.push(['Total', ...AP_BUCKETS.map((b) => a.totals[b].toFixed(2)), a.totals.total.toFixed(2), a.totals.advances.toFixed(2), a.totals.net.toFixed(2)])
     downloadText(`ap-aging-${a.asOf}.csv`, toCsv(rows))
   }
   return (
@@ -380,8 +402,8 @@ function PayablesTab() {
         ) : (
           <SimpleTable
             label="AP aging"
-            head={<tr><th className={th}>Supplier</th>{AP_BUCKETS.map((b) => <th key={b} className={thEnd}>{AP_BUCKET_LABEL[b]}</th>)}<th className={thEnd}>Total ({a.baseCurrency})</th></tr>}
-            foot={<tr><td className={td}>Total</td>{AP_BUCKETS.map((b) => <td key={b} className={`${tdEnd} num`}>{fmt2(a.totals[b])}</td>)}<td className={`${tdEnd} num`}>{fmt2(a.totals.total)}</td></tr>}
+            head={<tr><th className={th}>Supplier</th>{AP_BUCKETS.map((b) => <th key={b} className={thEnd}>{AP_BUCKET_LABEL[b]}</th>)}<th className={thEnd}>Total ({a.baseCurrency})</th><th className={thEnd}>Advances</th><th className={thEnd}>Net</th></tr>}
+            foot={<tr><td className={td}>Total</td>{AP_BUCKETS.map((b) => <td key={b} className={`${tdEnd} num`}>{fmt2(a.totals[b])}</td>)}<td className={`${tdEnd} num`}>{fmt2(a.totals.total)}</td><td className={`${tdEnd} num`}>{a.totals.advances ? `−${fmt2(a.totals.advances)}` : '—'}</td><td className={`${tdEnd} num`}>{fmt2(a.totals.net)}</td></tr>}
           >
             {a.rows.map((r) => (
               <Fragment key={r.vendorId}>
@@ -395,6 +417,8 @@ function PayablesTab() {
                   </td>
                   {AP_BUCKETS.map((b) => <td key={b} className={`${tdEnd} num`}>{r[b] ? fmt2(r[b]) : '—'}</td>)}
                   <td className={`${tdEnd} num font-medium`}>{fmt2(r.total)}</td>
+                  <td className={`${tdEnd} num`}>{r.advances ? `−${fmt2(r.advances)}` : '—'}</td>
+                  <td className={`${tdEnd} num`}>{fmt2(r.net)}</td>
                 </tr>
                 {open[r.vendorId] && r.bills.map((x) => (
                   <tr key={x.id} className="bg-sunken/40 text-xs">
@@ -404,6 +428,8 @@ function PayablesTab() {
                     </td>
                     {AP_BUCKETS.map((b) => <td key={b} className={`${tdEnd} num`}>{x.bucket === b ? fmt2(x.balanceBase) : ''}</td>)}
                     <td className={`${tdEnd} num`}>{x.currency !== a.baseCurrency ? `${fmt2(x.balance)} ${x.currency}` : ''}</td>
+                    <td className={tdEnd} />
+                    <td className={tdEnd} />
                   </tr>
                 ))}
               </Fragment>

@@ -73,6 +73,17 @@ export interface ProfileChangeInput {
 export type LetterCode = 'salary_certificate' | 'salary_transfer' | 'employment_certificate' | 'experience_letter' | 'noc'
 export const LETTER_CODES: LetterCode[] = ['salary_certificate', 'salary_transfer', 'employment_certificate', 'experience_letter', 'noc']
 
+/** Letter language: English, Arabic (RTL), or both (side by side / stacked on one A4 page). */
+export type LetterLanguage = 'en' | 'ar' | 'bilingual'
+export const LETTER_LANGUAGES: LetterLanguage[] = ['en', 'ar', 'bilingual']
+export const LETTER_LANGUAGE_LABEL: Record<LetterLanguage, string> = { en: 'English', ar: 'Arabic', bilingual: 'Bilingual (English + Arabic)' }
+export type BilingualLayout = 'side_by_side' | 'stacked'
+export const BILINGUAL_LAYOUTS: BilingualLayout[] = ['side_by_side', 'stacked']
+export const BILINGUAL_LAYOUT_LABEL: Record<BilingualLayout, string> = { side_by_side: 'Side by side', stacked: 'Stacked (English, then Arabic)' }
+/** Digits in the Arabic text: Western (0-9, default) or Arabic-Indic (٠-٩). */
+export type DigitStyle = 'western' | 'arabic'
+export const DIGIT_STYLE_LABEL: Record<DigitStyle, string> = { western: 'Western digits (0-9)', arabic: 'Arabic digits (٠-٩)' }
+
 export type NocPurpose = 'travel' | 'visa' | 'other'
 export const NOC_PURPOSES: NocPurpose[] = ['travel', 'visa', 'other']
 export const NOC_PURPOSE_LABEL: Record<NocPurpose, string> = { travel: 'Travel', visa: 'Visa application', other: 'Other purpose' }
@@ -86,6 +97,11 @@ export interface LetterType {
   body: string
   /** Salary letters: may show pay (to HR full and the employee only). */
   includesSalary: boolean
+  /** Arabic name and template ('' = no Arabic version: Arabic / bilingual requests are refused). */
+  nameAr: string
+  bodyAr: string
+  /** An Arabic template exists (employees can ask for Arabic / bilingual). */
+  hasArabic: boolean
   active: boolean
   /** The body still equals the seeded default. */
   isDefault: boolean
@@ -100,15 +116,19 @@ export interface LetterTypeInput {
   name?: string
   description?: string
   body?: string
+  nameAr?: string
+  bodyAr?: string
   active?: boolean
 }
 
-export type LetterStatus = 'pending' | 'issued' | 'rejected' | 'cancelled'
+/** `revoked`: an issued letter HR withdrew (reason, audited); the public verification shows it as revoked. */
+export type LetterStatus = 'pending' | 'issued' | 'rejected' | 'cancelled' | 'revoked'
 export const LETTER_STATUS_LABEL: Record<LetterStatus, string> = {
   pending: 'Waiting for HR',
   issued: 'Issued',
   rejected: 'Rejected',
   cancelled: 'Cancelled',
+  revoked: 'Revoked',
 }
 
 export interface LetterRequestRow {
@@ -125,6 +145,13 @@ export interface LetterRequestRow {
   purpose: string
   nocPurpose: NocPurpose | null
   languageNote: string
+  language: LetterLanguage
+  /** Bilingual letters only. */
+  layout: BilingualLayout | null
+  digits: DigitStyle
+  /** Arabic addressee / purpose (optional; the English ones, else an Arabic default, are used). */
+  addresseeAr: string
+  purposeAr: string
   /** Filed by HR for the employee. */
   onBehalf: boolean
   requestedByName: string
@@ -137,8 +164,13 @@ export interface LetterRequestRow {
   overrideReason: string
   referenceNo: string | null
   issueDate: string | null
+  revokedAt: string | null
+  revokedByName: string | null
+  revokeReason: string
   canDecide: boolean
   canCancel: boolean
+  /** HR full: an issued letter can be revoked. */
+  canRevoke: boolean
 }
 
 export interface Letterhead {
@@ -151,6 +183,8 @@ export interface Letterhead {
   licenseNo: string
   logoUrl: string | null
   primaryColor: string | null
+  /** Company legal name in Arabic (Accounts & finance › Settings), '' when not set. */
+  legalNameAr: string
 }
 
 export interface IssuedLetter {
@@ -158,8 +192,17 @@ export interface IssuedLetter {
   referenceNo: string
   issueDate: string
   verificationCode: string
-  /** The rendered text (plain text; frozen at issue). */
+  /** The rendered text (plain text; frozen at issue). '' for an Arabic-only letter. */
   body: string
+  /** 'en' for letters issued before languages existed. */
+  language: LetterLanguage
+  layout: BilingualLayout | null
+  digits: DigitStyle
+  /** Arabic title and rendered text (RTL, with bidi isolates around Latin values); null for an English letter. */
+  titleAr: string | null
+  bodyAr: string | null
+  /** The issue date written in Arabic (month names; Arabic-Indic digits when chosen). */
+  issueDateAr: string | null
   signatoryName: string
   signatoryTitle: string
   letterhead: Letterhead
@@ -177,6 +220,11 @@ export interface LetterRequestInput {
   purpose?: string
   nocPurpose?: NocPurpose | null
   languageNote?: string
+  language?: LetterLanguage
+  layout?: BilingualLayout | null
+  digits?: DigitStyle
+  addresseeAr?: string
+  purposeAr?: string
   /** HR full only: an experience letter for an employee who isn't leaving. */
   overrideReason?: string
 }
@@ -184,10 +232,17 @@ export interface LetterRequestInput {
 export interface LetterDecisionInput {
   reason?: string
   overrideReason?: string
+  /** Approve: HR may change the language / layout / digits the employee asked for. */
+  language?: LetterLanguage
+  layout?: BilingualLayout | null
+  digits?: DigitStyle
 }
 
 export interface LetterVerification {
   valid: boolean
+  /** valid · revoked · not_found (another company's code answers not_found, like an unknown one). */
+  status: 'valid' | 'revoked' | 'not_found'
+  revokedAt: string | null
   code: string
   referenceNo: string | null
   employeeName: string | null
@@ -195,6 +250,21 @@ export interface LetterVerification {
   typeName: string | null
   issueDate: string | null
   issuedByName: string | null
+}
+
+/** GET /public/letters/verify: what anyone holding the letter may see (no pay, no personal data, masked name). */
+export interface PublicLetterVerification {
+  status: 'valid' | 'revoked'
+  code: string
+  companyName: string
+  logoUrl: string | null
+  monogram: string
+  typeName: string
+  referenceNo: string
+  issueDate: string
+  /** First name + initial ("Noura K."). */
+  employeeNameMasked: string
+  revokedAt: string | null
 }
 
 /* ---------------- HR inbox ---------------- */

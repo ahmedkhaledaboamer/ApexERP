@@ -18,12 +18,16 @@ import { hrJourneys, hrJourneyTemplates } from '@/shared/mocks/data/hrJourney'
 import { hrLetterTypes } from '@/shared/mocks/data/hrSelfService'
 import { hrPerfCycles, hrPerfReviews, hrPerfTemplates } from '@/shared/mocks/data/hrPerformance'
 import { withHr } from './hrTalentEndpoints'
+import * as engFx from './hrEngagementEndpoints'
 import { finToday, ownAccount } from './financeLedgerEndpoints'
 import { collectionsFixtures as colFx } from './financeCollectionsEndpoints'
 import { bankingFixtures as bankFx } from './financeBankingEndpoints'
 import { purchasesFixtures as purFx } from './financePurchasesEndpoints'
+import { gapsFixtures as gapsFx } from './financeGapsEndpoints'
 import { claimBody, expenseBody } from './financeExpensesEndpoints'
 import * as taxFx from './financeTaxEndpoints'
+import { approvedTemplate, waLead } from './integrationsEndpoints'
+import { aiConversationNow } from './aiEndpoints'
 import { finExpenseCategories, finPettyExpenses, finPettyFunds } from '@/shared/mocks/data/financeExpenses'
 import { eventVendors } from '@/shared/mocks/data/eventLibrary'
 import { financeCreditNotes, invoiceRecords } from '@/shared/mocks/data/financeInvoices'
@@ -241,6 +245,10 @@ const REFS: Ref[] = [
   { name: 'hr letter request employee', method: 'POST', path: hrPath('/hr/letters/requests'), id: (co) => empIdForUser(co === 'co_apex' ? 'u14' : 'u107'), body: (co, id) => ({ letter_type_id: one(hrLetterTypes, co, (t) => t.code === 'employment_certificate').id, employee_id: id, addressee: 'Ref' }) },
   { name: 'hr letter request type', method: 'POST', path: hrPath('/hr/letters/requests'), id: (co) => one(hrLetterTypes, co, (t) => t.code === 'employment_certificate').id, body: (co, id) => ({ letter_type_id: id, employee_id: empIdForUser(co === 'co_apex' ? 'u14' : 'u107'), addressee: 'Ref' }) },
   { name: 'hr letter requests employee filter', method: 'GET', path: hrPath('/hr/letters/requests'), query: (id) => `?employee_id=${id}`, id: (co) => empIdForUser(co === 'co_apex' ? 'u14' : 'u107') },
+  // HR › Discipline and Policies (isolation/hrComplianceEndpoints.ts): the employee of a record, the list filter, a policy audience department.
+  { name: 'discipline employee', method: 'POST', path: hrPath('/hr/discipline'), id: (co) => empIdForUser(co === 'co_apex' ? 'u14' : 'u107'), body: (_co, id) => ({ employee_id: id, type: 'verbal_warning', category: 'conduct', incident_date: day(-1), description: 'Ref check.' }) },
+  { name: 'discipline employee filter', method: 'GET', path: hrPath('/hr/discipline'), query: (id) => `?employee_id=${id}`, id: (co) => empIdForUser(co === 'co_apex' ? 'u14' : 'u107') },
+  { name: 'policy audience department', method: 'POST', path: hrPath('/hr/policies'), id: (co) => one(departments, co, (d) => d.active).id, body: (_co, id) => ({ title: 'Ref policy', category: 'other', audience: { kind: 'departments', department_ids: [id] } }) },
   // HR › Onboarding & offboarding (isolation/hrJourneyEndpoints.ts).
   { name: 'journey employee', method: 'POST', path: hrPath('/hr/journeys'), id: (co) => empIdForUser(ADMIN[co]), body: (_co, id) => ({ employee_id: id, kind: 'onboarding' }) },
   { name: 'journey template', method: 'POST', path: hrPath('/hr/journeys'), id: (co) => one(hrJourneyTemplates, co, (t) => t.kind === 'onboarding').id, body: (co, id) => ({ employee_id: empIdForUser(ADMIN[co]), kind: 'onboarding', template_id: id }) },
@@ -253,6 +261,14 @@ const REFS: Ref[] = [
   { name: 'performance cycle participant', method: 'POST', path: hrPath('/hr/performance/cycles'), id: (co) => empIdForUser(ADMIN[co]), body: (co, id) => perfCycle(co, { employee_ids: [id] }) },
   { name: 'performance reviews cycle filter', method: 'GET', path: hrPath('/hr/performance/reviews'), query: (id) => `?cycle_id=${id}`, id: (co) => one(hrPerfCycles, co, (c) => c.phase === 'self_review').id },
   { name: 'performance recommended course', method: 'PUT', path: (co) => hrPath(`/hr/performance/reviews/${perfTopReview(co)}/manager`)(co), id: (co) => one(hrCourses, co).id, body: (_co, id) => ({ recommended_course_ids: [id], submit: false }) },
+  // HR › Engagement surveys and 360° feedback (isolation/hrEngagementEndpoints.ts): audience department, one-person survey, results filter, round subject / review / providers, nomination decisions.
+  { name: 'survey audience department', method: 'POST', path: hrPath('/hr/engagement/surveys'), id: (co) => one(departments, co, (d) => d.active).id, body: (_co, id) => ({ name: 'Ref survey', template_key: 'enps_pulse', audience: { type: 'departments', department_ids: [id] } }) },
+  { name: 'survey subject employee', method: 'POST', path: hrPath('/hr/engagement/surveys'), id: (co) => empIdForUser(ADMIN[co]), body: (_co, id) => ({ name: 'Ref survey', template_key: 'onboarding_check_in', subject_employee_id: id }) },
+  { name: 'survey results department filter', method: 'GET', path: (co) => hrPath(`/hr/engagement/surveys/${engFx.closedEnps(co).id}/results`)(co), query: (id) => `?department_id=${id}`, id: (co) => one(departments, co, (d) => d.active).id },
+  { name: 'feedback round subject', method: 'POST', path: hrPath('/hr/feedback/rounds'), id: (co) => empIdForUser(engFx.FB_PENDING_USER[co]), body: (_co, id) => ({ subject_employee_id: id }) },
+  { name: 'feedback round review', method: 'POST', path: hrPath('/hr/feedback/rounds'), id: (co) => one(hrPerfReviews, co, (r) => r.employeeId === empIdForUser(co === APEX ? 'u11' : 'u107') && r.cycleId === one(hrPerfCycles, co, (c) => c.phase === 'self_review').id).id, body: (co, id) => ({ subject_employee_id: empIdForUser(co === APEX ? 'u11' : 'u107'), review_id: id }) },
+  { name: 'feedback round provider', method: 'POST', path: (co) => hrPath(`/hr/feedback/rounds/${engFx.seededRound(co).id}/providers`)(co), id: (co) => engFx.FB_OTHER_EMP[co], body: (_co, id) => ({ providers: [{ employee_id: id, relationship: 'peer' }] }) },
+  { name: 'feedback nomination decision', method: 'POST', path: (co) => hrPath(`/hr/feedback/rounds/${engFx.seededRound(co).id}/nominations/decide`)(co), id: (co) => engFx.pendingInvitation(co).id, body: (_co, id) => ({ approve_ids: [id], reject_ids: [] }) },
   { name: 'journey item assignee', method: 'POST', path: (co) => hrPath(`/hr/journeys/${one(hrJourneys, co, (j) => j.status === 'active').id}/items`)(co), id: (co) => ADMIN[co], body: (_co, id) => ({ title: 'Ref item', owner_role: 'user', assignee_user_id: id }) },
   // Accounts & finance › ledger (isolation/financeLedgerEndpoints.ts): account / dimension ids in bodies and filters
   // (seeded chart ids are shared by design, so the refs use a company-unique `ACC-N…` account).
@@ -326,6 +342,11 @@ const REFS: Ref[] = [
   { name: 'bill payment allocation bill', method: 'POST', path: () => '/finance/bill-payments', id: (co) => purFx.openBill(co).id, body: (co, id) => ({ vendor_id: purFx.openBill(co).vendorId, payment_account_id: 'ACC-1120', allocations: [{ bill_id: id, amount: 1 }] }) },
   { name: 'payment run bill', method: 'POST', path: () => '/finance/bill-payments/run', id: (co) => purFx.openBill(co).id, body: (_co, id) => ({ payment_account_id: 'ACC-1120', items: [{ bill_id: id, amount: 1 }] }) },
   { name: 'bill payments bill filter', method: 'GET', path: () => '/finance/bill-payments', query: (id) => `?bill_id=${id}`, id: (co) => purFx.openBill(co).id },
+  { name: 'supplier advance vendor', method: 'POST', path: () => '/finance/supplier-advances', id: (co) => purFx.VENDOR[co], body: (_co, id) => ({ vendor_id: id, payment_account_id: 'ACC-1120', amount: 5 }) },
+  { name: 'supplier advance purchase order', method: 'POST', path: () => '/finance/supplier-advances', id: (co) => purFx.approvedPo(co), body: (_co, id) => ({ po_id: id, payment_account_id: 'ACC-1120', amount: 5 }) },
+  { name: 'supplier advance payment account', method: 'POST', path: () => '/finance/supplier-advances', id: (co) => ownAccount(co).id, body: (co, id) => ({ vendor_id: purFx.VENDOR[co], payment_account_id: id, amount: 5 }) },
+  { name: 'apply advance bill', method: 'POST', path: (co) => `/finance/supplier-advances/${gapsFx.freshAdvance(co)}/apply`, id: (co) => purFx.openBill(co).id, body: (_co, id) => ({ bill_id: id, amount: 1 }) },
+  { name: 'supplier advances vendor filter', method: 'GET', path: () => '/finance/supplier-advances', query: (id) => `?vendor_id=${id}`, id: (co) => purFx.VENDOR[co] },
   { name: 'supplier default account', method: 'PATCH', path: (co) => `/finance/suppliers/${purFx.supplier(co)}`, id: (co) => ownAccount(co).id, body: (_co, id) => ({ default_expense_account_id: id }) },
   { name: 'event costs event', method: 'GET', path: () => '/finance/event-costs', query: (id) => `?event_id=${id}`, id: (co) => one(events, co).id },
   // Accounts & finance › expenses, claims, petty cash (isolation/financeExpensesEndpoints.ts): category / account / vendor / dimension / employee / fund / petty-expense ids.
@@ -370,6 +391,13 @@ const REFS: Ref[] = [
   { name: 'budget line account', method: 'PUT', path: (co) => `/finance/budgets/${taxFx.draftBudget(co).id}/lines`, id: (co) => ownAccount(co).id, body: (co, id) => ({ lines: [{ department_id: taxFx.ownDept(co).id, account_id: id, annual: 100 }] }) },
   { name: 'budget copy department', method: 'POST', path: (co) => `/finance/budgets/${taxFx.draftBudget(co).id}/copy-actuals`, id: (co) => taxFx.ownDept(co).id, body: (co, id) => ({ from_year: Number(finToday(co).slice(0, 4)), department_id: id }) },
   { name: 'budget vs actual department filter', method: 'GET', path: (co) => `/finance/budgets/${taxFx.seedBudget(co).id}/vs-actual`, query: (id) => `?department_id=${id}`, id: (co) => taxFx.ownDept(co).id },
+  // Insights & admin › Integrations (isolation/integrationsEndpoints.ts): the lead / template of a WhatsApp send, the webhook's default owner.
+  { name: 'whatsapp send lead', method: 'POST', path: () => '/integrations/whatsapp/messages', id: (co) => waLead(co).id, body: (co, id) => ({ lead_id: id, template_id: approvedTemplate(co), to: waLead(co).mobile, params: ['A', 'B'] }) },
+  { name: 'whatsapp send template', method: 'POST', path: () => '/integrations/whatsapp/messages', id: (co) => approvedTemplate(co), body: (co, id) => ({ lead_id: waLead(co).id, template_id: id, to: waLead(co).mobile, params: ['A', 'B'] }) },
+  { name: 'website webhook default owner', method: 'PUT', path: () => '/integrations/website/webhook', id: (co) => one(users, co, (u) => u.role === 'Sales Agent').id, body: (_co, id) => ({ default_owner_id: id }) },
+  // Insights & admin › AI assistant (isolation/aiEndpoints.ts): the record a question is asked from ("Ask AI" context).
+  { name: 'ai context lead', method: 'POST', path: (co) => `/ai/conversations/${aiConversationNow(co)}/messages`, id: (co) => openLead(co).id, body: (_co, id) => ({ content: 'Summarize this', context: { type: 'lead', id } }) },
+  { name: 'ai context customer', method: 'POST', path: (co) => `/ai/conversations/${aiConversationNow(co)}/messages`, id: (co) => one(customers, co).id, body: (_co, id) => ({ content: 'Summarize this', context: { type: 'customer', id } }) },
 ]
 
 describe('Ids of the other company in a body or query behave like ids that don’t exist', () => {

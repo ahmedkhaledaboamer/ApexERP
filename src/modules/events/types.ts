@@ -582,6 +582,13 @@ export interface BudgetLine {
   /** The vendor (vendor library) the line is spent with. */
   vendorId?: string | null
   vendorName?: string | null
+  /**
+   * What posted supplier bills charged to this line (Accounts & finance › Bills, base currency). The line's cost is
+   * max(actual, billed): a bill replaces the typed actual, never adds to it.
+   */
+  billed?: number
+  /** The bills (links for users with accounting access; [] otherwise). */
+  bills?: { id: string; number: string; amount: number }[]
 }
 
 export interface BudgetLineInput {
@@ -605,6 +612,11 @@ export interface EventBudget {
   campaignName: string | null
   /** Sum of this event's cost entries on the linked campaign. */
   postedTotal: number
+  /** Billed through finance on the lines, and on the event without a line (not in the event's cost). */
+  billedTotal?: number
+  unlinkedBilled?: number
+  /** Σ max(actual, billed) per line: the cost the event stats / ROI use (no double counting). */
+  costTotal?: number
   /** Organized events: signed + paid sponsor deals (income, not a cost line); null for attended events. */
   sponsorshipIncome?: number | null
   /** Completed events: vendors with lines here and no review for this event yet ("Rate after the event"). */

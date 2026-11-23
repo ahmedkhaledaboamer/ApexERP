@@ -102,6 +102,9 @@ const HrAssetsPage = lazy(() => import('@/modules/hr/pages/AssetsPage'))
 const RecruitmentPage = lazy(() => import('@/modules/hr/pages/RecruitmentPage'))
 const TrainingPage = lazy(() => import('@/modules/hr/pages/TrainingPage'))
 const PerformancePage = lazy(() => import('@/modules/hr/performance/PerformancePage'))
+// HR › Engagement surveys (eNPS) and 360° feedback (answering is self-service: plan-gated only, the API scopes the data).
+const EngagementPage = lazy(() => import('@/modules/hr/engagement/EngagementPage'))
+const FeedbackPage = lazy(() => import('@/modules/hr/engagement/FeedbackPage'))
 // HR › Attendance, Leave (self-service for every employee: plan-gated only, the API scopes the data).
 const AttendancePage = lazy(() => import('@/modules/hr/time/pages/AttendancePage'))
 const LeavePage = lazy(() => import('@/modules/hr/time/pages/LeavePage'))
@@ -114,6 +117,13 @@ const MyHrPage = lazy(() => import('@/modules/hr/selfservice/pages/MyHrPage'))
 const MyPayslipPage = lazy(() => import('@/modules/hr/selfservice/pages/MyPayslipPage'))
 const LetterPage = lazy(() => import('@/modules/hr/selfservice/pages/LetterPage'))
 const HrRequestsPage = lazy(() => import('@/modules/hr/selfservice/pages/HrRequestsPage'))
+// HR › Discipline, Policies (+ My policies, warning letters) and the public letter verification page (no sign-in).
+const DisciplinePage = lazy(() => import('@/modules/hr/compliance/pages/DisciplinePage'))
+const WarningLetterPage = lazy(() => import('@/modules/hr/compliance/pages/WarningLetterPage'))
+const PoliciesPage = lazy(() => import('@/modules/hr/compliance/pages/PoliciesPage'))
+const PolicyDetailPage = lazy(() => import('@/modules/hr/compliance/pages/PolicyDetailPage'))
+const MyPoliciesPage = lazy(() => import('@/modules/hr/compliance/pages/MyPoliciesPage'))
+const PublicLetterVerifyPage = lazy(() => import('@/modules/hr/selfservice/pages/PublicLetterVerifyPage'))
 const FinanceOverviewPage = lazy(() => import('@/modules/finance/ledger/pages/FinanceOverviewPage'))
 const ChartOfAccountsPage = lazy(() => import('@/modules/finance/ledger/pages/ChartOfAccountsPage'))
 const JournalPage = lazy(() => import('@/modules/finance/ledger/pages/JournalPage'))
@@ -138,6 +148,7 @@ const BillsPage = lazy(() => import('@/modules/finance/purchases/pages/BillsPage
 const BillEditorPage = lazy(() => import('@/modules/finance/purchases/pages/BillEditorPage'))
 const BillDetailPage = lazy(() => import('@/modules/finance/purchases/pages/BillDetailPage'))
 const PaymentVoucherPage = lazy(() => import('@/modules/finance/purchases/pages/PaymentVoucherPage'))
+const ApprovalsInboxPage = lazy(() => import('@/modules/finance/purchases/pages/ApprovalsInboxPage'))
 // Accounts & finance › Expenses: company expenses, employee expense claims (every employee), petty cash, categories & policy.
 const ExpensesPage = lazy(() => import('@/modules/finance/expenses/pages/ExpensesPage'))
 // Accounts & finance › Banking (accounts, transfers, reconciliation, payroll postings) and Sales commissions; "My commissions" for reps.
@@ -162,6 +173,10 @@ const VendorsPage = lazy(() => import('@/modules/events/pages/VendorsPage'))
 const VendorDetailPage = lazy(() => import('@/modules/events/pages/VendorDetailPage'))
 const PublicTicketPage = lazy(() => import('@/modules/events/pages/PublicTicketPage'))
 const PublicSurveyPage = lazy(() => import('@/modules/events/pages/PublicSurveyPage'))
+// Insights & admin › Integrations (plan module `integrations`; settings column: Company Admin configures, Management views).
+const IntegrationsPage = lazy(() => import('@/modules/integrations/pages/IntegrationsPage'))
+// Insights & admin › AI assistant (plan module `ai`; every role, the API scopes what each user sees).
+const AiAssistantPage = lazy(() => import('@/modules/ai-agent/pages/AiAssistantPage'))
 
 /** Every module's routes, behind the session guard and (per route) a permission guard. */
 export function AppRouter() {
@@ -217,6 +232,14 @@ export function AppRouter() {
         element={
           <Suspense fallback={<div className="grid h-full place-items-center text-[0.8125rem] text-muted">Loading…</div>}>
             <PublicPayPage />
+          </Suspense>
+        }
+      />
+      <Route
+        path={PATHS.publicLetterVerify}
+        element={
+          <Suspense fallback={<div className="grid h-full place-items-center text-[0.8125rem] text-muted">Loading…</div>}>
+            <PublicLetterVerifyPage />
           </Suspense>
         }
       />
@@ -465,6 +488,27 @@ export function AppRouter() {
             </ModuleGate>
           }
         />
+        {/* HR › Engagement and 360° feedback: every employee answers surveys and gives feedback (even with hr hidden), so plan-gated only; the API scopes results (HR full, Department Heads). */}
+        <Route
+          path={PATHS.hrEngagement}
+          element={
+            <ModuleGate module="hr">
+              <Suspense fallback={<GateSkeleton />}>
+                <EngagementPage />
+              </Suspense>
+            </ModuleGate>
+          }
+        />
+        <Route
+          path={PATHS.hrFeedback}
+          element={
+            <ModuleGate module="hr">
+              <Suspense fallback={<GateSkeleton />}>
+                <FeedbackPage />
+              </Suspense>
+            </ModuleGate>
+          }
+        />
 
         {/* HR › Reports: plan module + hr column full / team (an employee's own scope has no reports). */}
         <Route
@@ -520,6 +564,13 @@ export function AppRouter() {
             </RequirePermission>
           }
         />
+        {/* HR › Discipline and Policies: HR full writes, Department Heads read their team (the API scopes the rows). */}
+        <Route path={PATHS.hrDiscipline} element={<RequirePermission module="hr" scopes={['full', 'team']}><Suspense fallback={<GateSkeleton />}><DisciplinePage /></Suspense></RequirePermission>} />
+        <Route path={PATHS.hrPolicies} element={<RequirePermission module="hr" scopes={['full', 'team']}><Suspense fallback={<GateSkeleton />}><PoliciesPage /></Suspense></RequirePermission>} />
+        <Route path={PATHS.hrPolicyDetail} element={<RequirePermission module="hr" scopes={['full', 'team']}><Suspense fallback={<GateSkeleton />}><PolicyDetailPage /></Suspense></RequirePermission>} />
+        {/* The employee's own warning letter and policies: every employee, even with hr hidden, so plan-gated only (the API scopes them). */}
+        <Route path={PATHS.hrWarningLetter} element={<ModuleGate module="hr"><Suspense fallback={<GateSkeleton />}><WarningLetterPage /></Suspense></ModuleGate>} />
+        <Route path={PATHS.hrMyPolicies} element={<ModuleGate module="hr"><Suspense fallback={<GateSkeleton />}><MyPoliciesPage /></Suspense></ModuleGate>} />
 
         {/* Accounts & finance › ledger core: plan module `accounting` + accounting column (full edits; Sales Manager views). */}
         {(
@@ -602,6 +653,8 @@ export function AppRouter() {
             [PATHS.financePurchaseOrderEdit, <PurchaseOrderEditorPage key="po-e" />],
             [PATHS.financePurchaseOrderPrint, <PurchaseOrderPrintPage key="po-p" />],
             [PATHS.financeBillDetail, <BillDetailPage key="bill-d" />],
+            // The caller's approvals inbox (department heads reach it from My HR / the user menu without accounting access).
+            [PATHS.financeApprovals, <ApprovalsInboxPage key="appr" />],
           ] as const
         ).map(([path, page]) => (
           <Route
@@ -614,6 +667,32 @@ export function AppRouter() {
             }
           />
         ))}
+
+        {/* Insights & admin › Integrations: plan module `integrations` (upgrade page without it) + settings view. Per-user calendar sync lives on Tasks › Calendar for every role. */}
+        <Route
+          path={PATHS.integrations}
+          element={
+            <ModuleGate module="integrations">
+              <RequirePermission module="settings">
+                <Suspense fallback={<GateSkeleton />}>
+                  <IntegrationsPage />
+                </Suspense>
+              </RequirePermission>
+            </ModuleGate>
+          }
+        />
+
+        {/* Insights & admin › AI assistant: plan module `ai` (upgrade page without it); every role — tools only use what the role can see. */}
+        <Route
+          path={PATHS.aiAssistant}
+          element={
+            <ModuleGate module="ai">
+              <Suspense fallback={<GateSkeleton />}>
+                <AiAssistantPage />
+              </Suspense>
+            </ModuleGate>
+          }
+        />
 
         {/* Spec screens not built yet: a placeholder that explains what's coming. */}
         <Route path="*" element={<PlannedPage />} />

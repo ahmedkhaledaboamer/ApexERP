@@ -6,6 +6,9 @@ import { makeStore, type RootState } from '@/app/store'
 import { makeQueryClient } from '@/app/queryClient'
 import { useAppSelector } from '@/store/hooks'
 import { watchSessionTransitions } from '@/app/sessionTransitions'
+import { bindAuthSession } from '@/app/authSession'
+import { SessionExpiryHost } from '@/app/SessionExpiryHost'
+import { AppErrorBoundary } from '@/shared/components/layout/ErrorBoundary'
 import { TenantProvider } from '@/modules/tenancy/TenantProvider'
 
 interface AppProvidersProps {
@@ -21,12 +24,17 @@ export function AppProviders({ preloadedState, persistSession = true, children }
   const [queryClient] = useState(makeQueryClient)
   // Session transitions clear the query cache, tenant storage and tenant-scoped state (sync, in dispatch).
   useState(() => watchSessionTransitions(store, queryClient, { persist: persistSession }))
+  // Token refresh, session expiry (→ /login), offline detection and failed-write toasts.
+  useState(() => bindAuthSession(store))
   return (
     <Provider store={store}>
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
           <ThemeRoot>
-            <TenantProvider>{children}</TenantProvider>
+            <AppErrorBoundary>
+              <SessionExpiryHost />
+              <TenantProvider>{children}</TenantProvider>
+            </AppErrorBoundary>
           </ThemeRoot>
         </BrowserRouter>
       </QueryClientProvider>

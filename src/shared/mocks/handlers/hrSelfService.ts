@@ -3,7 +3,7 @@ import type { LetterDecisionInput, LetterRequestInput, LetterTypeInput, ProfileC
 import * as ss from '@/shared/mocks/services/hrSelfService'
 import * as lt from '@/shared/mocks/services/hrLetters'
 import * as m from '@/shared/api/hrSelfServiceMappers'
-import { API, bodyAs, respondAs, userFrom } from './utils'
+import { API, WORKSPACE_HEADER, bodyAs, respondAs, userFrom } from './utils'
 
 async function body<T>(request: Request, mapper: { fromApi(value: unknown): unknown }): Promise<T | null> {
   try {
@@ -71,4 +71,16 @@ export const hrSelfServiceHandlers: HttpHandler[] = [
     return respondAs(m.letterRequestMapper, () => lt.rejectLetterRequest(userFrom(request), params.id, input))
   }),
   http.post<Id>(`${API}/hr/letters/requests/:id/cancel`, ({ request, params }) => respondAs(m.letterRequestMapper, () => lt.cancelLetterRequest(userFrom(request), params.id))),
+  http.post<Id>(`${API}/hr/letters/requests/:id/revoke`, async ({ request, params }) => {
+    const input = await body<{ reason?: unknown }>(request, m.selfServicePlainMapper)
+    return respondAs(m.letterRequestMapper, () => lt.revokeLetter(userFrom(request), params.id, input))
+  }),
+
+  /* ---- public letter verification (no sign-in): the company comes from the address (X-Workspace / ?workspace=) ---- */
+  http.get(`${API}/public/letters/verify`, ({ request }) => {
+    const s = q(request)
+    const workspace = request.headers.get(WORKSPACE_HEADER) ?? s.get('workspace')
+    const client = request.headers.get('X-Client-Id')?.trim() || 'anonymous'
+    return respondAs(m.publicLetterVerificationMapper, () => lt.verifyLetterPublic(workspace, s.get('code'), client))
+  }),
 ]

@@ -25,6 +25,9 @@ import type {
   SupplierProfileInput,
   SupplierRow,
   SupplierStatement,
+  SupplierAdvance,
+  SupplierAdvanceInput,
+  PaymentRunFile,
 } from '@/modules/finance/purchases/types'
 
 /**
@@ -59,5 +62,8 @@ export const payablesOverviewMapper = deep<PayablesOverview>()
 export const approvalRulesMapper = deep<ApprovalRulesView>()
 export const approvalRulesInputMapper = deep<ApprovalRulesInput>()
 export const eventCostsMapper = deep<EventBilledCosts>()
+export const supplierAdvanceMapper = deep<SupplierAdvance>()
+export const supplierAdvanceInputMapper = deep<SupplierAdvanceInput>()
+export const paymentRunFileMapper = deep<PaymentRunFile>()
 /** Small bodies / answers ({ reason }, { iban }, { id }, receipts). */
 export const purchasesPlainMapper = deep<Record<string, unknown>>()

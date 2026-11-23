@@ -13,7 +13,7 @@ import {
 } from '@/modules/marketing/growth/types'
 import { useDeleteForm, useFormQuery, useGrowthAccess, useSubmissionsQuery, useUpdateForm } from '@/modules/marketing/growth/hooks'
 import { useMarketingOptions } from '@/modules/marketing/hooks/useMarketing'
-import { CopyField, FormStatusBadge, OutcomeBadge, usePublicUrls } from '@/modules/marketing/growth/components/bits'
+import { CopyField, embedSnippets, FormStatusBadge, OutcomeBadge, usePublicUrls } from '@/modules/marketing/growth/components/bits'
 import { NoMarketingAccess } from '@/modules/marketing/components/NoAccess'
 import { MARKETING_PATHS, publicFormPath } from '@/modules/marketing/paths'
 import { leadPath } from '@/app/paths'
@@ -285,13 +285,7 @@ function Builder({ form }: { form: LeadForm }) {
 
 function SharePanel({ form }: { form: LeadForm }) {
   const urls = usePublicUrls()
-  const hosted = urls.url(publicFormPath(form.publicKey))
-  const frame = `${hosted}?embed=1`
-  const origin = new URL(hosted).origin
-  const iframe = `<iframe src="${frame}" title="${form.name.replace(/"/g, '&quot;')}" style="width:100%;min-height:560px;border:0" loading="lazy"></iframe>`
-  const box = `apex-form-${form.publicKey}`
-  const script = `<div id="${box}"></div>
-<script>(function(){var f=document.createElement('iframe');f.src='${frame}';f.title='Form';f.style.cssText='width:100%;min-height:480px;border:0';document.getElementById('${box}').appendChild(f);window.addEventListener('message',function(e){if(e.origin==='${origin}'&&e.data&&e.data.key==='${form.publicKey}'&&e.data.apexFormHeight){f.style.height=e.data.apexFormHeight+'px'}})})();</script>`
+  const { hosted, iframe, script } = embedSnippets(form, urls.url(publicFormPath(form.publicKey)))
   return (
     <Card className="h-fit">
       <CardHeader title="Share & embed" description="Put the form on your website or share its hosted page." />

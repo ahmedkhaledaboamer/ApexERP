@@ -1,4 +1,5 @@
 import type { CurrencyCode } from '@/modules/finance/types'
+import type { PaymentFileColumn, PaymentFileTemplate } from '@/modules/finance/purchases/bankFile'
 
 /**
  * Accounts & finance › Banking (docs/API.md › Finance › Bank accounts, Reconciliation, Payroll posting).
@@ -47,6 +48,9 @@ export interface BankAccount {
   openingBalance: number
   openingDate: string | null
   notes: string
+  /** Bank upload file of supplier payment runs: the template (null = the country default) and its columns. */
+  paymentFileTemplate: PaymentFileTemplate | null
+  paymentFileColumns: PaymentFileColumn[]
   createdAt: string
 }
 
@@ -64,6 +68,9 @@ export interface BankAccountInput {
   reconcileFrom?: string | null
   active?: boolean
   notes?: string
+  paymentFileTemplate?: PaymentFileTemplate | null
+  /** Subset / order of the template's columns; [] or null = the template's defaults. */
+  paymentFileColumns?: PaymentFileColumn[] | null
 }
 
 export interface BankAccountReveal {
@@ -350,4 +357,27 @@ export interface PayrollPosting {
   totals: { gross: number; net: number; employeeSocialInsurance: number; employerSocialInsurance: number; loanRepayments: number; otherDeductions: number; bankPaid: number; cashPaid: number }
   note: string | null
   runLink: string
+}
+
+/* ---------------- end-of-service (EOSB) provision ---------------- */
+
+/** GET /finance/eosb-provision?year= — monthly accrual of the end-of-service gratuity (Dr 6120 / Cr 2500). */
+export interface EosbProvisionReport {
+  year: string
+  baseCurrency: string
+  /** The month before the company's today: the latest month the tick accrues. */
+  lastClosedMonth: string
+  months: { month: string; status: 'posted' | 'nothing' | 'skipped_locked'; entryId: string | null; entryNumber: string | null; charge: number; employees: number; note: string | null }[]
+  totals: { opening: number; charge: number; used: number; closing: number }
+  /** Balance of 2500 at the year end (equals `totals.closing` while only the provision posts to it). */
+  ledgerBalance: number
+  /** Per employee (accounting full only; null for view roles). */
+  rows: { employeeId: string; employeeName: string; departmentName: string; opening: number; charge: number; used: number; closing: number }[] | null
+  canRun: boolean
+}
+
+export interface EosbRunResult {
+  month: string
+  alreadyPosted: boolean
+  report: EosbProvisionReport
 }

@@ -1,6 +1,5 @@
 import { http, type HttpHandler } from 'msw'
 import * as svc from '@/shared/mocks/services/billing'
-import { delay } from '@/shared/mocks/server'
 import { billingMapper } from '@/shared/api/mappers'
 import { API, respondAs, userFrom } from './utils'
 
@@ -45,14 +44,5 @@ export const billingHandlers: HttpHandler[] = [
     return respondAs(billingMapper, () => svc.consumeAiCredits(userFrom(request), body))
   }),
 
-  // Stubs of modules that have no screens yet, so plan gating is real (403 module_not_in_plan).
-  // (/hr/employees is real now: handlers/hrPeople.ts; /finance/invoices: handlers/financeInvoices.ts.)
-  ...['/integrations'].map((path) =>
-    http.get(`${API}${path}`, ({ request }) =>
-      respondAs(billingMapper, () => {
-        userFrom(request)
-        return delay([] as unknown[])
-      }),
-    ),
-  ),
+  // (The /integrations stub is gone: handlers/integrations.ts is real now.)
 ]

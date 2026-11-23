@@ -19,13 +19,18 @@ import {
   Palette,
   Clock,
   Plane,
+  ClipboardList,
+  HandCoins,
+  Inbox,
 } from 'lucide-react'
+import { useApprovalsInbox } from '@/modules/finance/purchases/approvalsInbox'
 import { planIncludes } from '@/modules/billing/gating'
 import { useGateContext } from '@/modules/billing/hooks'
 import type { Role } from '@/shared/types'
 import { PATHS } from '@/app/paths'
 import { MARKETING_PATHS } from '@/modules/marketing/paths'
 import { switchRole } from '@/modules/auth/api/authApi'
+import { MOCK_API } from '@/modules/auth/constants'
 import { AlertsBell } from '@/modules/alerts/components/AlertsBell'
 import { can } from '@/shared/lib/permissions'
 import { ROLES } from '@/shared/lib/constants'
@@ -204,12 +209,27 @@ function NewMenu() {
   )
 }
 
+/**
+ * "Approvals" with the count of what waits for the caller. Mounted only while the menu is open: the inbox lists are
+ * finance endpoints, so loading them on every page would run the (lazy) finance seed for every employee.
+ */
+function ApprovalsMenuItem({ onSelect }: { onSelect: () => void }) {
+  const approvals = useApprovalsInbox()
+  return (
+    <MenuItem icon={<Inbox />} hint={approvals.count ? String(approvals.count) : undefined} onSelect={onSelect}>
+      Approvals
+    </MenuItem>
+  )
+}
+
 function UserMenu() {
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
   const user = useCurrentUser()
   const toast = useToast()
   const hr = planIncludes(useGateContext().entitlements, 'hr')
+  // Spending self-service for every employee (plan module `accounting`; the Accounts & finance section is for finance roles).
+  const accounting = planIncludes(useGateContext().entitlements, 'accounting')
 
   const roleMutation = useMutation({
     mutationFn: (role: Role) => switchRole(role),
@@ -294,23 +314,56 @@ function UserMenu() {
               </MenuItem>
             </>
           )}
-          <MenuSeparator />
-          <MenuLabel>Demo: view as role</MenuLabel>
-          <div className="max-h-56 overflow-y-auto">
-            {ROLES.map((r) => (
+          {accounting && (
+            <>
               <MenuItem
-                key={r}
-                active={r === user.role}
-                icon={r === user.role ? <Check /> : <span className="block size-4" />}
+                icon={<ClipboardList />}
                 onSelect={() => {
                   close()
-                  if (r !== user.role) roleMutation.mutate(r)
+                  navigate(PATHS.financePurchaseOrderNew)
                 }}
               >
-                {r}
+                Request a purchase
               </MenuItem>
-            ))}
-          </div>
+              <MenuItem
+                icon={<HandCoins />}
+                onSelect={() => {
+                  close()
+                  navigate(`${PATHS.financeExpenses}?tab=claims`)
+                }}
+              >
+                My expense claims
+              </MenuItem>
+              <ApprovalsMenuItem
+                onSelect={() => {
+                  close()
+                  navigate(PATHS.financeApprovals)
+                }}
+              />
+            </>
+          )}
+          {/* Demo role switcher: mock API only (a real backend has no /auth/switch-role). */}
+          {MOCK_API && (
+            <>
+              <MenuSeparator />
+              <MenuLabel>Demo: view as role</MenuLabel>
+              <div className="max-h-56 overflow-y-auto">
+                {ROLES.map((r) => (
+                  <MenuItem
+                    key={r}
+                    active={r === user.role}
+                    icon={r === user.role ? <Check /> : <span className="block size-4" />}
+                    onSelect={() => {
+                      close()
+                      if (r !== user.role) roleMutation.mutate(r)
+                    }}
+                  >
+                    {r}
+                  </MenuItem>
+                ))}
+              </div>
+            </>
+          )}
           <MenuSeparator />
           <MenuItem
             icon={<LogOut />}

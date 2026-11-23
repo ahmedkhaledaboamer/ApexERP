@@ -1,4 +1,5 @@
 import type { BankAccountKind, PayrollPostingStatus } from '@/modules/finance/banking/types'
+import type { PaymentFileColumn, PaymentFileTemplate } from '@/modules/finance/purchases/bankFile'
 import type { Tenant } from '@/shared/mocks/tenant'
 import { registerArray, registerObject } from '@/shared/mocks/persist/registry'
 import { financeSeq } from './finance'
@@ -26,6 +27,9 @@ export interface BankAccountRecord {
   openingEntryId: string | null
   reconcileFrom: string | null
   notes: string
+  /** Bank upload file of supplier payment runs (Purchases › payment runs): template and columns (null = defaults). */
+  paymentFileTemplate: PaymentFileTemplate | null
+  paymentFileColumns: PaymentFileColumn[] | null
   createdAt: string
   createdBy: string | null
 }

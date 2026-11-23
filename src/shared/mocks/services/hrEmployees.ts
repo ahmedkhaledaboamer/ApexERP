@@ -168,6 +168,13 @@ function clean(companyId: string, input: Partial<EmployeeInput>, base: Tenant<Em
     if (!t || t.length > 120) bad('Enter the job title.')
     out.jobTitle = t
   }
+  for (const [key, label] of [['fullNameAr', 'name'], ['jobTitleAr', 'job title']] as const) {
+    if (input[key] === undefined) continue
+    const v = s(input[key]).replace(/\s+/g, ' ')
+    if (v.length > 120) bad(`The Arabic ${label} is too long (120 characters max).`)
+    if (v && !/[\u0600-\u06FF]/.test(v)) bad(`Write the Arabic ${label} in Arabic letters.`)
+    out[key] = v
+  }
   if (input.email !== undefined) {
     const email = s(input.email).toLowerCase()
     if (email && !EMAIL.test(email)) bad('That doesn’t look like an email address.')
@@ -270,6 +277,8 @@ export function createEmployee(companyId: string, input: Partial<EmployeeInput>,
     employeeNo: nextEmployeeNo(companyId),
     fullName: values.fullName!,
     jobTitle: values.jobTitle!,
+    ...(values.fullNameAr ? { fullNameAr: values.fullNameAr } : {}),
+    ...(values.jobTitleAr ? { jobTitleAr: values.jobTitleAr } : {}),
     departmentId: values.departmentId ?? null,
     managerId: values.managerId ?? null,
     email: values.email ?? '',

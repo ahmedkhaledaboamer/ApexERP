@@ -18,6 +18,20 @@ const FEMALE = new Set(['Layla', 'Bincy', 'Priya', 'Sara', 'Mariam', 'Noura', 'F
 
 export const empIdForUser = (userId: string) => `EMP-${userId}`
 
+/** Arabic names and job titles of some seeded staff (Arabic / bilingual HR letters); the others have none yet. */
+const ARABIC: Record<string, { fullNameAr: string; jobTitleAr: string }> = {
+  u2: { fullNameAr: 'ليلى منصور', jobTitleAr: 'المديرة العامة' },
+  u9: { fullNameAr: 'مريم سعيد', jobTitleAr: 'مديرة الموارد البشرية' },
+  u10: { fullNameAr: 'دانيال أورتيز', jobTitleAr: 'رئيس قسم التنفيذ' },
+  u11: { fullNameAr: 'نورة الكتبي', jobTitleAr: 'مستشارة حلول' },
+  u14: { fullNameAr: 'يوسف رحمن', jobTitleAr: 'مطوّر برمجيات' },
+  u101: { fullNameAr: 'فيصل الحربي', jobTitleAr: 'مدير تقنية المعلومات' },
+  u102: { fullNameAr: 'نورة القحطاني', jobTitleAr: 'المديرة العامة' },
+  u105: { fullNameAr: 'طارق المطيري', jobTitleAr: 'مدير حسابات' },
+  u106: { fullNameAr: 'سلطان الغامدي', jobTitleAr: 'رئيس العمليات' },
+  u107: { fullNameAr: 'هدى الزهراني', jobTitleAr: 'منسقة عمليات' },
+}
+
 function seed(): Tenant<Employee>[] {
   const perCompany = new Map<string, number>()
   return users.map((u) => {
@@ -33,6 +47,7 @@ function seed(): Tenant<Employee>[] {
       employeeNo: `${apex ? 'APX' : 'CRS'}-${String(n).padStart(4, '0')}`,
       fullName: u.name,
       jobTitle: u.title,
+      ...(ARABIC[u.id] ?? {}),
       departmentId: u.departmentId,
       managerId: u.managerId ? empIdForUser(u.managerId) : null,
       email: u.email,

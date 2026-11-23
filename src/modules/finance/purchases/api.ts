@@ -14,6 +14,7 @@ import type {
   PoInput,
   SupplierCreateInput,
   SupplierProfileInput,
+  SupplierAdvanceInput,
 } from './types'
 
 /** Accounts & finance › Purchases & payables (docs/API.md › Finance › Suppliers / Purchase orders / Bills / Approval rules). */
@@ -66,6 +67,18 @@ export const purchasesApi = {
   /* debit notes */
   debitNotes: async (q: { billId?: string; vendorId?: string } = {}) => m.debitNoteMapper.fromApiList((await http.get<unknown>(`/finance/debit-notes${qs({ bill_id: q.billId, vendor_id: q.vendorId })}`)).data),
   createDebitNote: async (input: DebitNoteInput) => m.debitNoteMapper.fromApi((await http.post<unknown>('/finance/debit-notes', m.debitNoteInputMapper.toApi(input))).data),
+  voidDebitNote: async (id: string, r: string) => m.debitNoteMapper.fromApi((await http.post<unknown>(`/finance/debit-notes/${enc(id)}/void`, reason(r))).data),
+  /* supplier advances */
+  advances: async (q: { vendorId?: string; status?: string; poId?: string } = {}) => m.supplierAdvanceMapper.fromApiList((await http.get<unknown>(`/finance/supplier-advances${qs({ vendor_id: q.vendorId, status: q.status, po_id: q.poId })}`)).data),
+  createAdvance: async (input: SupplierAdvanceInput) => m.supplierAdvanceMapper.fromApi((await http.post<unknown>('/finance/supplier-advances', m.supplierAdvanceInputMapper.toApi(input))).data),
+  applyAdvance: async (id: string, input: { billId: string; amount?: number; date?: string }) =>
+    m.supplierAdvanceMapper.fromApi((await http.post<unknown>(`/finance/supplier-advances/${enc(id)}/apply`, m.purchasesPlainMapper.toApi(input as unknown as Record<string, unknown>))).data),
+  refundAdvance: async (id: string, input: { amount?: number; date?: string; accountId?: string; reference?: string }) =>
+    m.supplierAdvanceMapper.fromApi((await http.post<unknown>(`/finance/supplier-advances/${enc(id)}/refund`, m.purchasesPlainMapper.toApi(input as unknown as Record<string, unknown>))).data),
+  /* payment-run bank file */
+  runBankFile: async (id: string) => m.paymentRunFileMapper.fromApi((await http.post<unknown>(`/finance/payment-runs/${enc(id)}/bank-file`)).data),
+  runStatus: async (id: string, action: 'sent' | 'confirm', bankReference?: string) =>
+    m.paymentRunMapper.fromApi((await http.post<unknown>(`/finance/payment-runs/${enc(id)}/${action}`, m.purchasesPlainMapper.toApi({ bankReference: bankReference ?? '' }))).data),
   /* payments */
   payments: async (q: { vendorId?: string; billId?: string } = {}) => m.billPaymentMapper.fromApiList((await http.get<unknown>(`${BP}${qs({ vendor_id: q.vendorId, bill_id: q.billId })}`)).data),
   payment: async (id: string) => m.billPaymentMapper.fromApi((await http.get<unknown>(`${BP}/${enc(id)}`)).data),
@@ -158,6 +171,27 @@ export function usePayablesOverview(enabled = true) {
   const key = useKey()
   return useQuery({ queryKey: key('overview'), queryFn: purchasesApi.overview, enabled: useOn(enabled), retry: false })
 }
+export function usePaymentRuns(enabled = true) {
+  const key = useKey()
+  return useQuery({ queryKey: key('runs'), queryFn: purchasesApi.runs, enabled: useOn(enabled), retry: false })
+}
+export function useSupplierAdvances(q: { vendorId?: string; status?: string; poId?: string } = {}, enabled = true) {
+  const key = useKey()
+  return useQuery({ queryKey: key('advances', q), queryFn: () => purchasesApi.advances(q), enabled: useOn(enabled), retry: false })
+}
+
+/** Saves a text file the API returned (bank upload files: never cached, never re-fetched by a GET). */
+export function downloadTextFile(fileName: string, mimeType: string, content: string): void {
+  const url = URL.createObjectURL(new Blob([content], { type: mimeType }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = fileName
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
 export function useApprovalRules(enabled = true) {
   const key = useKey()
   return useQuery({ queryKey: key('rules'), queryFn: purchasesApi.rules, enabled: useOn(enabled), retry: false })
