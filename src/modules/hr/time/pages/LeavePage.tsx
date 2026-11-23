@@ -43,6 +43,10 @@ export default function LeavePage() {
   const reqParam = params.get('request')
   const [formOpen, setFormOpen] = useState(reqParam === '1' || reqParam === 'new')
   const detailId = reqParam && reqParam !== '1' && reqParam !== 'new' ? reqParam : null
+  // Also when the page is already open (header "+ New" › Request leave, the user menu): ?request=1 opens the form; closing it drops the param.
+  useEffect(() => {
+    if (reqParam === '1' || reqParam === 'new') setFormOpen(true)
+  }, [reqParam])
   const setTab = (id: Tab) =>
     setParams(
       (p) => {

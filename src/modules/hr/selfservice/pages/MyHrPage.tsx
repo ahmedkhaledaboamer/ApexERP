@@ -44,6 +44,7 @@ import {
   type ProfileChangeInput,
   type ProfileChangeStatus,
 } from '../types'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 export const STATUS_TONE: Record<LetterStatus | ProfileChangeStatus, Tone> = { pending: 'amber', issued: 'green', approved: 'green', rejected: 'red', cancelled: 'neutral', revoked: 'red' }
 
@@ -108,6 +109,7 @@ const muted = (s: string) => <p className="text-[0.8125rem] text-muted">{s}</p>
 function Portal({ d }: { d: MyHr }) {
   const [changeOpen, setChangeOpen] = useState(false)
   const [letterOpen, setLetterOpen] = useState(false)
+  useNewParam(() => setLetterOpen(true), { kind: 'letter' })
   const [leaveOpen, setLeaveOpen] = useState(false)
   const toast = useToast()
   const cancelChange = useSelfServiceMutation(selfServiceApi.decideProfileChange)

@@ -14,6 +14,7 @@ import { EmptyState } from '@/shared/components/ui/Feedback'
 import { SearchInput } from '@/shared/components/form/Field'
 import { PageBody, PageHeader } from '@/shared/components/layout/PageHeader'
 import { DataTable, FacetFilter, useDataTable } from '@/shared/components/data-table'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 export default function BulkEmailsPage() {
   const { canView } = useMarketingAccess()
@@ -28,6 +29,7 @@ function BulkEmailList() {
   const data = useMemo(() => query.data ?? [], [query.data])
   const [search, setSearch] = useState('')
   const [creating, setCreating] = useState(false)
+  useNewParam(() => setCreating(true), { when: canEdit })
   const columns = useMemo(() => buildColumns(), [])
   const table = useDataTable({
     id: 'marketing-emails',

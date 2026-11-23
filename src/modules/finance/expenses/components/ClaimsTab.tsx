@@ -87,7 +87,7 @@ export function ClaimDetailDrawer({ id, onClose }: { id: string | null; onClose:
     act.mutate({ id: id!, action, reason }, { onSuccess: (x) => { setRejecting(false); toast.success(`Claim ${x.number}: ${CLAIM_STATUS_LABEL[x.status].toLowerCase()}`) } })
   const accounts = meta.data?.paymentAccounts ?? []
   return (
-    <Drawer
+    <Drawer variant="sheet"
       open={!!id}
       onClose={onClose}
       title={c ? `Expense claim ${c.number}` : 'Expense claim'}

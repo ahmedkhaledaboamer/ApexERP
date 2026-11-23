@@ -11,6 +11,7 @@ import { Modal } from '@/shared/components/ui/Modal'
 import { EmptyState, Skeleton } from '@/shared/components/ui/Feedback'
 import { Field, SelectInput, TextInput } from '@/shared/components/form/Field'
 import { useToast } from '@/shared/components/ui/Toast'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 /* ---------------- post-dated cheques ---------------- */
 
@@ -18,6 +19,7 @@ export function PdcTab({ canWrite, highlight }: { canWrite: boolean; highlight: 
   const [status, setStatus] = useState<PdcStatus | ''>('')
   const q = usePdcs(status ? { status } : {})
   const [receiving, setReceiving] = useState(false)
+  useNewParam(() => setReceiving(true), { when: canWrite })
   const [action, setAction] = useState<{ pdc: Pdc; kind: 'deposit' | 'clear' | 'bounce' } | null>(null)
   const today = companyToday()
   const all = q.data ?? []
@@ -256,6 +258,7 @@ export function LinksTab({ canWrite }: { canWrite: boolean }) {
   const toast = useToast()
   const q = usePaymentLinks()
   const [creating, setCreating] = useState(false)
+  useNewParam(() => setCreating(true), { when: canWrite })
   const voidIt = useCollectionsMutation((id: string) => collectionsApi.voidLink(id))
   const copy = async (url: string) => {
     const abs = `${window.location.origin}${url}`

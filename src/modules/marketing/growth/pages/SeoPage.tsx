@@ -588,7 +588,7 @@ function KeywordDrawer({ keyword, onClose }: { keyword: Keyword | null; onClose:
   useEffect(() => setUrl(keyword?.targetUrl ?? ''), [keyword?.id, keyword?.targetUrl])
   const data = (keyword?.positions ?? []).map((p) => ({ date: fmtDate(p.date, 'd MMM'), position: p.position }))
   return (
-    <Drawer
+    <Drawer variant="sheet"
       open={!!keyword}
       onClose={onClose}
       width="lg"

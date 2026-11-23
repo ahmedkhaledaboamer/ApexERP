@@ -13,6 +13,7 @@ import { EmptyState } from '@/shared/components/ui/Feedback'
 import { useToast } from '@/shared/components/ui/Toast'
 import { Field, SelectInput, Switch, TextArea, TextInput } from '@/shared/components/form/Field'
 import { DataTable, useDataTable } from '@/shared/components/data-table'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 const col = createColumnHelper<LandingPage>()
 
@@ -22,6 +23,7 @@ export function LandingPagesTab() {
   const query = useLandingPagesQuery()
   const data = useMemo(() => query.data ?? [], [query.data])
   const [editing, setEditing] = useState<LandingPage | 'new' | null>(null)
+  useNewParam(() => setEditing('new'), { when: canEdit })
   const columns = useMemo(
     () => [
       col.accessor('title', {

@@ -15,6 +15,7 @@ import { EmptyState } from '@/shared/components/ui/Feedback'
 import { SearchInput, Switch } from '@/shared/components/form/Field'
 import { IconTile, PageBody, PageHeader } from '@/shared/components/layout/PageHeader'
 import { ColumnPicker, DataTable, useDataTable } from '@/shared/components/data-table'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 /** `/events/venues`: the company's venues. Marketing full manages them; marketing view and event teams read them. */
 export default function VenuesPage() {
@@ -24,6 +25,7 @@ export default function VenuesPage() {
   const [search, setSearch] = useState('')
   const [showArchived, setShowArchived] = useState(false)
   const [creating, setCreating] = useState(false)
+  useNewParam(() => setCreating(true), { when: canManage })
   const data = useMemo(() => (query.data ?? []).filter((v) => showArchived || v.status === 'active'), [query.data, showArchived])
   const columns = useMemo(() => buildColumns(), [])
   const table = useDataTable({ id: 'event-venues', data, columns, globalFilter: search, globalFilterFn: venueSearch, defaultHidden: ['dayRate'], getRowId: (r) => r.id })

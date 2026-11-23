@@ -18,6 +18,7 @@ import { Tabs } from '@/shared/components/ui/Tabs'
 import { SearchInput, Switch } from '@/shared/components/form/Field'
 import { PageBody, PageHeader } from '@/shared/components/layout/PageHeader'
 import { DataTable, FacetFilter, useDataTable } from '@/shared/components/data-table'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 type View = 'grid' | 'list'
 
@@ -40,6 +41,7 @@ function BrandAssets() {
   const [expiring, setExpiring] = useState(false)
   const [archived, setArchived] = useState(false)
   const [uploading, setUploading] = useState(false)
+  useNewParam(() => setUploading(true), { when: canEdit })
 
   const setParam = (u: Record<string, string | null>) =>
     setParams(

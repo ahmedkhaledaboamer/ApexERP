@@ -18,6 +18,7 @@ import { useJourneyOptionsQuery, useJourneyScope, useJourneysQuery, useJourneyTe
 import { JOURNEY_KIND_LABEL, OWNER_ROLE_LABEL, type JourneyKind, type TemplateView } from '../types'
 import { ItemLine, JourneyStatusBadge, ProgressBar, journeyPath } from '../components/JourneyBits'
 import { TemplateDrawer } from '../components/TemplateDrawer'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 type Tab = 'journeys' | 'mine' | 'templates'
 
@@ -51,6 +52,7 @@ function JourneysTab({ canManage }: { canManage: boolean }) {
   const [kind, setKind] = useState<JourneyKind | ''>('')
   const [showClosed, setShowClosed] = useState(false)
   const [starting, setStarting] = useState(false)
+  useNewParam(() => setStarting(true), { when: canManage })
   const q = useJourneysQuery()
   const rows = useMemo(() => (q.data ?? []).filter((r) => (!kind || r.kind === kind) && (showClosed || r.status === 'active')), [q.data, kind, showClosed])
   if (q.error) return <HrError error={q.error} onRetry={() => q.refetch()} />

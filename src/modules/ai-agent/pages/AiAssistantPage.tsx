@@ -20,6 +20,7 @@ import { suggestedPrompts } from '../prompts'
 import { AiChat } from '../components/AiChat'
 import { AiSettingsPanel } from '../components/AiSettingsPanel'
 import type { AiConversation, AiUsage } from '../types'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 type Tab = 'chat' | 'settings'
 
@@ -60,6 +61,14 @@ export default function AiAssistantPage() {
   const selected = params.get('c')
   // Remounts the thread when the user picks another conversation or starts a new one (not when the first message creates one).
   const [fresh, setFresh] = useState(0)
+  // ?new=1 (header "+ New" › New AI conversation): a fresh thread.
+  useNewParam(
+    () => {
+      setTab('chat')
+      setFresh((n) => n + 1)
+    },
+    { when: !!user },
+  )
 
   if (!user) return null
   const select = (id: string | null) =>

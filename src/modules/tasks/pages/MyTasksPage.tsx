@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { ListChecks, PartyPopper, X } from 'lucide-react'
 import type { TaskLinkType, TaskPriority, TaskView } from '@/modules/tasks/types'
@@ -11,6 +11,7 @@ import { EmptyState, ErrorState, Skeleton } from '@/shared/components/ui/Feedbac
 import { Switch, SelectInput } from '@/shared/components/form/Field'
 import { PageBody } from '@/shared/components/layout/PageHeader'
 import { QuickAddTask } from '@/modules/tasks/components/QuickAddTask'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 import { TaskGroups } from '@/modules/tasks/components/TaskGroups'
 import { TaskPageFrame } from '@/modules/tasks/components/TaskPageFrame'
 import { LINK_LABEL } from '@/modules/tasks/components/taskMeta'
@@ -26,7 +27,10 @@ export default function MyTasksPage() {
   const linkType = (params.get('link') ?? '') as LinkFilter
   const showDone = params.get('done') === '1'
 
-  const { canEdit } = useTaskPermissions()
+  const { canEdit, canCreate } = useTaskPermissions()
+  // `?new=1` (header "+ New" › New task): focus the quick-add form.
+  const [focusKey, setFocusKey] = useState(0)
+  useNewParam(() => setFocusKey((k) => k + 1), { when: canCreate })
   const query = useTasksQuery({ mine: true, includeDone: showDone })
   const projects = useProjectsQuery()
   const openTask = useOpenTask()
@@ -66,7 +70,7 @@ export default function MyTasksPage() {
     >
       <PageBody className="max-w-5xl space-y-4">
         <Can module="tasks" action="create">
-          <QuickAddTask />
+          <QuickAddTask focusKey={focusKey} />
         </Can>
 
         <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filters">

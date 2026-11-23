@@ -7,15 +7,10 @@ import {
   LogOut,
   Menu as MenuIcon,
   Moon,
-  Plus,
   Search,
   Sun,
-  UserPlus,
   CircleUser,
   IdCard,
-  FileText,
-  CheckSquare,
-  Building2,
   Palette,
   Clock,
   Plane,
@@ -32,12 +27,11 @@ import { MARKETING_PATHS } from '@/modules/marketing/paths'
 import { switchRole } from '@/modules/auth/api/authApi'
 import { MOCK_API } from '@/modules/auth/constants'
 import { AlertsBell } from '@/modules/alerts/components/AlertsBell'
-import { can } from '@/shared/lib/permissions'
 import { ROLES } from '@/shared/lib/constants'
 import { cn } from '@/shared/lib/utils'
 import { useAppDispatch, useAppSelector, useCurrentUser } from '@/store/hooks'
 import { signedIn, signedOut } from '@/store/authSlice'
-import { commandPaletteSet, mobileNavOpened, quickAddLeadSet, themeToggled } from '@/store/uiSlice'
+import { commandPaletteSet, mobileNavOpened, themeToggled } from '@/store/uiSlice'
 import { Avatar } from '@/shared/components/ui/Avatar'
 import { Button } from '@/shared/components/ui/Button'
 import { Kbd } from '@/shared/components/ui/Kbd'
@@ -45,6 +39,7 @@ import { Menu, MenuItem, MenuLabel, MenuSeparator } from '@/shared/components/ui
 import { useToast } from '@/shared/components/ui/Toast'
 import { WorkspaceSwitcher } from '@/modules/tenancy/components/WorkspaceSwitcher'
 import { navMatch } from './navigation'
+import { NewMenu } from './NewMenu'
 
 /** Top bar: breadcrumbs, global search, "New", notifications, theme and the user menu. */
 export function Header() {
@@ -141,71 +136,6 @@ function Breadcrumbs() {
         })}
       </ol>
     </nav>
-  )
-}
-
-function NewMenu() {
-  const dispatch = useAppDispatch()
-  const navigate = useNavigate()
-  const user = useCurrentUser()
-  // Sales and tasks are in every plan; the role decides. `write`: nothing to create while read-only.
-  const sales = !!user && can(user.role, 'sales', 'view')
-  const tasks = !!user && can(user.role, 'tasks', 'view')
-  const canLead = !!user && can(user.role, 'sales', 'create')
-  return (
-    <Menu
-      className="w-56"
-      trigger={(props) => (
-        <Button size="md" write {...props}>
-          <Plus />
-          <span className="hidden sm:inline">New</span>
-        </Button>
-      )}
-    >
-      {(close) => (
-        <>
-          <MenuLabel>Create</MenuLabel>
-          {canLead && (
-            <MenuItem
-              icon={<UserPlus />}
-              hint="Lead"
-              onSelect={() => {
-                close()
-                dispatch(quickAddLeadSet(true))
-              }}
-            >
-              New lead
-            </MenuItem>
-          )}
-          {sales && (
-            <MenuItem icon={<Building2 />} hint="Soon" onSelect={close}>
-              New customer
-            </MenuItem>
-          )}
-          {sales && (
-            <MenuItem icon={<FileText />} hint="Soon" onSelect={close}>
-              New quotation
-            </MenuItem>
-          )}
-          {tasks && (
-            <MenuItem icon={<CheckSquare />} hint="Soon" onSelect={close}>
-              New task
-            </MenuItem>
-          )}
-          {/* Everyone may ask the design team (plan module `marketing`; without it the page shows the upgrade state). */}
-          <MenuItem
-            icon={<Palette />}
-            hint="Design"
-            onSelect={() => {
-              close()
-              navigate(`${MARKETING_PATHS.designRequests}?new=1`)
-            }}
-          >
-            New design request
-          </MenuItem>
-        </>
-      )}
-    </Menu>
   )
 }
 

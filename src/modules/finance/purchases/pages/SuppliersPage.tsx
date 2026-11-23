@@ -17,6 +17,7 @@ import { EmptyState, Skeleton } from '@/shared/components/ui/Feedback'
 import { Field, SearchInput, SelectInput, TextArea, TextInput } from '@/shared/components/form/Field'
 import { useToast } from '@/shared/components/ui/Toast'
 import { AdvancesTab } from '@/modules/finance/purchases/components/Advances'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 /**
  * `/finance/suppliers`: the company's vendor directory (Events › Vendors) with each vendor's finance profile — VAT
@@ -29,6 +30,7 @@ export default function SuppliersPage() {
   const [q, setQ] = useState('')
   const [openId, setOpenId] = useState<string | null>(() => new URLSearchParams(window.location.search).get('supplier'))
   const [creating, setCreating] = useState(false)
+  useNewParam(() => setCreating(true), { when: canWrite })
   const rows = useMemo(() => (list.data ?? []).filter((r) => !q || r.name.toLowerCase().includes(q.toLowerCase())), [list.data, q])
   const totals = useMemo(() => ({ open: (list.data ?? []).reduce((s, r) => s + r.openBalanceBase, 0), overdue: (list.data ?? []).reduce((s, r) => s + r.overdueBase, 0), count: (list.data ?? []).filter((r) => r.openBills > 0).length }), [list.data])
   const meta = usePurchasesMeta()
@@ -130,7 +132,7 @@ function SupplierDrawer({ id, onClose }: { id: string | null; onClose: () => voi
   const set = <K extends keyof ProfileForm>(k: K, v: ProfileForm[K]) => setF((x) => (x ? { ...x, [k]: v } : x))
   const ro = !s?.canEdit
   return (
-    <Drawer
+    <Drawer variant="sheet"
       open={!!id}
       onClose={onClose}
       title={s?.name ?? 'Supplier'}

@@ -23,6 +23,7 @@ import { useToast } from '@/shared/components/ui/Toast'
 import { SearchInput } from '@/shared/components/form/Field'
 import { IconTile, PageBody, PageHeader } from '@/shared/components/layout/PageHeader'
 import { ColumnPicker, DataTable, FacetFilter, useDataTable } from '@/shared/components/data-table'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 /** `/hr/employees`: HR full sees everyone (and manages); a department head their team; an employee themself. */
 export default function EmployeesPage() {
@@ -35,6 +36,7 @@ export default function EmployeesPage() {
   const [depts, setDepts] = useState<string[]>([])
   const [alertsOnly, setAlertsOnly] = useState<string[]>([])
   const [creating, setCreating] = useState(false)
+  useNewParam(() => setCreating(true), { when: canManage })
   const [exporting, setExporting] = useState<'csv' | 'xlsx' | null>(null)
   const all = useMemo(() => query.data ?? [], [query.data])
   const data = useMemo(

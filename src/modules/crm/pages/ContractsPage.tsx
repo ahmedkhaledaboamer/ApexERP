@@ -33,6 +33,7 @@ import { useToast } from '@/shared/components/ui/Toast'
 import { SearchInput } from '@/shared/components/form/Field'
 import { IconTile, PageBody, PageHeader } from '@/shared/components/layout/PageHeader'
 import { ColumnPicker, DataTable, FacetFilter, useDataTable, type FacetOption } from '@/shared/components/data-table'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 export default function ContractsPage() {
   const user = useCurrentUser()
@@ -57,6 +58,7 @@ function ContractsList({ scope, canEdit }: { scope: Scope; canEdit: boolean }) {
   const query = useContractsQuery()
   const data = useMemo(() => query.data ?? [], [query.data])
   const [drawer, setDrawer] = useState<DrawerState>(null)
+  useNewParam(() => setDrawer({ contract: null }), { when: canEdit })
   const canInvoice = useCanInvoice()
   const columns = useMemo(() => buildColumns(canEdit, (contract) => setDrawer({ contract }), canInvoice), [canEdit, canInvoice])
 

@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Link2, Plus } from 'lucide-react'
@@ -21,10 +21,12 @@ interface QuickAddTaskProps {
   onCreated?: (task: TaskView) => void
   placeholder?: string
   className?: string
+  /** Focuses the title when it changes (a non-zero counter), e.g. for `?new=1` from the header "+ New" menu. */
+  focusKey?: number
 }
 
 /** One-line task capture: title + due + owner (+ link). Enter saves. */
-export function QuickAddTask({ link, allowLink = true, onCreated, placeholder = 'Add a task and press Enter', className }: QuickAddTaskProps) {
+export function QuickAddTask({ link, allowLink = true, onCreated, placeholder = 'Add a task and press Enter', className, focusKey = 0 }: QuickAddTaskProps) {
   const id = useId()
   const toast = useToast()
   const create = useCreateTask()
@@ -39,6 +41,10 @@ export function QuickAddTask({ link, allowLink = true, onCreated, placeholder = 
   })
   const { register, handleSubmit, formState, reset, getValues } = form
   const titleError = formState.errors.title?.message
+  const { setFocus } = form
+  useEffect(() => {
+    if (focusKey) setFocus('title')
+  }, [focusKey, setFocus])
 
   const submit = handleSubmit(async (v) => {
     // A preset project "link" sets the task's project (projectId); lead / customer / event are the related link.

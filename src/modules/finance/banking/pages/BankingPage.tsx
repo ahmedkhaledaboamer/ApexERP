@@ -18,6 +18,7 @@ import { useToast } from '@/shared/components/ui/Toast'
 import { ImportStatementModal } from '../components/ImportStatementModal'
 import { EosbProvisionTab } from '../components/EosbProvisionTab'
 import { PAYMENT_FILE_COLUMNS, PAYMENT_FILE_COLUMN_LABEL, PAYMENT_FILE_TEMPLATES, PAYMENT_FILE_TEMPLATE_DEF, type PaymentFileColumn, type PaymentFileTemplate } from '@/modules/finance/purchases/bankFile'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 /**
  * `/finance/banking`: bank and cash accounts on top of the ledger (?tab=accounts|transfers|reconcile|rules|payroll,
@@ -76,6 +77,7 @@ function AccountsTab({ onReconcile }: { onReconcile: (id: string) => void }) {
   const { isFull } = useFinanceScope()
   const toast = useToast()
   const [editing, setEditing] = useState<BankAccount | 'new' | null>(null)
+  useNewParam(() => setEditing('new'), { when: isFull })
   const [revealed, setRevealed] = useState<Record<string, { accountNumber: string; iban: string }>>({})
   const reveal = useBankingMutation((id: string) => bankingApi.reveal(id))
   if (q.isError) return <ErrorState message={errMsg(q.error)} onRetry={() => void q.refetch()} />
@@ -233,6 +235,7 @@ function TransfersTab() {
   const { isFull } = useFinanceScope()
   const toast = useToast()
   const [open, setOpen] = useState(false)
+  useNewParam(() => setOpen(true), { when: isFull })
   const voidT = useBankingMutation((id: string) => bankingApi.voidTransfer(id))
   if (q.isError) return <ErrorState message={errMsg(q.error)} onRetry={() => void q.refetch()} />
   if (!q.data) return <Skeleton className="h-64" />

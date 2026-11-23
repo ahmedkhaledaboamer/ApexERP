@@ -270,7 +270,7 @@ export function ExpenseDetailDrawer({ id, onClose }: { id: string | null; onClos
   const run = (action: 'approve' | 'reject' | 'void', reason?: string) =>
     act.mutate({ id: id!, action, reason }, { onSuccess: (x) => { setAsk(null); toast.success(`Expense ${x.number}: ${x.status === 'approved' ? 'approved and posted' : x.status}`) } })
   return (
-    <Drawer
+    <Drawer variant="sheet"
       open={!!id}
       onClose={onClose}
       title={e ? `Expense ${e.number}` : 'Expense'}

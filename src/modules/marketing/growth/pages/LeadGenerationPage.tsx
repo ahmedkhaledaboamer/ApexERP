@@ -20,6 +20,7 @@ import { useToast } from '@/shared/components/ui/Toast'
 import { Field, SelectInput, TextInput } from '@/shared/components/form/Field'
 import { PageBody, PageHeader } from '@/shared/components/layout/PageHeader'
 import { DataTable, useDataTable } from '@/shared/components/data-table'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 type Tab = 'forms' | 'pages' | 'utm'
 const TABS: { id: Tab; label: string }[] = [
@@ -60,6 +61,7 @@ function FormsTab() {
   const query = useFormsQuery()
   const data = useMemo(() => query.data ?? [], [query.data])
   const [creating, setCreating] = useState(false)
+  useNewParam(() => setCreating(true), { when: canEdit })
   const columns = useMemo(
     () => [
       col.accessor('name', {

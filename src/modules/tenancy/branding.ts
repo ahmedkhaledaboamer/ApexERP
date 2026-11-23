@@ -67,6 +67,33 @@ export function logoFor(branding: Pick<Branding, 'logoUrl' | 'logoDarkUrl'>, the
   return branding.logoUrl || null
 }
 
+/**
+ * A square tab icon drawn from the workspace monogram on its brand colour (SVG data URL), for a
+ * company without a favicon or logo.
+ */
+export function monogramFavicon(branding: Pick<Branding, 'monogram' | 'palette'>): string {
+  const color = branding.palette?.['600'] || DEFAULT_PALETTE['600']
+  const text = (branding.monogram || '').slice(0, 2).toUpperCase().replace(/[<>&"']/g, '')
+  const size = text.length > 1 ? 30 : 38
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">` +
+    `<rect width="64" height="64" rx="14" fill="${color}"/>` +
+    `<text x="32" y="33" dominant-baseline="middle" text-anchor="middle" fill="#fff" ` +
+    `font-family="Inter,Segoe UI,Arial,sans-serif" font-size="${size}" font-weight="700">${text}</text></svg>`
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`
+}
+
+/**
+ * The workspace's browser-tab icon: its own favicon, else its logo, else its monogram on the brand
+ * colour. Null for the product itself (bare domain), which keeps the product icon.
+ */
+export function workspaceFavicon(branding: Branding): string | null {
+  if (branding.faviconUrl) return branding.faviconUrl
+  if (branding.logoUrl) return branding.logoUrl
+  if (branding.displayName === PRODUCT_NAME) return null
+  return monogramFavicon(branding)
+}
+
 /** MIME type of a favicon URL for <link type>, when it can be told. */
 function faviconType(url: string): string | null {
   const m = /^data:([^;,]+)/.exec(url)

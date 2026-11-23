@@ -28,6 +28,25 @@ export async function signInAs(page: Page, userId: string, workspace = 'apexaora
   }
 }
 
+/**
+ * Sets the workspace's subscription status through the mock's dev billing API (e.g. 'suspended' for a
+ * read-only workspace), then reloads so the app picks up the new entitlements.
+ */
+export async function setSubscriptionStatus(page: Page, status: 'active' | 'past_due' | 'suspended' | 'cancelled'): Promise<void> {
+  await page.evaluate(async (s) => {
+    const session = JSON.parse(localStorage.getItem('apexcrm.session') || '{}') as { token?: string }
+    const r = await fetch('/api/dev/billing/status', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${session.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: s }),
+    })
+    if (!r.ok) throw new Error(`dev billing status failed: ${r.status}`)
+  }, status)
+  // The dev mock DB saves to IndexedDB on a 300 ms debounce: let it land before the reload.
+  await page.waitForTimeout(1000)
+  await page.reload()
+}
+
 /** The board column (section) for a stage label, e.g. "Interested". */
 export function column(page: Page, label: string) {
   return page.locator(`section[aria-label^="${label}, "]`)

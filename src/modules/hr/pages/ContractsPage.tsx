@@ -15,6 +15,7 @@ import { EmptyState } from '@/shared/components/ui/Feedback'
 import { SearchInput } from '@/shared/components/form/Field'
 import { IconTile, PageBody, PageHeader } from '@/shared/components/layout/PageHeader'
 import { ColumnPicker, DataTable, FacetFilter, useDataTable } from '@/shared/components/data-table'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 /** `/hr/contracts`: every contract (with history) in the caller's HR scope; filters by type, status and "ending soon". */
 export default function ContractsPage() {
@@ -26,6 +27,7 @@ export default function ContractsPage() {
   const [statuses, setStatuses] = useState<string[]>([])
   const [ending, setEnding] = useState<string[]>([])
   const [creating, setCreating] = useState(false)
+  useNewParam(() => setCreating(true), { when: canManage })
   const all = useMemo(() => query.data ?? [], [query.data])
   const data = useMemo(
     () =>

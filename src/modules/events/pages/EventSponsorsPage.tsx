@@ -19,6 +19,7 @@ import { Segmented } from '@/shared/components/ui/Segmented'
 import { useToast } from '@/shared/components/ui/Toast'
 import { SelectInput } from '@/shared/components/form/Field'
 import { IconTile, PageBody, PageHeader } from '@/shared/components/layout/PageHeader'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 type View = 'board' | 'list'
 const VIEW_KEY = 'events.sponsors.view'
@@ -42,6 +43,7 @@ export default function EventSponsorsPage() {
   const board = q.data
   const packages = useMemo(() => board?.packages ?? [], [board])
   const canAdd = !!board?.events.some((e) => e.canManage && packages.some((p) => p.eventId === e.id))
+  useNewParam(() => setAdding(true), { when: canAdd })
 
   function moveTo(d: SponsorDeal, to: SponsorStage, lostReason?: string) {
     const problem = sponsorMoveProblem(d, to, packages)

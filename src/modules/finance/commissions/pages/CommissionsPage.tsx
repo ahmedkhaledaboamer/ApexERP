@@ -16,6 +16,7 @@ import { EmptyState, ErrorState, Skeleton } from '@/shared/components/ui/Feedbac
 import { Checkbox, Field, SelectInput, TextInput } from '@/shared/components/form/Field'
 import { useToast } from '@/shared/components/ui/Toast'
 import { StatementStatus, StatementView } from '../components/StatementView'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 /**
  * `/finance/commissions` (?tab=statements|plans, ?statement=, ?month=): monthly commission statements (generate; Sales
@@ -96,7 +97,7 @@ function StatementDrawer({ id, onClose }: { id: string; onClose: () => void }) {
   const s = q.data
   const pending = s && (s.status === 'pending_manager' || s.status === 'pending_accountant')
   return (
-    <Drawer
+    <Drawer variant="sheet"
       open
       onClose={onClose}
       title={s ? `${s.userName} · ${monthName(s.month)}` : 'Commission statement'}
@@ -131,6 +132,7 @@ function PlansTab() {
   const { scope, role } = useFinanceScope()
   const canEdit = scope === 'full' && (role === 'Company Admin' || role === 'Management' || role === 'Accountant')
   const [editing, setEditing] = useState<CommissionPlan | 'new' | null>(null)
+  useNewParam(() => setEditing('new'), { when: canEdit })
   if (q.isError) return <ErrorState message={errMsg(q.error)} onRetry={() => void q.refetch()} />
   if (!q.data) return <Skeleton className="h-48" />
   return (

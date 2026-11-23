@@ -17,6 +17,7 @@ import { errorMessage, F, Table, td, useHrScope } from '@/modules/hr/time/compon
 import { complianceApi, useComplianceMutation, usePolicies } from '../api'
 import { POLICY_CATEGORIES, POLICY_CATEGORY_LABEL, type AudienceKind, type PolicyAudience, type PolicyCategory, type PolicyDetail } from '../types'
 import { AckBar, PolicyStatusBadge, policyPath } from '../components/bits'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 /**
  * `/hr/policies`: company policies employees must acknowledge. HR full writes (draft → publish a version; a new version
@@ -26,6 +27,7 @@ export default function PoliciesPage() {
   const { full } = useHrScope()
   const q = usePolicies()
   const [creating, setCreating] = useState(false)
+  useNewParam(() => setCreating(true), { when: full })
   const navigate = useNavigate()
   return (
     <>

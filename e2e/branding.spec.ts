@@ -177,22 +177,23 @@ test('Apex admin brands the workspace; it shows everywhere at once; Management, 
   await expect(page.locator('#branding-logoLight-preview img')).toHaveAttribute('src', /^data:image\/png;base64,/)
   await expect(sidebarLogo(page)).toHaveAttribute('src', /^data:image\/png;base64,/)
 
-  // Crest keeps its own branding: monogram, teal, product favicon; its sign-in page too.
+  // Crest keeps its own branding: monogram, teal, and (no favicon, no logo) a "CL" monogram tab icon
+  // on its teal; its sign-in page too.
   await signInAs(page, CREST_ADMIN, 'crest')
   await page.goto('/dashboard')
   await expect(sidebarLogo(page)).toHaveAttribute('data-tenant-logo', 'monogram')
   await expect(sidebarLogo(page)).toHaveText('CL')
   await expect.poll(() => brand600(page)).toBe('#0d9488')
-  await expect.poll(() => faviconHref(page)).toBe('/favicon.svg')
+  await expect.poll(async () => decodeURIComponent(await faviconHref(page))).toMatch(/^data:image\/svg\+xml,.*fill="#0d9488".*>CL<\/text>/)
   await page.goto('/settings/branding')
   await expect(page.locator('#branding-logoLight')).toHaveAttribute('data-has-image', 'false')
   await expect(page.locator('#branding-name')).toHaveValue('Crest Logistics')
   await page.evaluate(() => localStorage.removeItem('apexcrm.session'))
   await page.goto('/w/crest')
   await expect(page.locator('#signin-tenant-logo')).toHaveAttribute('data-tenant-logo', 'monogram')
-  await expect.poll(() => faviconHref(page)).toBe('/favicon.svg')
+  await expect.poll(async () => decodeURIComponent(await faviconHref(page))).toMatch(/>CL<\/text>/)
 
-  // Reset (confirm) as the Apex admin: monogram, default palette, product favicon.
+  // Reset (confirm) as the Apex admin: monogram, default palette, and the "AA" monogram tab icon.
   await openBranding(page, APEX_ADMIN)
   await expect.poll(() => brand600(page)).toBe(ROSE)
   await page.locator('#branding-reset').click()
@@ -201,7 +202,7 @@ test('Apex admin brands the workspace; it shows everywhere at once; Management, 
   await expect(sidebarLogo(page)).toHaveAttribute('data-tenant-logo', 'monogram')
   await expect(sidebarLogo(page)).toHaveText('AA')
   await expect.poll(() => brand600(page)).toBe('#7c3aed')
-  await expect.poll(() => faviconHref(page)).toBe('/favicon.svg')
+  await expect.poll(async () => decodeURIComponent(await faviconHref(page))).toMatch(/fill="#7c3aed".*>AA<\/text>/)
   await expect(page.locator('#branding-logoLight')).toHaveAttribute('data-has-image', 'false')
   await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('link', { name: /Audit log/ }).click()
   await expect(page.getByText(/Reset the branding to the default/).first()).toBeVisible()

@@ -20,6 +20,7 @@ import { nextPhase } from './calc'
 import { CYCLE_TYPE_LABEL, GOAL_STATUS_LABEL, PENDING_LABEL, PHASE_LABEL, STAGE_LABEL, type CycleType, type ReviewRow, type ReviewTemplate } from './types'
 import { PhaseBadge, RatingText, StageBadge } from './components/bits'
 import { ReviewDrawer } from './components/ReviewDrawer'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 type Tab = 'my' | 'team' | 'cycles' | 'templates'
 
@@ -47,6 +48,7 @@ export default function PerformancePage() {
     setParams(next, { replace: true })
   }
   const [creating, setCreating] = useState(false)
+  useNewParam(() => setCreating(true), { when: !!options.data?.manage })
   return (
     <>
       <PageHeader

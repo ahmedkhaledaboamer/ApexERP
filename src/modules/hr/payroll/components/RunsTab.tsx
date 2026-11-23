@@ -15,11 +15,13 @@ import { EmptyState, Skeleton } from '@/shared/components/ui/Feedback'
 import { Field, TextInput } from '@/shared/components/form/Field'
 import { useToast } from '@/shared/components/ui/Toast'
 import { PayrollJournalLink } from '@/modules/finance/banking/components/PayrollJournalLink'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 /** Salary › Runs: the monthly runs and the run drawer (calculate → approve (another HR user) → paid). */
 export function RunsTab({ openRun, onOpenRun }: { openRun: string | null; onOpenRun: (id: string | null) => void }) {
   const runs = useRuns()
   const [creating, setCreating] = useState(false)
+  useNewParam(() => setCreating(true))
   if (runs.error) return <HrError error={runs.error} onRetry={() => runs.refetch()} />
   return (
     <div className="space-y-4">

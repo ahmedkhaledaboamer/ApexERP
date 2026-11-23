@@ -30,6 +30,7 @@ import {
   type DisciplinaryType,
 } from '../types'
 import { AckBadge, EscalationNote, FileLink, RecordStatusBadge, TypeBadge, warningLetterPath } from '../components/bits'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 /**
  * `/hr/discipline`: warnings and disciplinary actions. HR full issues, withdraws and sees the company; a department
@@ -41,6 +42,7 @@ export default function DisciplinePage() {
   const [status, setStatus] = useState<DisciplinaryStatus | ''>('')
   const [type, setType] = useState<DisciplinaryType | ''>('')
   const [creating, setCreating] = useState(false)
+  useNewParam(() => setCreating(true), { when: full })
   const q = useDiscipline({ status: status || undefined, type: type || undefined })
   const open = params.get('record')
   const setOpen = (id: string | null) =>

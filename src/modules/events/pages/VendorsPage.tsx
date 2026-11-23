@@ -16,6 +16,7 @@ import { EmptyState } from '@/shared/components/ui/Feedback'
 import { SearchInput } from '@/shared/components/form/Field'
 import { IconTile, PageBody, PageHeader } from '@/shared/components/layout/PageHeader'
 import { ColumnPicker, DataTable, FacetFilter, useDataTable } from '@/shared/components/data-table'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 /** `/events/vendors`: event suppliers with spend (from budget lines), ratings and status. Marketing full manages them. */
 export default function VendorsPage() {
@@ -24,6 +25,7 @@ export default function VendorsPage() {
   const query = useVendorsQuery()
   const [search, setSearch] = useState('')
   const [creating, setCreating] = useState(false)
+  useNewParam(() => setCreating(true), { when: canManage })
   const data = useMemo(() => query.data ?? [], [query.data])
   const columns = useMemo(() => buildColumns(), [])
   const table = useDataTable({ id: 'event-vendors', data, columns, globalFilter: search, globalFilterFn: vendorSearch, getRowId: (r) => r.id })

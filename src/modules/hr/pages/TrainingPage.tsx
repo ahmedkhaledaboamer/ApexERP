@@ -14,6 +14,7 @@ import { useToast } from '@/shared/components/ui/Toast'
 import { IconTile, PageBody, PageHeader } from '@/shared/components/layout/PageHeader'
 import { fmtDate, fmtMoney } from '@/shared/lib/utils'
 import { cn } from '@/shared/lib/utils'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 type Tab = 'my' | 'courses' | 'certificates' | 'matrix' | 'budget'
 
@@ -34,6 +35,7 @@ export default function TrainingPage() {
   const tab = (tabs.find((t) => t.id === params.get('tab'))?.id ?? (scope === 'own' ? 'my' : tabs[1]?.id ?? 'my')) as Tab
   const setTab = (t: Tab) => setParams({ tab: t }, { replace: true })
   const [creating, setCreating] = useState(false)
+  useNewParam(() => setCreating(true), { when: scope === 'full' })
   const [courseId, setCourseId] = useState<string | null>(null)
 
   return (

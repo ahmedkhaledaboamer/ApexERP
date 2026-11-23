@@ -13,6 +13,7 @@ import { EmptyState, Skeleton } from '@/shared/components/ui/Feedback'
 import { Field, SelectInput, TextInput } from '@/shared/components/form/Field'
 import { useToast } from '@/shared/components/ui/Toast'
 import { cn } from '@/shared/lib/utils'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 export const monthShort = (ym: string) => `${MONTH_SHORT[Number(ym.slice(5, 7)) - 1]}`
@@ -25,6 +26,7 @@ export function BudgetsTab({ open, onOpen }: { open: string | null; onOpen: (id:
   const q = useBudgets()
   const { isFull } = useFinanceScope()
   const [creating, setCreating] = useState(false)
+  useNewParam(() => setCreating(true), { when: isFull })
   const selected = open ?? q.data?.[0]?.id ?? null
   return (
     <div className="space-y-4">

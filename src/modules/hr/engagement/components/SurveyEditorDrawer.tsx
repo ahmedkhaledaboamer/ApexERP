@@ -41,7 +41,7 @@ const toQ = (q: SurveyQuestionInput): Q => ({ ...q, key: ++qseq, optionsText: (q
 /** HR creates a survey from a template or from scratch, then saves it as a draft or launches it. */
 export function SurveyEditorDrawer({ open, onClose, o, onCreated }: { open: boolean; onClose: () => void; o: EngagementOptions; onCreated: (id: string) => void }) {
   return (
-    <Drawer open={open} onClose={onClose} width="xl" title="New survey" description="Start from a template or from scratch. Questions can have an Arabic version; people answer in the language they choose.">
+    <Drawer variant="dialog" open={open} onClose={onClose} width="xl" title="New survey" description="Start from a template or from scratch. Questions can have an Arabic version; people answer in the language they choose.">
       {open && <Editor o={o} onDone={(id) => { onCreated(id); onClose() }} />}
     </Drawer>
   )

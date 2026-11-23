@@ -14,6 +14,7 @@ import { Button } from '@/shared/components/ui/Button'
 import { Card } from '@/shared/components/ui/Card'
 import { useToast } from '@/shared/components/ui/Toast'
 import { Checkbox } from '@/shared/components/form/Field'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 /** Trips, shipments and deadlines panels, shared by `/events/logistics` and the event's Logistics tab. */
 
@@ -35,6 +36,7 @@ export function TripsPanel({ bundle: b, eventId, showEvent }: { bundle: Logistic
   const remove = useDeleteTrip()
   const toast = useToast()
   const canAdd = useCanAdd(b, eventId)
+  useNewParam(() => setEditing('new'), { when: canAdd })
   const groups = b.events.map((e) => ({ event: e, trips: b.trips.filter((t) => t.eventId === e.id) })).filter((g) => g.trips.length || (eventId && g.event.id === eventId))
   const perPerson = new Map<string, { name: string; total: number; trips: number }>()
   for (const t of b.trips) {

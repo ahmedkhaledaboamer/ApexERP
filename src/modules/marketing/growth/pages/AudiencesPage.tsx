@@ -35,6 +35,7 @@ import { Field, SelectInput, Switch, TextInput } from '@/shared/components/form/
 import type { EventPresence } from '@/modules/marketing/growth/types'
 import { PageBody, PageHeader } from '@/shared/components/layout/PageHeader'
 import { DataTable, FacetFilter, useDataTable } from '@/shared/components/data-table'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 export default function AudiencesPage() {
   const { canView } = useGrowthAccess()
@@ -49,6 +50,7 @@ function AudienceList() {
   const query = useAudiencesQuery()
   const data = useMemo(() => query.data ?? [], [query.data])
   const [open, setOpen] = useState<string | 'new' | null>(null)
+  useNewParam(() => setOpen('new'), { when: canEdit })
   const columns = useMemo(
     () => [
       col.accessor('name', {

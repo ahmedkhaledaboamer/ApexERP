@@ -17,6 +17,7 @@ import { ResultsDrawer } from './components/ResultsDrawer'
 import { SurveyEditorDrawer } from './components/SurveyEditorDrawer'
 import { EngagementOverviewView } from './components/OverviewView'
 import { SurveyStatusBadge, fmtRate } from './components/bits'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 type Tab = 'my' | 'overview' | 'surveys' | 'settings'
 
@@ -45,6 +46,7 @@ export default function EngagementPage() {
     setParams(next, { replace: true })
   }
   const [creating, setCreating] = useState(false)
+  useNewParam(() => setCreating(true), { when: !!o?.manage })
   return (
     <>
       <PageHeader
