@@ -240,6 +240,9 @@ export const SOURCE_TYPE_LABEL: Record<JournalSourceType, string> = {
   bill: 'Bill',
   expense: 'Expense',
   bank: 'Bank',
+  vat_return: 'VAT return',
+  tax_provision: 'Tax provision',
+  year_end_close: 'Year-end close',
 }
 
 export const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
@@ -257,6 +260,7 @@ export const SYSTEM_ROLE_LABEL: Record<SystemAccountRole, string> = {
   undeposited_funds: 'Undeposited funds',
   pdc_receivable: 'PDC receivable',
   customer_advances: 'Customer advances',
+  supplier_advances: 'Supplier advances',
   payment_gateway_clearing: 'Payment gateway clearing',
   fx_gain_loss: 'Exchange gain / loss',
   rounding: 'Rounding',
@@ -278,6 +282,7 @@ export const SYSTEM_ROLE_TYPE: Record<SystemAccountRole, AccountType> = {
   undeposited_funds: 'asset',
   pdc_receivable: 'asset',
   customer_advances: 'liability',
+  supplier_advances: 'asset',
   payment_gateway_clearing: 'asset',
   fx_gain_loss: 'expense',
   rounding: 'expense',

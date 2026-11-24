@@ -25,7 +25,8 @@ afterAll(() => {
 })
 
 const u = (id: string) => users.find((x) => x.id === id)! as User
-const TEST_EMPS = ['EMP-u11', 'EMP-u14', 'EMP-u104', 'EMP-u12']
+// EMP-u5 too: the seed gives u5 a pending leave relative to today, which can overlap the dates used below.
+const TEST_EMPS = ['EMP-u11', 'EMP-u14', 'EMP-u104', 'EMP-u12', 'EMP-u5']
 const typeId = (co: string, code: string) => hrLeaveTypes.find((t) => t.companyId === co && t.code === code)!.id
 
 beforeEach(() => {

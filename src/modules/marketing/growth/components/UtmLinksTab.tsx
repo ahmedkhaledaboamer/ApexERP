@@ -10,6 +10,7 @@ import { Card, CardBody, CardHeader } from '@/shared/components/ui/Card'
 import { EmptyState, Skeleton } from '@/shared/components/ui/Feedback'
 import { useToast } from '@/shared/components/ui/Toast'
 import { Field, SelectInput, TextInput } from '@/shared/components/form/Field'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 const EMPTY = { name: '', baseUrl: '', utmSource: '', utmMedium: '', utmCampaign: '', utmTerm: '', utmContent: '', campaignId: '' }
 
@@ -22,6 +23,7 @@ export function UtmLinksTab() {
   const remove = useDeleteUtmLink()
   const toast = useToast()
   const [v, setV] = useState(EMPTY)
+  useNewParam(() => document.getElementById('utm-base')?.focus(), { when: canEdit })
   const set = (k: keyof typeof EMPTY, value: string) => setV((x) => ({ ...x, [k]: value }))
   const valid = /^https?:\/\/\S+$/i.test(v.baseUrl.trim()) && !!v.utmSource.trim() && !!v.utmMedium.trim()
   const preview = v.baseUrl.trim() ? buildUtmUrl(v.baseUrl, v) : ''

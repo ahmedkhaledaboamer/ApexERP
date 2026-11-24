@@ -19,6 +19,7 @@ import { useToast } from '@/shared/components/ui/Toast'
 import { SearchInput, Switch } from '@/shared/components/form/Field'
 import { IconTile, PageBody, PageHeader } from '@/shared/components/layout/PageHeader'
 import { ColumnPicker, DataTable, FacetFilter, useDataTable, type FacetOption } from '@/shared/components/data-table'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 export default function ContactsPage() {
   const user = useCurrentUser()
@@ -40,6 +41,7 @@ function ContactsList({ scope, canEdit }: { scope: Scope; canEdit: boolean }) {
   const query = useContactsQuery()
   const data = useMemo(() => query.data ?? [], [query.data])
   const [drawer, setDrawer] = useState<{ contact: ContactRow | null } | null>(null)
+  useNewParam(() => setDrawer({ contact: null }), { when: canEdit })
   const columns = useMemo(() => buildColumns(canEdit), [canEdit])
 
   const table = useDataTable({

@@ -16,6 +16,7 @@ import { EmptyState, ErrorState, Skeleton } from '@/shared/components/ui/Feedbac
 import { Checkbox, Field, SearchInput, SelectInput, TextArea, TextInput } from '@/shared/components/form/Field'
 import { useToast } from '@/shared/components/ui/Toast'
 import { cn } from '@/shared/lib/utils'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 /**
  * `/finance/accounts`: Chart of accounts — the tree by type with base-currency balances (headers roll up), add / edit /
@@ -31,6 +32,7 @@ export default function ChartOfAccountsPage() {
   const [search, setSearch] = useState('')
   const [showInactive, setShowInactive] = useState(false)
   const [editing, setEditing] = useState<AccountRow | 'new' | null>(null)
+  useNewParam(() => setEditing('new'), { when: isFull })
   const importTpl = useFinanceMutation(() => ledgerApi.importTemplate())
   const ledgerId = params.get('account')
   const setLedger = (id: string | null) =>
@@ -209,7 +211,7 @@ function AccountModal({ account, accounts, onClose }: { account: AccountRow | nu
         </div>
       }
     >
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field id="acc-code" label="Code" required hint="3–10 digits, unique in your chart">
           <TextInput id="acc-code" value={code} inputMode="numeric" onChange={(e) => setCode(e.target.value)} />
         </Field>

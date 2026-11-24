@@ -62,7 +62,7 @@ export function Section({ title, action, children }: { title: string; action?: R
 /** Simple bordered table (Linear-style), with a horizontal scroll on small screens. */
 export function SimpleTable({ head, children, label }: { head: ReactNode[]; children: ReactNode; label: string }) {
   return (
-    <div className="overflow-x-auto rounded-lg border border-line bg-surface">
+    <div className="relative overflow-x-auto rounded-lg border border-line bg-surface">
       <table aria-label={label} className="w-full text-start text-[0.8125rem]">
         <thead className="bg-sunken text-xs text-muted">
           <tr>

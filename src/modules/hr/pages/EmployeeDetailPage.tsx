@@ -105,6 +105,13 @@ function Overview({ e }: { e: EmployeeDetail }) {
             <PropertyList>
               <Property label="Employee no.">{e.employeeNo}</Property>
               <Property label="Job title">{e.jobTitle}</Property>
+              {(e.fullNameAr || e.jobTitleAr) && (
+                <Property label="In Arabic">
+                  <span dir="rtl" lang="ar" data-testid="employee-name-ar">
+                    {[e.fullNameAr, e.jobTitleAr].filter(Boolean).join(' · ')}
+                  </span>
+                </Property>
+              )}
               <Property label="Department">{e.departmentName ?? '—'}</Property>
               <Property label="Manager">{e.managerId && e.managerName ? <Link className="hover:underline" to={employeePath(e.managerId)}>{e.managerName}</Link> : '—'}</Property>
               <Property label="Hire date">{fmtDate(e.hireDate)}</Property>
@@ -284,7 +291,7 @@ function DocumentsTab({ e }: { e: EmployeeDetail }) {
       {e.documents.length === 0 ? (
         <CardBody><p className="text-[0.8125rem] text-muted">No documents yet.</p></CardBody>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="relative overflow-x-auto">
           <table className="w-full text-[0.8125rem]" aria-label="Documents">
             <thead className="text-start text-xs text-muted">
               <tr className="border-b border-line">

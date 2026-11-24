@@ -20,6 +20,7 @@ import { Can } from '@/shared/components/permissions/Can'
 import { SearchInput } from '@/shared/components/form/Field'
 import { IconTile, PageBody, PageHeader } from '@/shared/components/layout/PageHeader'
 import { ColumnPicker, DataTable, FacetFilter, useDataTable, type FacetOption } from '@/shared/components/data-table'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 /** Task Management › Projects: delivery projects in the caller's tasks scope. */
 export default function ProjectsPage() {
@@ -45,6 +46,7 @@ function ProjectsList({ scope }: { scope: Scope }) {
   const [creating, setCreating] = useState(false)
   // Own-scope roles work inside projects; team and full scope create them (matches POST /projects).
   const canCreate = scope === 'full' || scope === 'team'
+  useNewParam(() => setCreating(true), { when: canCreate })
   const columns = useMemo(() => buildColumns(), [])
 
   const table = useDataTable({

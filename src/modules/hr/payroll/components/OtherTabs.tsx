@@ -182,13 +182,13 @@ function SettingsForm({ s }: { s: PaySettings }) {
     <div className="max-w-3xl space-y-5">
       <DefaultsNote />
       {!s.defaultsConfirmed ? (
-        <p className="text-[0.8125rem] text-warning-700">The social insurance rates are still the built-in defaults: review them and confirm.</p>
+        <p className="text-[0.8125rem] text-warning-700 dark:text-warning-500">The social insurance rates are still the built-in defaults: review them and confirm.</p>
       ) : (
         <p className="text-xs text-muted">Confirmed by {s.defaultsConfirmedByName ?? 'HR'} on {fmtDate(s.defaultsConfirmedAt)}.</p>
       )}
       <Card>
         <CardHeader title="Pay calendar" />
-        <CardBody className="grid gap-3 sm:grid-cols-2">
+        <CardBody className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field id="ps-payday" label="Pay day (1–28)"><TextInput id="ps-payday" type="number" min={1} max={28} value={v.payDay} onChange={(e) => set({ payDay: num(e.target.value) })} /></Field>
           <Field id="ps-cutoff" label="Attendance cut-off day (31 = month end)" hint="Absences and overtime after this day are not counted in the month."><TextInput id="ps-cutoff" type="number" min={1} max={31} value={v.cutoffDay} onChange={(e) => set({ cutoffDay: num(e.target.value) })} /></Field>
           <div className="flex items-center gap-2 text-[0.8125rem] sm:col-span-2"><Switch id="ps-abs" checked={!!v.deductAbsences} onChange={(c) => set({ deductAbsences: c })} label="Deduct unexcused absence days" /><span>Deduct unexcused absence days (no clock-in, no approved leave, not a holiday)</span></div>
@@ -198,7 +198,7 @@ function SettingsForm({ s }: { s: PaySettings }) {
       </Card>
       <Card>
         <CardHeader title={ae ? 'UAE Wage Protection System (WPS)' : 'KSA Mudad'} description="Used in the bank file. Confirm the exact file specifications with your bank before go-live." />
-        <CardBody className="grid gap-3 sm:grid-cols-2">
+        <CardBody className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {ae ? (
             <>
               <Field id="ps-wps" label="Employer id (13 digits)"><TextInput id="ps-wps" inputMode="numeric" value={v.wpsEmployerId} onChange={(e) => set({ wpsEmployerId: e.target.value })} /></Field>
@@ -211,7 +211,7 @@ function SettingsForm({ s }: { s: PaySettings }) {
       </Card>
       <Card>
         <CardHeader title={ae ? 'Social insurance (GPSSA)' : 'Social insurance (GOSI)'} description={ae ? 'UAE nationals: employee 11 %, employer 12.5 % of basic + housing (defaults).' : 'Saudis: employee 9.75 %, employer 11.75 %; others: employer 2 % (occupational hazards); base capped at 45,000 SAR (defaults).'} />
-        <CardBody className="grid gap-3 sm:grid-cols-2">
+        <CardBody className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field id="ps-ne" label={`Employee rate, ${ae ? 'UAE nationals' : 'Saudis'} (%)`}><TextInput id="ps-ne" type="number" step="0.01" value={si.nationalEmployeeRate} onChange={(e) => setSi({ nationalEmployeeRate: num(e.target.value) })} /></Field>
           <Field id="ps-nr" label={`Employer rate, ${ae ? 'UAE nationals' : 'Saudis'} (%)`}><TextInput id="ps-nr" type="number" step="0.01" value={si.nationalEmployerRate} onChange={(e) => setSi({ nationalEmployerRate: num(e.target.value) })} /></Field>
           <Field id="ps-ee" label="Employee rate, others (%)"><TextInput id="ps-ee" type="number" step="0.01" value={si.expatEmployeeRate} onChange={(e) => setSi({ expatEmployeeRate: num(e.target.value) })} /></Field>
@@ -325,7 +325,7 @@ function NewSettlement({ onClose, onCreated }: { onClose: () => void; onCreated:
             {leaving.map((e) => <option key={e.id} value={e.id}>{e.fullName} ({e.employeeNo}) · exit {e.exitDate ?? '—'}</option>)}
           </SelectInput>
         </Field>
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field id="fs-reason" label="Reason">
             <SelectInput id="fs-reason" value={reason} onChange={(e) => setReason(e.target.value as ExitReason)}>
               {EXIT_REASONS.map((r) => <option key={r} value={r}>{EXIT_REASON_LABEL[r]}</option>)}
@@ -407,7 +407,7 @@ function GratuityCalculator({ country: initial }: { country: PayCountry }) {
     <Card>
       <CardHeader icon={<Calculator />} title="Gratuity calculator" description="What-if end-of-service award (UAE Decree-Law 33/2021 · KSA Labor Law art. 84–85)." />
       <CardBody className="space-y-4">
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Field id="gc-country" label="Country">
             <SelectInput id="gc-country" value={country} onChange={(e) => setCountry(e.target.value as PayCountry)}>
               <option value="AE">UAE</option>

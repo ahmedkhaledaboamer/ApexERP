@@ -13,7 +13,7 @@
  * "<b>x</b>" prints literally.
  */
 
-import type { LetterCode } from './types'
+import type { DigitStyle, LetterCode } from './types'
 
 export interface PlaceholderDef {
   key: string
@@ -82,17 +82,36 @@ export interface RenderResult {
   unknown: string[]
 }
 
+/** Unicode bidi controls used in Arabic (RTL) letters. */
+export const RLM = '\u200F'
+export const FSI = '\u2068'
+export const PDI = '\u2069'
+/** Any strong left-to-right character (Latin letters) or a digit: such a value is isolated inside RTL text. */
+const LTR_CONTENT = /[A-Za-z0-9\u00C0-\u024F]/
+
+export interface RenderOptions {
+  /**
+   * Right-to-left text (Arabic): each inserted value that contains Latin letters or digits is wrapped in a first-strong
+   * isolate (FSI … PDI) so "Emirates NBD" or "APX-0001" can't reorder the Arabic around it, and every non-empty line
+   * starts with a right-to-left mark (RLM) so a line that begins with a Latin value still reads right to left.
+   */
+  rtl?: boolean
+  /** Extra placeholder keys this template may use (e.g. the warning letter's `warning.*`). */
+  keys?: ReadonlySet<string>
+}
+
 /**
  * Fills `{{key}}` placeholders in one pass. Values are inserted literally: a value is never scanned again, so
  * "{{salary.total}}" typed into an addressee can't pull the salary into an employment certificate.
  */
-export function renderTemplate(template: string, values: LetterValues): RenderResult {
+export function renderTemplate(template: string, values: LetterValues, opts: RenderOptions = {}): RenderResult {
   const missing = new Set<string>()
   const unknown = new Set<string>()
+  const known = (key: string) => PLACEHOLDER_KEYS.has(key) || !!opts.keys?.has(key)
   // The optional trailing space is captured so an optional placeholder left empty doesn't leave a double space.
   const withSpace = new RegExp(`${PLACEHOLDER.source}( ?)`, 'g')
   const text = template.replace(withSpace, (whole, key: string, space: string) => {
-    if (!PLACEHOLDER_KEYS.has(key)) {
+    if (!known(key)) {
       unknown.add(key)
       return whole
     }
@@ -103,9 +122,15 @@ export function renderTemplate(template: string, values: LetterValues): RenderRe
       missing.add(key)
       return MISSING_VALUE + space
     }
-    return v + space
+    return (opts.rtl && LTR_CONTENT.test(v) ? `${FSI}${v}${PDI}` : v) + space
   })
-  return { text, missing: [...missing], unknown: [...unknown] }
+  const out = opts.rtl ? text.split('\n').map((line) => (line.trim() ? RLM + line : line)).join('\n') : text
+  return { text: out, missing: [...missing], unknown: [...unknown] }
+}
+
+/** The text without the bidi controls (search, tests, CSV). */
+export function stripBidi(text: string): string {
+  return text.replace(/[\u200E\u200F\u2066-\u2069]/g, '')
 }
 
 /** Placeholders that may legitimately be empty (rendered as nothing, not as a gap). */
@@ -118,11 +143,14 @@ export function placeholdersIn(template: string): string[] {
 
 export const TEMPLATE_MAX = 10_000
 
-/** Problems with a template HR wants to save (empty = fine). */
-export function validateTemplate(body: string, includesSalary: boolean): string[] {
+/** Problems with a template HR wants to save (empty = fine). `optional`: an empty template is allowed (the Arabic one). */
+export function validateTemplate(body: string, includesSalary: boolean, opts: { optional?: boolean } = {}): string[] {
   const problems: string[] = []
   const t = body ?? ''
-  if (!t.trim()) problems.push('The template is empty.')
+  if (!t.trim()) {
+    if (opts.optional) return []
+    problems.push('The template is empty.')
+  }
   if (t.length > TEMPLATE_MAX) problems.push(`The template is too long (at most ${TEMPLATE_MAX.toLocaleString('en-US')} characters).`)
   const used = placeholdersIn(t)
   const unknown = used.filter((k) => !PLACEHOLDER_KEYS.has(k))
@@ -178,6 +206,90 @@ export function letterMoney(n: number | null | undefined): string {
   return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+/* ---------------- Arabic ---------------- */
+
+/** Gulf usage (UAE / KSA HR letters): the Gregorian month names as written in the Gulf. */
+export const AR_MONTHS = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر']
+const ARABIC_INDIC = '٠١٢٣٤٥٦٧٨٩'
+
+/** Western digits (0-9) → Arabic-Indic (٠-٩); the thousands separator "," → "٬" and the decimal "." → "٫" between digits. */
+export function toArabicDigits(s: string): string {
+  return s
+    .replace(/(\d),(?=\d)/g, '$1٬')
+    .replace(/(\d)\.(?=\d)/g, '$1٫')
+    .replace(/\d/g, (d) => ARABIC_INDIC[Number(d)])
+}
+
+/** 2026-11-20 → "20 نوفمبر 2026" (Western digits by default; `arabic` → "٢٠ نوفمبر ٢٠٢٦"). */
+export function letterDateAr(iso: string | null | undefined, digits: DigitStyle = 'western'): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso ?? '')
+  if (!m) return ''
+  const out = `${Number(m[3])} ${AR_MONTHS[Number(m[2]) - 1]} ${m[1]}`
+  return digits === 'arabic' ? toArabicDigits(out) : out
+}
+
+export function letterMoneyAr(n: number | null | undefined, digits: DigitStyle = 'western'): string {
+  const v = letterMoney(n)
+  return digits === 'arabic' ? toArabicDigits(v) : v
+}
+
+/** True when the text has at least one Arabic letter (Arabic names / titles must be written in Arabic). */
+export const hasArabic = (s: string | null | undefined) => /[\u0600-\u06FF]/.test(s ?? '')
+
+export const AR_CURRENCY: Record<string, string> = { AED: 'درهم إماراتي', SAR: 'ريال سعودي', USD: 'دولار أمريكي', EUR: 'يورو', GBP: 'جنيه إسترليني' }
+export const AR_EMPLOYMENT_TYPE: Record<string, string> = { full_time: 'دوام كامل', part_time: 'دوام جزئي', contractor: 'متعاقد', intern: 'متدرب' }
+export const AR_NOC_PURPOSE: Record<string, string> = { travel: 'السفر', visa: 'طلب تأشيرة', other: 'غرض آخر' }
+
+/** Country name in Arabic (ISO-2), e.g. IN → الهند. */
+export function countryNameAr(code: string | null | undefined): string {
+  if (!code) return ''
+  try {
+    return new Intl.DisplayNames(['ar'], { type: 'region' }).of(code.toUpperCase()) ?? code
+  } catch {
+    return code
+  }
+}
+
+/**
+ * Placeholders whose Arabic value has no fallback: without it an Arabic letter can't be issued (422 missing_values).
+ * Every other placeholder falls back to the English value (proper names, the department, the address), or has an
+ * Arabic default (addressee, purpose).
+ */
+export const AR_REQUIRED_SOURCE: Record<string, string> = {
+  'employee.fullName': 'Employee name in Arabic (Employees › edit)',
+  'employee.jobTitle': 'Job title in Arabic (Employees › edit)',
+  'company.legalName': 'Company legal name in Arabic (Accounts & finance › Settings)',
+  'company.name': 'Company legal name in Arabic (Accounts & finance › Settings)',
+}
+
+/* ---------------- verification link (QR) ---------------- */
+
+/**
+ * The public verification address printed as a QR code on every issued letter: `https://<subdomain>.<root>/verify/letter?code=…`
+ * in production; in development (any other host) the current origin with `&workspace=<subdomain>` (the public page
+ * reads the company from the address, never from the code).
+ */
+export function letterVerifyUrl(code: string, at: { subdomain: string; origin: string; rootDomain: string }): string {
+  const q = `code=${encodeURIComponent(code)}`
+  const host = (() => {
+    try {
+      return new URL(at.origin).hostname
+    } catch {
+      return ''
+    }
+  })()
+  if (at.subdomain && host.endsWith(at.rootDomain)) return `https://${at.subdomain}.${at.rootDomain}/verify/letter?${q}`
+  return `${at.origin}/verify/letter?${q}${at.subdomain ? `&workspace=${encodeURIComponent(at.subdomain)}` : ''}`
+}
+
+/** "Noura Al Ketbi" → "Noura K." (the public page never shows a full name). */
+export function maskedName(full: string | null | undefined): string {
+  const parts = String(full ?? '').trim().split(/\s+/).filter(Boolean)
+  if (!parts.length) return ''
+  if (parts.length === 1) return parts[0]
+  return `${parts[0]} ${parts[parts.length - 1].charAt(0).toUpperCase()}.`
+}
+
 /* ---------------- seeded templates ---------------- */
 
 export interface LetterTypeSeed {
@@ -186,10 +298,18 @@ export interface LetterTypeSeed {
   description: string
   includesSalary: boolean
   body: string
+  /** Arabic name and template (same placeholders; Arabic values, RTL). Synthetic: review with HR / legal before use. */
+  nameAr: string
+  bodyAr: string
 }
 
-/** Synthetic English templates (review with HR / legal before use). `country` only changes wording. */
+/** Synthetic English + Arabic templates (review with HR / legal before use). `country` only changes wording. */
 export function defaultLetterTypes(country: string): LetterTypeSeed[] {
+  const ar = arabicTemplates(country)
+  return englishTemplates(country).map((t) => ({ ...t, nameAr: ar[t.code].name, bodyAr: ar[t.code].body }))
+}
+
+function englishTemplates(country: string): Omit<LetterTypeSeed, 'nameAr' | 'bodyAr'>[] {
   const where = country === 'SA' ? 'the Kingdom of Saudi Arabia' : 'the United Arab Emirates'
   return [
     {
@@ -280,4 +400,116 @@ export function defaultLetterTypes(country: string): LetterTypeSeed[] {
       ].join('\n'),
     },
   ]
+}
+
+/**
+ * Formal Arabic templates (synthetic; review with HR / legal before use). Written without gendered verbs (lists and
+ * nominal sentences, «صاحب الشأن»), so one text fits every employee; the salutation (السيد / السيدة) comes from the record.
+ */
+function arabicTemplates(country: string): Record<LetterCode, { name: string; body: string }> {
+  const where = country === 'SA' ? 'المملكة العربية السعودية' : 'دولة الإمارات العربية المتحدة'
+  const closing = 'وتفضلوا بقبول فائق الاحترام والتقدير،'
+  return {
+    salary_certificate: {
+      name: 'شهادة راتب',
+      body: [
+        'إلى: {{addressee}}',
+        '',
+        'تحية طيبة وبعد،',
+        '',
+        'تشهد {{company.legalName}} بأن {{employee.salutation}} {{employee.fullName}} من موظفي الشركة، وفقاً للبيانات التالية:',
+        '',
+        'الجنسية: {{employee.nationality}}',
+        'الرقم الوظيفي: {{employee.employeeNo}}',
+        'المسمى الوظيفي: {{employee.jobTitle}}',
+        'تاريخ الالتحاق بالعمل: {{employee.hireDate}}',
+        '',
+        'وتفاصيل الراتب الشهري الحالي كما يلي:',
+        '',
+        'الراتب الأساسي: {{salary.basic}} {{salary.currency}}',
+        'البدلات: {{salary.allowances}} {{salary.currency}}',
+        'إجمالي الراتب الشهري: {{salary.total}} {{salary.currency}}',
+        '',
+        `وقد أُعطيت هذه الشهادة بناءً على طلب صاحب الشأن لغرض: {{purpose}}، دون أدنى مسؤولية مالية أو قانونية على الشركة، وهي صالحة للاستخدام في ${where}.`,
+        '',
+        closing,
+      ].join('\n'),
+    },
+    salary_transfer: {
+      name: 'خطاب تحويل راتب',
+      body: [
+        'إلى: {{addressee}}',
+        '',
+        'الموضوع: تحويل راتب {{employee.salutation}} {{employee.fullName}}',
+        '',
+        'تحية طيبة وبعد،',
+        '',
+        'نفيدكم بأن {{employee.salutation}} {{employee.fullName}}، الرقم الوظيفي {{employee.employeeNo}}، من موظفي {{company.legalName}} بوظيفة {{employee.jobTitle}} منذ {{employee.hireDate}}، بإجمالي راتب شهري قدره {{salary.total}} {{salary.currency}} (الراتب الأساسي {{salary.basic}} {{salary.currency}}).',
+        '',
+        'وبناءً على طلب صاحب الشأن، تتعهد الشركة بتحويل الراتب الشهري المذكور إلى الحساب المنتهي بالأرقام {{bank.ibanLast4}} لدى مصرفكم، وبعدم تغيير ذلك إلا بعد الحصول على خطاب إخلاء طرف منكم. وفي حال انتهاء الخدمة، تتعهد الشركة بتحويل مستحقات نهاية الخدمة إلى الحساب ذاته.',
+        '',
+        'وقد صدر هذا الخطاب دون أدنى مسؤولية مالية إضافية على الشركة.',
+        '',
+        closing,
+      ].join('\n'),
+    },
+    employment_certificate: {
+      name: 'شهادة عمل',
+      body: [
+        'إلى: {{addressee}}',
+        '',
+        'تحية طيبة وبعد،',
+        '',
+        'تشهد {{company.legalName}} بأن {{employee.salutation}} {{employee.fullName}} من موظفي الشركة، وفقاً للبيانات التالية:',
+        '',
+        'الجنسية: {{employee.nationality}}',
+        'الرقم الوظيفي: {{employee.employeeNo}}',
+        'المسمى الوظيفي: {{employee.jobTitle}}',
+        'نوع التوظيف: {{employee.employmentType}}',
+        'تاريخ الالتحاق بالعمل: {{employee.hireDate}}',
+        '',
+        'وقد أُعطيت هذه الشهادة بناءً على طلب صاحب الشأن لغرض: {{purpose}}، دون أدنى مسؤولية مالية أو قانونية على الشركة.',
+        '',
+        closing,
+      ].join('\n'),
+    },
+    experience_letter: {
+      name: 'شهادة خبرة',
+      body: [
+        'إلى: {{addressee}}',
+        '',
+        'تشهد {{company.legalName}} بأن {{employee.salutation}} {{employee.fullName}}، الرقم الوظيفي {{employee.employeeNo}}، من موظفي الشركة السابقين، وفقاً للبيانات التالية:',
+        '',
+        'فترة العمل: من {{employee.hireDate}} إلى {{employee.exitDate}}',
+        'آخر مسمى وظيفي: {{employee.jobTitle}}',
+        '',
+        'وقد كان الأداء خلال فترة العمل مُرضياً، ونتمنى لصاحب الشأن دوام التوفيق والنجاح.',
+        '',
+        closing,
+      ].join('\n'),
+    },
+    noc: {
+      name: 'شهادة عدم ممانعة',
+      body: [
+        'إلى: {{addressee}}',
+        '',
+        'الموضوع: شهادة عدم ممانعة – {{noc.purpose}}',
+        '',
+        'تحية طيبة وبعد،',
+        '',
+        `تشهد {{company.legalName}} بأن {{employee.salutation}} {{employee.fullName}} من موظفي الشركة في ${where}، وفقاً للبيانات التالية:`,
+        '',
+        'الجنسية: {{employee.nationality}}',
+        'الرقم الوظيفي: {{employee.employeeNo}}',
+        'المسمى الوظيفي: {{employee.jobTitle}}',
+        'تاريخ الالتحاق بالعمل: {{employee.hireDate}}',
+        '',
+        'ولا تمانع الشركة في طلب صاحب الشأن: {{purpose}}، على أن يُستأنف العمل بعد انتهاء المدة المعتمدة.',
+        '',
+        'وقد صدرت هذه الشهادة دون أدنى مسؤولية مالية أو قانونية على الشركة.',
+        '',
+        closing,
+      ].join('\n'),
+    },
+  }
 }

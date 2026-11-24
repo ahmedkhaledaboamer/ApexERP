@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { centerOf, column, mouseDrag, signInAs } from './helpers'
+import { centerOf, column, mouseDrag, setSubscriptionStatus, signInAs } from './helpers'
 
 /**
  * Regression: the task board (columns To do / In progress / Review / Done; mouse and keyboard
@@ -194,14 +194,15 @@ test('→ Done moves the card to Done', async ({ page }) => {
   await expect.poll(async () => (await savedTask(page, title)).status).toBe('done')
 })
 
-test('a failed save rolls the card back and shows the server’s message', async ({ page }) => {
+test('a failed save rolls the card back and says why', async ({ page }) => {
   const title = await boardWithTask(page)
   await page.evaluate(() => {
     ;(window as unknown as { __apexMoveFailureRate: number }).__apexMoveFailureRate = 1
   })
   await dragTo(page, title, 'In progress')
   await expect(page.getByText(`“${title}” wasn’t moved`)).toBeVisible()
-  await expect(page.getByText('The server didn’t save the change')).toBeVisible()
+  // The simulated failure is a 503: server errors show the app's friendly message, never the raw server text.
+  await expect(page.getByText('Something went wrong on our side').first()).toBeVisible()
   await expect(inColumn(page, 'To do', title)).toBeVisible()
   await expect(inColumn(page, 'In progress', title)).toHaveCount(0)
   expect((await savedTask(page, title)).status).toBe('todo')
@@ -209,9 +210,8 @@ test('a failed save rolls the card back and shows the server’s message', async
 
 test('a read-only workspace says why, refuses the drop, and the card stays', async ({ page }) => {
   const title = await boardWithTask(page)
-  // Suspend the subscription through the dev billing simulator panel (refreshes entitlements in place).
-  if (!(await page.locator('#dev-status').isVisible())) await page.locator('#billing-simulator-toggle').click()
-  await page.locator('#dev-status').selectOption('suspended')
+  // Suspend the subscription through the mock's dev billing API (the app reloads its entitlements).
+  await setSubscriptionStatus(page, 'suspended')
   await expect(page.locator('#billing-banner')).toHaveAttribute('data-status', 'suspended')
   await expect(page.locator('#board-hint')).toHaveAttribute('data-can-move', 'false')
   await expect(page.locator('#board-hint')).toContainText('Workspace is read-only')

@@ -22,6 +22,7 @@ import { ServiceDrawer } from '@/modules/services/components/ServiceDrawer'
 import { useServiceActivation } from '@/modules/services/components/useServiceActivation'
 import { DOT } from '@/shared/components/ui/Badge'
 import { useReadOnly } from '@/shared/lib/readOnly'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 type DrawerState = { service: ServiceRow | null } | null
 
@@ -36,6 +37,7 @@ export default function ServiceCatalogPage() {
   const query = useServicesQuery()
   const data = useMemo(() => query.data ?? [], [query.data])
   const [drawer, setDrawer] = useState<DrawerState>(null)
+  useNewParam(() => setDrawer({ service: null }), { when: canEdit })
   const activation = useServiceActivation()
 
   const columns = useMemo(

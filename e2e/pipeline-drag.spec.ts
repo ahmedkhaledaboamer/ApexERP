@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { card, centerOf, column, mouseDrag, signInAs } from './helpers'
+import { card, centerOf, column, mouseDrag, setSubscriptionStatus, signInAs } from './helpers'
 
 /**
  * Regression: dragging leads across the Sales pipeline (mouse and keyboard), every kind of stage
@@ -162,9 +162,8 @@ test('a role without edit access gets a clear message and nothing moves', async 
 
 test('a read-only workspace names the real reason (not "edit access") and nothing moves', async ({ page }) => {
   await openBoard(page, 'u1')
-  // Suspend the subscription through the dev billing simulator panel (refreshes entitlements in place).
-  if (!(await page.locator('#dev-status').isVisible())) await page.locator('#billing-simulator-toggle').click()
-  await page.locator('#dev-status').selectOption('suspended')
+  // Suspend the subscription through the mock's dev billing API (the app reloads its entitlements).
+  await setSubscriptionStatus(page, 'suspended')
   await expect(page.locator('#billing-banner')).toHaveAttribute('data-status', 'suspended')
   await expect(page.locator('#pipeline-hint')).toHaveAttribute('data-can-move', 'false')
   await expect(page.locator('#pipeline-hint')).toContainText('Workspace is read-only')

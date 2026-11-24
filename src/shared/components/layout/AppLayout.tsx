@@ -1,4 +1,3 @@
-import { lazy, Suspense } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { can } from '@/shared/lib/permissions'
 import { useAppDispatch, useAppSelector, useCurrentUser } from '@/store/hooks'
@@ -20,15 +19,8 @@ import { UpgradePromptHost } from '@/modules/billing/components/UpgradePromptHos
 import { useEntitlements } from '@/modules/billing/hooks'
 import { useReadOnly } from '@/shared/lib/readOnly'
 import CancelledPage from '@/modules/billing/pages/CancelledPage'
-
-/**
- * Dev-only billing simulator (simulated clock, status, usage). `import.meta.env.DEV` is statically
- * false in a production build, so this branch and its dynamic import are dropped from the bundle.
- */
-const BillingSimulator =
-  import.meta.env.DEV && import.meta.env.VITE_API_MOCK !== 'false' && import.meta.env.MODE !== 'test'
-    ? lazy(() => import('@/modules/billing/dev/BillingSimulator'))
-    : null
+import { QuietBoundary, RouteErrorBoundary } from './ErrorBoundary'
+import { OfflineBanner } from './OfflineBanner'
 
 /** Sidebar, header, the routed page on the canvas, plus global overlays. */
 export function AppLayout() {
@@ -47,24 +39,39 @@ export function AppLayout() {
     <div className="flex h-full min-h-0 bg-canvas">
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
-        <ImpersonationBanner />
+        <OfflineBanner />
+        <QuietBoundary name="impersonation-banner">
+          <ImpersonationBanner />
+        </QuietBoundary>
         <Header />
-        <BillingBanner />
-        <AnnouncementBanner />
-        <main className="min-h-0 flex-1 overflow-y-auto">{cancelled ? <CancelledPage /> : <Outlet />}</main>
+        <QuietBoundary name="billing-banner">
+          <BillingBanner />
+        </QuietBoundary>
+        <QuietBoundary name="announcement-banner">
+          <AnnouncementBanner />
+        </QuietBoundary>
+        {/* A crashed or unreachable page shows an error card here; the sidebar and header keep working. */}
+        <main className="min-h-0 flex-1 overflow-y-auto">
+          <RouteErrorBoundary>{cancelled ? <CancelledPage /> : <Outlet />}</RouteErrorBoundary>
+        </main>
       </div>
-      <CommandPalette />
+      <QuietBoundary name="command-palette">
+        <CommandPalette />
+      </QuietBoundary>
       <Toaster />
       <SessionTimeout />
-      <WonDialogHost />
-      <TaskDrawerHost />
+      <QuietBoundary name="won-dialog">
+        <WonDialogHost />
+      </QuietBoundary>
+      <QuietBoundary name="task-drawer">
+        <TaskDrawerHost />
+      </QuietBoundary>
       <BillingSync />
       <UpgradePromptHost />
-      {canCreateLead && <LeadQuickAdd open={quickAddOpen} onClose={() => dispatch(quickAddLeadSet(false))} />}
-      {BillingSimulator && (
-        <Suspense fallback={null}>
-          <BillingSimulator />
-        </Suspense>
+      {canCreateLead && (
+        <QuietBoundary name="lead-quick-add">
+          <LeadQuickAdd open={quickAddOpen} onClose={() => dispatch(quickAddLeadSet(false))} />
+        </QuietBoundary>
       )}
     </div>
   )

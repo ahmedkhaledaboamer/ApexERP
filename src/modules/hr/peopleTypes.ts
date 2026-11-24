@@ -167,6 +167,9 @@ export interface EmployeeDetail extends EmployeeRow {
 export interface EmployeeInput {
   fullName: string
   jobTitle: string
+  /** Optional, in Arabic letters ('' clears it). */
+  fullNameAr?: string
+  jobTitleAr?: string
   departmentId: string | null
   managerId: string | null
   email: string

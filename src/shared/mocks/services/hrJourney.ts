@@ -53,6 +53,7 @@ import { assertHrFull, hrAccessOf, hrFullUsers, isIsoDate, logHr, managerUserOf,
 import { assetsHeldBy } from './hrAssets'
 import { offboardingSystemSteps } from './hrJourneySystem'
 import { onProbationOutcome } from './hrPerformanceCore'
+import { policiesAcknowledgedNote } from './hrPolicyAudience'
 
 /**
  * HR › Onboarding & offboarding (docs/API.md › HR › Onboarding & offboarding).
@@ -136,6 +137,9 @@ function autoDone(co: string, e: Tenant<Employee>, action: ItemAction): string |
       const mandatory = hrCourses.filter((c) => c.companyId === co && c.active && c.mandatory)
       return mandatory.length && mandatory.every((c) => enrolledIn(c.id)) ? `Enrolled in ${mandatory.length} mandatory course${mandatory.length === 1 ? '' : 's'}` : null
     }
+    case 'acknowledge_policies':
+      // HR › Policies: every published policy addressed to the employee acknowledged at its current version.
+      return policiesAcknowledgedNote(co, e)
     default:
       // probation_review: ticked by hand or by HR › Performance through completeProbationReviewItem.
       return null

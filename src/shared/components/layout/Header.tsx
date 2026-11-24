@@ -7,32 +7,31 @@ import {
   LogOut,
   Menu as MenuIcon,
   Moon,
-  Plus,
   Search,
   Sun,
-  UserPlus,
   CircleUser,
   IdCard,
-  FileText,
-  CheckSquare,
-  Building2,
   Palette,
   Clock,
   Plane,
+  ClipboardList,
+  HandCoins,
+  Inbox,
 } from 'lucide-react'
+import { useApprovalsInbox } from '@/modules/finance/purchases/approvalsInbox'
 import { planIncludes } from '@/modules/billing/gating'
 import { useGateContext } from '@/modules/billing/hooks'
 import type { Role } from '@/shared/types'
 import { PATHS } from '@/app/paths'
 import { MARKETING_PATHS } from '@/modules/marketing/paths'
 import { switchRole } from '@/modules/auth/api/authApi'
+import { MOCK_API } from '@/modules/auth/constants'
 import { AlertsBell } from '@/modules/alerts/components/AlertsBell'
-import { can } from '@/shared/lib/permissions'
 import { ROLES } from '@/shared/lib/constants'
 import { cn } from '@/shared/lib/utils'
 import { useAppDispatch, useAppSelector, useCurrentUser } from '@/store/hooks'
 import { signedIn, signedOut } from '@/store/authSlice'
-import { commandPaletteSet, mobileNavOpened, quickAddLeadSet, themeToggled } from '@/store/uiSlice'
+import { commandPaletteSet, mobileNavOpened, themeToggled } from '@/store/uiSlice'
 import { Avatar } from '@/shared/components/ui/Avatar'
 import { Button } from '@/shared/components/ui/Button'
 import { Kbd } from '@/shared/components/ui/Kbd'
@@ -40,6 +39,7 @@ import { Menu, MenuItem, MenuLabel, MenuSeparator } from '@/shared/components/ui
 import { useToast } from '@/shared/components/ui/Toast'
 import { WorkspaceSwitcher } from '@/modules/tenancy/components/WorkspaceSwitcher'
 import { navMatch } from './navigation'
+import { NewMenu } from './NewMenu'
 
 /** Top bar: breadcrumbs, global search, "New", notifications, theme and the user menu. */
 export function Header() {
@@ -139,68 +139,16 @@ function Breadcrumbs() {
   )
 }
 
-function NewMenu() {
-  const dispatch = useAppDispatch()
-  const navigate = useNavigate()
-  const user = useCurrentUser()
-  // Sales and tasks are in every plan; the role decides. `write`: nothing to create while read-only.
-  const sales = !!user && can(user.role, 'sales', 'view')
-  const tasks = !!user && can(user.role, 'tasks', 'view')
-  const canLead = !!user && can(user.role, 'sales', 'create')
+/**
+ * "Approvals" with the count of what waits for the caller. Mounted only while the menu is open: the inbox lists are
+ * finance endpoints, so loading them on every page would run the (lazy) finance seed for every employee.
+ */
+function ApprovalsMenuItem({ onSelect }: { onSelect: () => void }) {
+  const approvals = useApprovalsInbox()
   return (
-    <Menu
-      className="w-56"
-      trigger={(props) => (
-        <Button size="md" write {...props}>
-          <Plus />
-          <span className="hidden sm:inline">New</span>
-        </Button>
-      )}
-    >
-      {(close) => (
-        <>
-          <MenuLabel>Create</MenuLabel>
-          {canLead && (
-            <MenuItem
-              icon={<UserPlus />}
-              hint="Lead"
-              onSelect={() => {
-                close()
-                dispatch(quickAddLeadSet(true))
-              }}
-            >
-              New lead
-            </MenuItem>
-          )}
-          {sales && (
-            <MenuItem icon={<Building2 />} hint="Soon" onSelect={close}>
-              New customer
-            </MenuItem>
-          )}
-          {sales && (
-            <MenuItem icon={<FileText />} hint="Soon" onSelect={close}>
-              New quotation
-            </MenuItem>
-          )}
-          {tasks && (
-            <MenuItem icon={<CheckSquare />} hint="Soon" onSelect={close}>
-              New task
-            </MenuItem>
-          )}
-          {/* Everyone may ask the design team (plan module `marketing`; without it the page shows the upgrade state). */}
-          <MenuItem
-            icon={<Palette />}
-            hint="Design"
-            onSelect={() => {
-              close()
-              navigate(`${MARKETING_PATHS.designRequests}?new=1`)
-            }}
-          >
-            New design request
-          </MenuItem>
-        </>
-      )}
-    </Menu>
+    <MenuItem icon={<Inbox />} hint={approvals.count ? String(approvals.count) : undefined} onSelect={onSelect}>
+      Approvals
+    </MenuItem>
   )
 }
 
@@ -210,6 +158,8 @@ function UserMenu() {
   const user = useCurrentUser()
   const toast = useToast()
   const hr = planIncludes(useGateContext().entitlements, 'hr')
+  // Spending self-service for every employee (plan module `accounting`; the Accounts & finance section is for finance roles).
+  const accounting = planIncludes(useGateContext().entitlements, 'accounting')
 
   const roleMutation = useMutation({
     mutationFn: (role: Role) => switchRole(role),
@@ -294,23 +244,56 @@ function UserMenu() {
               </MenuItem>
             </>
           )}
-          <MenuSeparator />
-          <MenuLabel>Demo: view as role</MenuLabel>
-          <div className="max-h-56 overflow-y-auto">
-            {ROLES.map((r) => (
+          {accounting && (
+            <>
               <MenuItem
-                key={r}
-                active={r === user.role}
-                icon={r === user.role ? <Check /> : <span className="block size-4" />}
+                icon={<ClipboardList />}
                 onSelect={() => {
                   close()
-                  if (r !== user.role) roleMutation.mutate(r)
+                  navigate(PATHS.financePurchaseOrderNew)
                 }}
               >
-                {r}
+                Request a purchase
               </MenuItem>
-            ))}
-          </div>
+              <MenuItem
+                icon={<HandCoins />}
+                onSelect={() => {
+                  close()
+                  navigate(`${PATHS.financeExpenses}?tab=claims`)
+                }}
+              >
+                My expense claims
+              </MenuItem>
+              <ApprovalsMenuItem
+                onSelect={() => {
+                  close()
+                  navigate(PATHS.financeApprovals)
+                }}
+              />
+            </>
+          )}
+          {/* Demo role switcher: mock API only (a real backend has no /auth/switch-role). */}
+          {MOCK_API && (
+            <>
+              <MenuSeparator />
+              <MenuLabel>Demo: view as role</MenuLabel>
+              <div className="max-h-56 overflow-y-auto">
+                {ROLES.map((r) => (
+                  <MenuItem
+                    key={r}
+                    active={r === user.role}
+                    icon={r === user.role ? <Check /> : <span className="block size-4" />}
+                    onSelect={() => {
+                      close()
+                      if (r !== user.role) roleMutation.mutate(r)
+                    }}
+                  >
+                    {r}
+                  </MenuItem>
+                ))}
+              </div>
+            </>
+          )}
           <MenuSeparator />
           <MenuItem
             icon={<LogOut />}

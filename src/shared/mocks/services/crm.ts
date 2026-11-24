@@ -9,6 +9,7 @@ import type {
   ContractRow,
   ContractStatus,
   ContractUpdateInput,
+  CustomerCreateInput,
   CustomerDetail,
   CustomerRow,
   CustomerUpdateInput,
@@ -16,7 +17,8 @@ import type {
 import type { CountryCode } from '@/modules/tenancy/types'
 import { can, inScope, scopeOf } from '@/shared/lib/permissions'
 import { formatMobile, isMobile, MOBILE_RULES } from '@/shared/lib/phone'
-import { activities, contacts, customers, leads, notes } from '@/shared/mocks/db'
+import { activities, contacts, customerFromLead, customers, leads, notes } from '@/shared/mocks/db'
+import { recordLeadStatusChange } from '@/shared/mocks/data/leadStatusHistory'
 import { contracts, CREST_SEED_CONTRACT_BASE } from '@/shared/mocks/data/contracts'
 import { services } from '@/shared/mocks/data/services'
 import { companyById } from '@/shared/mocks/data/tenancy'
@@ -24,7 +26,7 @@ import { delay, fail, ownerName } from '@/shared/mocks/server'
 import { automationRulesFor, SYSTEM_STATUS } from '@/shared/mocks/data/lookups'
 import { findInTenant, scoped, stamp, tenantOf, type Tenant } from '@/shared/mocks/tenant'
 import { assertCapacity, noteUsage } from '@/shared/mocks/services/billing'
-import { companyUser, countryOf, salesTeamOf, untenant } from '@/shared/mocks/services/leads'
+import { companyUser, countryOf, findDuplicates, insertLead, normalizeCompany, ownerProblem, salesTeamOf, untenant, validateLeadFields } from '@/shared/mocks/services/leads'
 import { CONTRACT_SETTABLE, CUSTOMER_STATUSES, isOneOf } from '@/shared/domain/enums'
 
 /**
@@ -197,9 +199,11 @@ export async function getCustomer(user: User, id: string): Promise<CustomerDetai
   return delay(detail)
 }
 
-/** Edits status and company details. Owner changes need team or full scope, like leads. */
-export async function updateCustomer(user: User, id: string, input: CustomerUpdateInput): Promise<CustomerRow> {
-  const customer = await customerFor(user, id, true)
+/** Status, emirate, website and address rules shared by create and update. Returns the cleaned website (or undefined); a problem is a 422. */
+async function checkCustomerDetails(
+  user: User,
+  input: Pick<CustomerUpdateInput, 'status' | 'emirate' | 'website' | 'address'>,
+): Promise<string | undefined> {
   if (input.status !== undefined && !isOneOf(CUSTOMER_STATUSES, input.status)) {
     return fail(`Status must be one of ${CUSTOMER_STATUSES.join(', ')}.`, 422)
   }
@@ -208,7 +212,7 @@ export async function updateCustomer(user: User, id: string, input: CustomerUpda
     if (countryOf(user) !== 'AE') return fail('Emirate only applies to companies in the UAE.', 422)
     if (!EMIRATES.includes(input.emirate)) return fail('Pick one of the seven emirates.', 422)
   }
-  let website = input.website?.trim()
+  let website = typeof input.website === 'string' ? input.website.trim() : undefined
   if (website) {
     if (!/^https?:\/\//i.test(website)) website = `https://${website}`
     try {
@@ -218,7 +222,105 @@ export async function updateCustomer(user: User, id: string, input: CustomerUpda
       return fail('Enter a valid website, e.g. https://company.ae.', 422)
     }
   }
-  if (input.address !== undefined && input.address.length > 200) return fail('Keep the address under 200 characters.', 422)
+  if (input.address !== undefined && (typeof input.address !== 'string' || input.address.length > 200)) {
+    return fail('Keep the address under 200 characters.', 422)
+  }
+  return website
+}
+
+/**
+ * POST /customers: adds an existing client directly, without the sales pipeline. Needs Sales edit (like
+ * contacts and contracts). A customer always hangs off a lead (customers.lead_id: contacts, notes and
+ * activities live there), so the server records a backing lead already in the Won status, with the
+ * optional primary contact, and links it: the shape the Won flow leaves behind, without a contract or
+ * projects. A duplicate (a customer with the same name, or a lead with the same name / email / domain)
+ * answers 409: an existing lead is converted with the Won flow instead. The backing lead and its contact
+ * count toward the plan's leads + contacts.
+ */
+export async function createCustomer(user: User, input: CustomerCreateInput): Promise<CustomerRow> {
+  await ensureAccess(user)
+  await ensureWrite(user, 'customers')
+  const co = tenantOf(user)
+  const country = countryOf(user)
+  const body = (input ?? {}) as Partial<CustomerCreateInput>
+  const name = typeof body.name === 'string' ? body.name.trim() : ''
+  if (!name) return fail('Company name is required.', 422)
+  if (name.length > 120) return fail('Keep the company name under 120 characters.', 422)
+  const raw = body.contact && typeof body.contact === 'object' ? body.contact : null
+  const contact = raw
+    ? {
+        name: String(raw.name ?? '').trim(),
+        title: String(raw.title ?? '').trim(),
+        mobile: String(raw.mobile ?? '').trim(),
+        email: String(raw.email ?? '').trim().toLowerCase(),
+        isDecisionMaker: true,
+      }
+    : null
+  const contactList = contact && (contact.name || contact.mobile || contact.email) ? [contact] : []
+  if (contactList.length && !contactList[0].name) return fail('Give the contact a name, or leave the contact empty.', 422)
+  const sourceType = String(body.sourceType ?? '')
+  const industry = String(body.industry ?? '')
+  const subIndustry = body.subIndustry ? String(body.subIndustry) : ''
+  const problem = validateLeadFields(co, country, { company: name, sourceType, industry, subIndustry, contacts: contactList })
+  if (problem) return fail(problem, 422)
+  const website = await checkCustomerDetails(user, body)
+  const ownerId = body.ownerId || user.id
+  const ownerErr = ownerProblem(user, ownerId)
+  if (ownerErr) return fail(ownerErr.replace('leads', 'customers'), companyUser(user, ownerId)?.active ? 403 : 422)
+
+  const key = normalizeCompany(name)
+  const existing = customers.find((c) => c.companyId === co && normalizeCompany(c.name) === key)
+  if (existing) return fail(`${existing.name} is already a customer (${existing.id}).`, 409)
+  const leadMatch = findDuplicates(co, { company: name, emails: contactList.map((c) => c.email), website })[0]
+  if (leadMatch) {
+    return fail(`${leadMatch.company} is already a lead (${leadMatch.leadId}, owned by ${leadMatch.ownerName}). Mark it Won to make it a customer.`, 409)
+  }
+  assertCapacity(co, 'leadsContacts', 1 + contactList.length)
+
+  const now = new Date().toISOString()
+  const lead = insertLead(user, {
+    company: name,
+    sourceType,
+    sourceDetail: 'Added directly as a customer',
+    industry,
+    subIndustry,
+    contacts: contactList,
+    website,
+    ownerId,
+    nextFollowUpDate: null,
+  })
+  const prevStatus = lead.status
+  lead.status = SYSTEM_STATUS.won
+  lead.stageChangedAt = now
+  lead.wonAt = now
+  lead.nextFollowUpDate = null
+  lead.addedAsCustomer = true
+  recordLeadStatusChange(lead, prevStatus, SYSTEM_STATUS.won, { changedBy: user.id, reason: 'Added directly as a customer', at: now })
+
+  const customer = stamp(
+    customerFromLead(lead, { id: `C-${lead.id.slice(2)}`, wonAt: now, country, status: body.status ?? 'active', address: body.address?.trim() ?? '' }),
+    user,
+  )
+  if (customers.some((c) => c.id === customer.id)) customer.id = `C-${lead.id.slice(2)}-${Date.now().toString(36).slice(-3)}`
+  customer.website = website ?? ''
+  customer.emirate = country === 'AE' ? (body.emirate ?? '') : ''
+  customers.push(customer)
+  lead.customerId = customer.id
+  for (const k of contacts) if (k.companyId === co && k.leadId === lead.id) k.customerId = customer.id
+  activities.push(
+    stamp(
+      { id: `A-${lead.id}-customer-${Date.now().toString(36)}`, leadId: lead.id, type: 'system' as const, summary: `Added as a customer by ${user.name}.`, userId: user.id, at: now },
+      user,
+    ),
+  )
+  noteUsage(co)
+  return delay(customerRow(customer))
+}
+
+/** Edits status and company details. Owner changes need team or full scope, like leads. */
+export async function updateCustomer(user: User, id: string, input: CustomerUpdateInput): Promise<CustomerRow> {
+  const customer = await customerFor(user, id, true)
+  const website = await checkCustomerDetails(user, input)
   if (input.ownerId && input.ownerId !== customer.ownerId) {
     const scope = scopeOf(user.role, 'sales')
     if (scope === 'own') return fail('Only managers can reassign customers.', 403)

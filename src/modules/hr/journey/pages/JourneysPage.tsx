@@ -18,6 +18,7 @@ import { useJourneyOptionsQuery, useJourneyScope, useJourneysQuery, useJourneyTe
 import { JOURNEY_KIND_LABEL, OWNER_ROLE_LABEL, type JourneyKind, type TemplateView } from '../types'
 import { ItemLine, JourneyStatusBadge, ProgressBar, journeyPath } from '../components/JourneyBits'
 import { TemplateDrawer } from '../components/TemplateDrawer'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 type Tab = 'journeys' | 'mine' | 'templates'
 
@@ -51,6 +52,7 @@ function JourneysTab({ canManage }: { canManage: boolean }) {
   const [kind, setKind] = useState<JourneyKind | ''>('')
   const [showClosed, setShowClosed] = useState(false)
   const [starting, setStarting] = useState(false)
+  useNewParam(() => setStarting(true), { when: canManage })
   const q = useJourneysQuery()
   const rows = useMemo(() => (q.data ?? []).filter((r) => (!kind || r.kind === kind) && (showClosed || r.status === 'active')), [q.data, kind, showClosed])
   if (q.error) return <HrError error={q.error} onRetry={() => q.refetch()} />
@@ -81,7 +83,7 @@ function JourneysTab({ canManage }: { canManage: boolean }) {
       ) : rows.length === 0 ? (
         <EmptyState icon={<Route />} title="No journeys" body="An onboarding starts when an employee is created as Onboarding (or hired); an offboarding when the status becomes Notice period or Left." />
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-line">
+        <div className="relative overflow-x-auto rounded-lg border border-line">
           <table className="w-full text-[0.8125rem]" aria-label="Journeys">
             <thead className="bg-sunken text-start text-xs text-muted">
               <tr>
@@ -194,7 +196,7 @@ function TemplatesTab() {
       <div className="flex">
         <Button write size="sm" className="ms-auto" onClick={() => setEditing('new')}><Plus />New template</Button>
       </div>
-      <div className="grid gap-3 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         {(q.data ?? []).map((t) => (
           <Card key={t.id}>
             <CardHeader

@@ -12,7 +12,7 @@ import { ACTION_LABEL, ACTION_TONE, entityLabel, fieldLabel } from './auditLabel
 /** One audit entry: who, what, when, and the field-by-field changes. */
 export function AuditEntryDrawer({ entry, onClose }: { entry: AuditEntry | null; onClose: () => void }) {
   return (
-    <Drawer
+    <Drawer variant="sheet"
       open={!!entry}
       onClose={onClose}
       width="lg"

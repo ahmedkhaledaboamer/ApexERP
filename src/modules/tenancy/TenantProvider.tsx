@@ -10,7 +10,7 @@ import { ROOT_DOMAIN, currentWorkspace, onTenantError, setWorkspace } from '@/sh
 import { Button } from '@/shared/components/ui/Button'
 import { getPublicWorkspace, getTenant } from '@/modules/tenancy/api'
 import { useBranding } from '@/modules/tenancy/hooks'
-import { PRODUCT_NAME, applyBranding, applyFavicon, brandTitle } from '@/modules/tenancy/branding'
+import { PRODUCT_NAME, applyBranding, applyFavicon, brandTitle, workspaceFavicon } from '@/modules/tenancy/branding'
 
 /**
  * Routes that don't belong to a workspace screen (platform console, product sign-up, public event
@@ -106,9 +106,9 @@ export function TenantProvider({ children }: { children: ReactNode }) {
     document.title = brandTitle(branding)
   }, [branding])
 
-  // The workspace favicon while signed in to it or on its sign-in page; the product icon elsewhere
-  // (bare domain, platform console, after sign-out).
-  const faviconUrl = platform ? null : (branding.faviconUrl ?? null)
+  // The workspace's tab icon (its favicon, else its logo, else its monogram) while signed in to it or
+  // on its sign-in page; the product icon elsewhere (bare domain, platform console, after sign-out).
+  const faviconUrl = platform ? null : workspaceFavicon(branding)
   useEffect(() => {
     applyFavicon(faviconUrl)
   }, [faviconUrl])

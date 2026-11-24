@@ -122,7 +122,7 @@ describe('chart of accounts', () => {
     expect(() => fin.updateAccount(rashid(), 'ACC-1110', { active: false })).toThrow(expect.objectContaining({ code: 'system_role' }))
     expect(() => fin.updateAccount(rashid(), 'ACC-1110', { systemRole: null })).toThrow(expect.objectContaining({ code: 'system_role' }))
     // Move the cash role to a new account; then the old one (after emptying it) can be deactivated.
-    const petty = fin.createAccount(rashid(), { code: '1115', name: 'Petty cash 2', type: 'asset', parentId: 'ACC-1100' })
+    const petty = fin.createAccount(rashid(), { code: '1118', name: 'Cash box 2', type: 'asset', parentId: 'ACC-1100' })
     expect(() => fin.updateAccount(rashid(), 'ACC-6100', { systemRole: 'cash' })).toThrow(expect.objectContaining({ status: 422 }))
     fin.updateAccount(rashid(), petty.id, { systemRole: 'cash' })
     expect(financeAccounts.find((a) => a.companyId === APEX_ID && a.id === 'ACC-1110')!.systemRole).toBeNull()
@@ -181,8 +181,9 @@ describe('journal', () => {
     const all = fin.listJournal(rashid())
     expect(all.length).toBeGreaterThan(3)
     expect(fin.listJournal(rashid(), { sourceType: 'opening_balance' }).every((r) => r.sourceType === 'opening_balance')).toBe(true)
-    expect(fin.listJournal(rashid(), { accountId: 'ACC-6600' }).length).toBe(1)
-    expect(fin.listJournal(rashid(), { q: 'software' }).length).toBe(1)
+    // Manual entries only: other sections (expenses) also post software costs.
+    expect(fin.listJournal(rashid(), { accountId: 'ACC-6600', sourceType: 'manual' }).length).toBe(1)
+    expect(fin.listJournal(rashid(), { q: 'software', sourceType: 'manual' }).length).toBe(1)
     expect(fin.listJournal(rashid(), { from: '2999-01-01' })).toEqual([])
   })
   it('opening balances post the difference to opening balance equity', () => {

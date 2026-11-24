@@ -201,7 +201,7 @@ export async function getAgingDetail(user: User, customerId: string, q: { asOf?:
   const c = customerOf(co, customerId) ?? notFound()
   const asOf = asOfOf(co, q.asOf)
   const invoices = agingInvoices(co, asOf, c.id)
-    .map(({ customerId: _c, ...r }) => r) // eslint-disable-line @typescript-eslint/no-unused-vars
+    .map(({ customerId: _c, ...r }) => r)
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
   const totals = zero()
   for (const i of invoices) {
@@ -254,7 +254,7 @@ export function statementOf(co: string, customerId: string, from: string, to: st
   let bal = opening
   const lines: StatementLine[] = raw
     .filter((r) => r.date >= from && r.date <= to)
-    .map(({ order: _o, ...r }) => { // eslint-disable-line @typescript-eslint/no-unused-vars
+    .map(({ order: _o, ...r }) => {
       bal = round2(bal + r.debit - r.credit)
       return { ...r, balance: bal }
     })

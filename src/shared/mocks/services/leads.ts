@@ -82,12 +82,20 @@ export function visibleLeads(user: User): Tenant<Lead>[] {
   return scoped(leads, user).filter((l) => inScope(scope, user, l.ownerId, team))
 }
 
+/**
+ * The sales opportunities in scope: visibleLeads without the backing records of customers added
+ * directly (they never went through the pipeline, so they would skew the list, board and win rates).
+ */
+export function pipelineLeads(user: User): Tenant<Lead>[] {
+  return visibleLeads(user).filter((l) => !l.addedAsCustomer)
+}
+
 export async function getLeads(user: User): Promise<LeadRow[]> {
   if (scopeOf(user.role, 'sales') === 'hidden') {
     await delay(null)
     throw new ApiError('Your role has no access to leads.', 403)
   }
-  const rows = visibleLeads(user)
+  const rows = pipelineLeads(user)
     .map(toRow)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   return delay(rows)

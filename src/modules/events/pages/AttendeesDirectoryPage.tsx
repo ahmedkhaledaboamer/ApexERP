@@ -284,7 +284,7 @@ function LeadChip({ person: p }: { person: AttendeePerson }) {
 
 function PersonDrawer({ person: p, onClose }: { person: AttendeePerson | null; onClose: () => void }) {
   return (
-    <Drawer
+    <Drawer variant="sheet"
       open={!!p}
       onClose={onClose}
       title={p?.name ?? ''}

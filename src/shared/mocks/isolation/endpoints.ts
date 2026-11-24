@@ -14,7 +14,7 @@ import { getSessions } from '@/shared/mocks/services/security'
 import { eventAttendees, events } from '@/shared/mocks/data/events'
 import { teamIdsOf } from '@/shared/mocks/selectors/events'
 import { APEX, ADMIN, api, adminToken, other, platformToken, userById, type Co } from './harness'
-import { contactInputMapper, importRowMapper, leadInputMapper } from '@/shared/api/mappers'
+import { contactInputMapper, customerCreateMapper, importRowMapper, leadInputMapper } from '@/shared/api/mappers'
 import { CREATIVE_ENDPOINTS } from './creativeEndpoints'
 import { GROWTH_ENDPOINTS } from './growthEndpoints'
 import { EVENTS_ADVANCED_ENDPOINTS } from './eventsEndpoints'
@@ -29,9 +29,20 @@ import { HR_REPORTS_ENDPOINTS } from './hrReportsEndpoints'
 import { HR_SELF_SERVICE_ENDPOINTS } from './hrSelfServiceEndpoints'
 import { HR_JOURNEY_ENDPOINTS } from './hrJourneyEndpoints'
 import { HR_PERFORMANCE_ENDPOINTS } from './hrPerformanceEndpoints'
+import { HR_ENGAGEMENT_ENDPOINTS } from './hrEngagementEndpoints'
+import { HR_COMPLIANCE_ENDPOINTS } from './hrComplianceEndpoints'
 import { FINANCE_LEDGER_ENDPOINTS } from './financeLedgerEndpoints'
 import { FINANCE_INVOICES_ENDPOINTS } from './financeInvoicesEndpoints'
 import { FINANCE_COLLECTIONS_ENDPOINTS } from './financeCollectionsEndpoints'
+import { FINANCE_PURCHASES_ENDPOINTS } from './financePurchasesEndpoints'
+import { FINANCE_GAPS_ENDPOINTS } from './financeGapsEndpoints'
+import { FINANCE_EXPENSES_ENDPOINTS } from './financeExpensesEndpoints'
+import { FINANCE_BANKING_ENDPOINTS, FINANCE_COMMISSIONS_ENDPOINTS } from './financeBankingEndpoints'
+import { FINANCE_STATEMENTS_ENDPOINTS } from './financeStatementsEndpoints'
+import { FINANCE_BUDGETS_ENDPOINTS, FINANCE_TAX_ENDPOINTS } from './financeTaxEndpoints'
+import { PERFORMANCE_ENDPOINTS, PROFITABILITY_ENDPOINTS } from './profitabilityEndpoints'
+import { INTEGRATIONS_ENDPOINTS } from './integrationsEndpoints'
+import { AI_ENDPOINTS } from './aiEndpoints'
 
 /**
  * THE COVERAGE TABLE of the isolation suite: one entry per registered MSW handler (method + path as
@@ -286,6 +297,7 @@ const DEV_BILLING = 'Dev-only billing simulation (registered only in development
 export const ENDPOINTS: Endpoint[] = [
   /* ---- auth (handlers/auth.ts) ---- */
   { method: 'POST', path: '/auth/login', kind: 'auth', module: 'auth', reason: 'Sign-in: no session yet. The workspace comes from X-Workspace; a user of another workspace is refused (tested in boundary tests).' },
+  { method: 'POST', path: '/auth/refresh', kind: 'auth', module: 'auth', reason: 'Session refresh: authenticated by the refresh token in the body (no access token, it may have expired). Issues tokens only for the token’s own user and company, and only while that user is active and still a member of that company.' },
   { method: 'POST', path: '/auth/login/2fa', kind: 'auth', module: 'auth', reason: 'Second sign-in step: keyed by a random challenge id, no session yet.' },
   { method: 'POST', path: '/auth/switch-role', kind: 'company-write', module: 'auth', sample: () => ({ body: { role: 'Sales Manager' } }), note: 'Demo role switcher: signs in as a user of the same company only.' },
   { method: 'GET', path: '/auth/me', kind: 'company-list', module: 'auth', sample: () => ({}) },
@@ -495,6 +507,7 @@ export const ENDPOINTS: Endpoint[] = [
 
   /* ---- customers, contacts, contracts (handlers/crm.ts) ---- */
   { method: 'GET', path: '/customers', kind: 'company-list', module: 'customers', sample: () => ({}), count: { of: len, expected: ownCount(customers) } },
+  { method: 'POST', path: '/customers', kind: 'company-write', module: 'customers', sample: (co) => ({ body: customerCreateMapper.toApi({ name: `Isolation Customer ${uniq()} LLC`, industry: 'Logistics', sourceType: 'Website', contact: { name: 'Iso Buyer', mobile: mobile(co) } }) }) },
   { method: 'GET', path: '/customers/:id', kind: 'company-item', module: 'customers', sample: (co) => ({ params: { id: customer(co).id } }) },
   { method: 'PATCH', path: '/customers/:id', kind: 'company-item', module: 'customers', sample: (co) => ({ params: { id: customer(co).id }, body: { address_line: 'Isolation Street 1' } }) },
   { method: 'GET', path: '/contacts', kind: 'company-list', module: 'contacts', sample: () => ({}) },
@@ -574,12 +587,33 @@ export const ENDPOINTS: Endpoint[] = [
   ...HR_JOURNEY_ENDPOINTS,
   /* ---- HR › performance reviews (isolation/hrPerformanceEndpoints.ts) ---- */
   ...HR_PERFORMANCE_ENDPOINTS,
+  /* ---- HR › engagement surveys (eNPS) and 360° feedback (isolation/hrEngagementEndpoints.ts) ---- */
+  ...HR_ENGAGEMENT_ENDPOINTS,
+  /* ---- HR › discipline, policies, letter revocation, public letter verification (isolation/hrComplianceEndpoints.ts) ---- */
+  ...HR_COMPLIANCE_ENDPOINTS,
   /* ---- Accounts & finance › ledger core and setup (isolation/financeLedgerEndpoints.ts) ---- */
   ...FINANCE_LEDGER_ENDPOINTS,
   /* ---- Accounts & finance › invoices, credit notes, recurring, ZATCA (isolation/financeInvoicesEndpoints.ts) ---- */
   ...FINANCE_INVOICES_ENDPOINTS,
   /* ---- Accounts & finance › collections: payments, PDC, payment links, receivables, dunning (isolation/financeCollectionsEndpoints.ts) ---- */
   ...FINANCE_COLLECTIONS_ENDPOINTS,
+  /* ---- Accounts & finance › purchases & payables: suppliers, POs, bills, debit notes, bill payments, payables, approval rules (isolation/financePurchasesEndpoints.ts) ---- */
+  ...FINANCE_PURCHASES_ENDPOINTS,
+  /* ---- Accounts & finance › gaps: supplier advances, payment-run bank file, debit-note void, EOSB provision (isolation/financeGapsEndpoints.ts) ---- */
+  ...FINANCE_GAPS_ENDPOINTS,
+  /* ---- Accounts & finance › expenses, expense claims, petty cash (isolation/financeExpensesEndpoints.ts) ---- */
+  ...FINANCE_EXPENSES_ENDPOINTS,
+  /* ---- Accounts & finance › banking, reconciliation, payroll posting; sales commissions (isolation/financeBankingEndpoints.ts) ---- */
+  ...FINANCE_BANKING_ENDPOINTS,
+  ...FINANCE_COMMISSIONS_ENDPOINTS,
+  /* ---- Accounts & finance › financial statements and year-end close (isolation/financeStatementsEndpoints.ts) ---- */
+  ...FINANCE_STATEMENTS_ENDPOINTS,
+  /* ---- Accounts & finance › tax (VAT returns, corporate tax / zakat), budgets, cash-flow forecast (isolation/financeTaxEndpoints.ts) ---- */
+  ...FINANCE_TAX_ENDPOINTS,
+  ...FINANCE_BUDGETS_ENDPOINTS,
+  /* ---- Accounts & finance › profitability; Reports › company performance, reports hub (isolation/profitabilityEndpoints.ts) ---- */
+  ...PROFITABILITY_ENDPOINTS,
+  ...PERFORMANCE_ENDPOINTS,
   { method: 'GET', path: '/public/events/:token', kind: 'public', module: 'events', reason: PUBLIC_EVENT },
   { method: 'POST', path: '/public/events/:token/register', kind: 'public', module: 'events', reason: PUBLIC_EVENT + ' Rate-limited per client and email, honeypot; the attendee and its lead land in the event’s company only.' },
 
@@ -636,7 +670,10 @@ export const ENDPOINTS: Endpoint[] = [
   { method: 'GET', path: '/marketing/ads/providers/:provider/accounts', kind: 'company-list', module: 'marketing/ads', notOwned: ['provider'], sample: () => ({ params: { provider: 'meta' } }) },
   { method: 'PATCH', path: '/marketing/ads/campaigns/:id', kind: 'company-item', module: 'marketing/ads', sample: (co) => ({ params: { id: adCampaign(co).id }, body: { campaign_id: campaign(co).id } }) },
   { method: 'GET', path: '/marketing/analytics', kind: 'company-export', module: 'marketing/analytics', sample: () => ({ query: { preset: 'custom', from: day(-60), to: day(0), compare: 'true' } }) },
-  { method: 'GET', path: '/integrations', kind: 'company-list', module: 'integrations/email', sample: () => ({}) },
+  /* ---- Insights & admin › Integrations (isolation/integrationsEndpoints.ts) ---- */
+  ...INTEGRATIONS_ENDPOINTS,
+  /* ---- Insights & admin › AI assistant (isolation/aiEndpoints.ts) ---- */
+  ...AI_ENDPOINTS,
 
   /* ---- platform console (handlers/platform.ts) ---- */
   { method: 'GET', path: '/platform/me', kind: 'platform', module: 'platform', reason: PLATFORM },

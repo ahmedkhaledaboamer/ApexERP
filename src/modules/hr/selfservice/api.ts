@@ -3,11 +3,22 @@ import { http } from '@/shared/lib/axios'
 import * as m from '@/shared/api/hrSelfServiceMappers'
 import { useEntitlements } from '@/modules/billing/hooks'
 import { useCurrentUser } from '@/store/hooks'
-import type { LetterRequestInput, LetterTypeInput, ProfileChangeInput } from './types'
+import type { BilingualLayout, DigitStyle, LetterLanguage, LetterRequestInput, LetterTypeInput, ProfileChangeInput } from './types'
+import { globalStorage } from '@/shared/lib/storage'
 
 /** HR › Self-service and HR letters (docs/API.md › HR › Self-service, HR letters). snake_case on the wire. */
 
 const enc = encodeURIComponent
+
+/** The browser's random client id (shared with sign-up and the other public pages), sent as X-Client-Id for the rate limiter. */
+function publicClientId(): string {
+  let id = globalStorage.get('client-id')
+  if (!id) {
+    id = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+    globalStorage.set('client-id', id)
+  }
+  return id
+}
 
 export const selfServiceApi = {
   me: async () => m.myHrMapper.fromApi((await http.get<unknown>('/hr/me')).data),
@@ -24,11 +35,22 @@ export const selfServiceApi = {
   letterRequests: async (status?: string) => m.letterRequestRowMapper.fromApiList((await http.get<unknown>(`/hr/letters/requests${status ? `?status=${enc(status)}` : ''}`)).data),
   letterRequest: async (id: string) => m.letterRequestMapper.fromApi((await http.get<unknown>(`/hr/letters/requests/${enc(id)}`)).data),
   requestLetter: async (input: LetterRequestInput) => m.letterRequestMapper.fromApi((await http.post<unknown>('/hr/letters/requests', m.letterRequestInputMapper.toApi(input))).data),
-  decideLetter: async (a: { id: string; action: 'approve' | 'reject' | 'cancel'; reason?: string; overrideReason?: string }) =>
+  decideLetter: async (a: { id: string; action: 'approve' | 'reject' | 'cancel'; reason?: string; overrideReason?: string; language?: LetterLanguage; layout?: BilingualLayout | null; digits?: DigitStyle }) =>
     m.letterRequestMapper.fromApi(
-      (await http.post<unknown>(`/hr/letters/requests/${enc(a.id)}/${a.action}`, m.selfServicePlainMapper.toApi(a.action === 'reject' ? { reason: a.reason } : a.action === 'approve' ? { overrideReason: a.overrideReason ?? '' } : {}))).data,
+      (
+        await http.post<unknown>(
+          `/hr/letters/requests/${enc(a.id)}/${a.action}`,
+          m.selfServicePlainMapper.toApi(a.action === 'reject' ? { reason: a.reason } : a.action === 'approve' ? { overrideReason: a.overrideReason ?? '', ...(a.language ? { language: a.language, layout: a.layout ?? null, digits: a.digits ?? 'western' } : {}) } : {}),
+        )
+      ).data,
     ),
   verify: async (code: string) => m.letterVerificationMapper.fromApi((await http.get<unknown>(`/hr/letters/verify?code=${enc(code)}`)).data),
+  revokeLetter: async (a: { id: string; reason: string }) => m.letterRequestMapper.fromApi((await http.post<unknown>(`/hr/letters/requests/${enc(a.id)}/revoke`, { reason: a.reason })).data),
+  /** Public (no sign-in): the company comes from the address (X-Workspace, or `workspace` from the QR link in development). */
+  publicVerify: async (code: string, workspace?: string | null) =>
+    m.publicLetterVerificationMapper.fromApi(
+      (await http.get<unknown>(`/public/letters/verify?code=${enc(code)}${workspace ? `&workspace=${enc(workspace)}` : ''}`, { headers: { 'X-Client-Id': publicClientId() } })).data,
+    ),
 }
 
 function useKey() {

@@ -148,7 +148,8 @@ async function contextFor(user: User, q: Partial<SalesReportQuery>): Promise<Ctx
   const team = companyTeamIds(user)
   const allowedDepts = departmentsFor(user, scope)
   let owners = ownersFor(user, scope)
-  let list = scoped(leads, user).filter((l) => inScope(scope, user, l.ownerId, team))
+  // Customers added directly never went through the pipeline: kept out of the sales numbers.
+  let list = scoped(leads, user).filter((l) => !l.addedAsCustomer && inScope(scope, user, l.ownerId, team))
   if (q.departmentId) {
     if (scope === 'own') return fail('Your role sees only your own records, so it can’t filter by department.', 403)
     // Another company's department is "doesn't exist", like a missing one.

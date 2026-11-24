@@ -14,6 +14,8 @@ import { StatusBadge } from '@/shared/components/ui/StatusBadge'
 import { paletteItems } from '@/modules/billing/gating'
 import { useGateContext } from '@/modules/billing/hooks'
 import { ALL_NAV_ITEMS } from './navigation'
+import { commonCreateActions, createCommandLabel, searchCreateActions } from './createActions'
+import { useCreateActions, useRunCreateAction } from './useCreateActions'
 
 interface Command {
   id: string
@@ -52,6 +54,8 @@ function Palette({ onClose }: { onClose: () => void }) {
   const theme = useAppSelector((s) => s.ui.theme)
   const canLeads = !!user && can(user.role, 'sales', 'view')
   const leads = useLeadsQuery()
+  const creatable = useCreateActions()
+  const runCreate = useRunCreateAction()
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
   const listRef = useRef<HTMLDivElement>(null)
@@ -74,6 +78,20 @@ function Palette({ onClose }: { onClose: () => void }) {
         icon: <i.icon />,
         run: go(i.to),
       }))
+
+    // "Create …": the same registry as the header "+ New" menu. Empty query: the role's common ones.
+    const createWords = q.split(/\s+/).filter((w) => w && w !== 'create' && w !== 'new' && w !== 'add')
+    const createHits = !q ? commonCreateActions(user?.role, creatable) : createWords.length ? searchCreateActions(creatable, createWords.join(' ')) : creatable
+    const creates: Command[] = createHits.map((a) => ({
+      id: `create-${a.id}`,
+      group: 'Create',
+      label: createCommandLabel(a),
+      icon: <a.icon />,
+      run: () => {
+        onClose()
+        runCreate(a)
+      },
+    }))
 
     const leadHits: Command[] =
       canLeads && q
@@ -117,8 +135,8 @@ function Palette({ onClose }: { onClose: () => void }) {
           ]
         : []),
     ]
-    return [...leadHits, ...pages, ...actions]
-  }, [query, leads.data, canLeads, gate, theme, navigate, onClose, dispatch])
+    return [...leadHits, ...creates, ...pages, ...actions]
+  }, [query, leads.data, canLeads, gate, theme, navigate, onClose, dispatch, creatable, runCreate, user?.role])
 
   useEffect(() => setActive(0), [query])
   useEffect(() => {

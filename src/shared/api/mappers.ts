@@ -22,6 +22,7 @@ import type {
   ContractInput,
   ContractRow,
   ContractUpdateInput,
+  CustomerCreateInput,
   CustomerDetail,
   CustomerRow,
   CustomerUpdateInput,
@@ -339,6 +340,9 @@ export const customerDetailMapper = extendMapper<CustomerDetail>(customerRowMapp
 
 /** PATCH /customers/:id body: status, website, address_line, city, account_manager_id. */
 export const customerUpdateMapper = defineMapper<CustomerUpdateInput>({ fields: CUSTOMER_FIELDS })
+
+/** POST /customers body: the PATCH columns plus name, industry_id, sub_industry_id, source_id and an optional primary `contact`. */
+export const customerCreateMapper = defineMapper<CustomerCreateInput>({ fields: CUSTOMER_FIELDS })
 
 /* ---------------- Quotations (tables quotations + quotation_items) ---------------- */
 

@@ -16,6 +16,7 @@ import { Modal } from '@/shared/components/ui/Modal'
 import { useToast } from '@/shared/components/ui/Toast'
 import { Field, SelectInput, TextInput } from '@/shared/components/form/Field'
 import { IconTile, PageBody, PageHeader } from '@/shared/components/layout/PageHeader'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 const offsetLabel = (n: number) => (n === 0 ? 'On the day' : n < 0 ? `${-n} day${n === -1 ? '' : 's'} before` : `${n} day${n === 1 ? '' : 's'} after`)
 
@@ -27,6 +28,7 @@ export default function EventTemplatesPage() {
   const remove = useDeleteTemplate()
   const toast = useToast()
   const [editing, setEditing] = useState<EventTemplate | 'new' | null>(null)
+  useNewParam(() => setEditing('new'), { when: canManage })
 
   return (
     <>

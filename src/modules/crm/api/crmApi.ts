@@ -6,11 +6,12 @@ import type {
   ContractInput,
   ContractRow,
   ContractUpdateInput,
+  CustomerCreateInput,
   CustomerDetail,
   CustomerRow,
   CustomerUpdateInput,
 } from '@/modules/crm/types'
-import { contactInputMapper, contactRowMapper, customerDetailMapper, customerRowMapper, customerUpdateMapper, contractInputMapper, contractRowMapper } from '@/shared/api/mappers'
+import { contactInputMapper, contactRowMapper, customerCreateMapper, customerDetailMapper, customerRowMapper, customerUpdateMapper, contractInputMapper, contractRowMapper } from '@/shared/api/mappers'
 
 /** CRM API. Scope (own / team / full) is decided by the server from the auth token. */
 
@@ -22,6 +23,11 @@ export async function getCustomers(): Promise<CustomerRow[]> {
 
 export async function getCustomer(id: string): Promise<CustomerDetail> {
   return customerDetailMapper.fromApi((await http.get<unknown>(`/customers/${enc(id)}`)).data)
+}
+
+/** Adds an existing client directly (the server records a backing Won lead for its timeline). */
+export async function createCustomer(input: CustomerCreateInput): Promise<CustomerRow> {
+  return customerRowMapper.fromApi((await http.post<unknown>('/customers', customerCreateMapper.toApi(input))).data)
 }
 
 export async function updateCustomer(id: string, input: CustomerUpdateInput): Promise<CustomerRow> {

@@ -336,7 +336,7 @@ function ConnectionDrawer({ id, onClose, canEdit, integrations }: { id: string |
   const canAct = canEdit && integrations
 
   return (
-    <Drawer
+    <Drawer variant="sheet"
       open={!!id}
       onClose={onClose}
       width="xl"

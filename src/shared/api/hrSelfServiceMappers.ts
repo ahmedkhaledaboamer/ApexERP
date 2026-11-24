@@ -8,6 +8,7 @@ import type {
   LetterVerification,
   MyHr,
   ProfileChangeInput,
+  PublicLetterVerification,
   ProfileChangeRequest,
   SelfServiceInbox,
 } from '@/modules/hr/selfservice/types'
@@ -30,6 +31,7 @@ export const letterRequestRowMapper = deep<LetterRequestRow>()
 export const letterRequestMapper = deep<LetterRequestDetail>()
 export const letterRequestInputMapper = deep<LetterRequestInput>()
 export const letterVerificationMapper = deep<LetterVerification>()
+export const publicLetterVerificationMapper = deep<PublicLetterVerification>()
 export const selfServiceInboxMapper = deep<SelfServiceInbox>()
 /** Small bodies / answers ({ reason }, { override_reason }, { comment }, { id, iban }). */
 export const selfServicePlainMapper = deep<Record<string, unknown>>()

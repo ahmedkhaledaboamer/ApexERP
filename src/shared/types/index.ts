@@ -76,6 +76,11 @@ export interface Lead {
   customerId: string | null
   /** leads.won_at: when the Won flow converted the lead (null / absent until then). */
   wonAt?: string | null
+  /**
+   * leads.added_as_customer: the backing record of a customer added directly (POST /customers), not
+   * a real sales opportunity: kept out of the leads list, the pipeline and the sales numbers.
+   */
+  addedAsCustomer?: boolean
   /** What the company itself offers, as tags (instead of a long free-text field). */
   companyServices: string[]
   /** Catalog services of interest (service ids). */
@@ -169,7 +174,12 @@ export interface Customer {
 }
 
 export interface Session {
+  /** Access token (Authorization: Bearer). */
   token: string
+  /** Long-lived token for POST /auth/refresh (absent for support sessions: they can't be extended). */
+  refreshToken?: string
+  /** ISO time the access token expires; the client refreshes a minute before (app/authSession.ts). */
+  expiresAt?: string
   user: User
   /** The tenant the session belongs to (resolved by the server from the user's membership). */
   tenant: import('@/modules/tenancy/types').Company

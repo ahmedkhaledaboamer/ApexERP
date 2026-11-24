@@ -73,7 +73,7 @@ export default function PublicPayPage() {
                     <p className="text-xs text-muted">Amount due</p>
                     <p className="num text-3xl font-semibold text-ink">{p.currency} {fmt2(p.amountDue)}</p>
                   </div>
-                  {pay.error && <p role="alert" className="rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 py-2 text-[0.8125rem] text-danger-700 dark:text-danger-400">{pay.error.message}</p>}
+                  {pay.error && <p role="alert" className="rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 py-2 text-[0.8125rem] text-danger-700 dark:text-danger-500">{pay.error.message}</p>}
                   <Field id="pay-name" label="Name on card"><TextInput id="pay-name" autoComplete="cc-name" value={card.cardholderName} onChange={(e) => setCard({ ...card, cardholderName: e.target.value })} required /></Field>
                   <Field id="pay-card" label="Card number" hint="Test cards: 4242 4242 4242 4242 succeeds, 4000 0000 0000 0002 is declined.">
                     <TextInput id="pay-card" autoComplete="cc-number" inputMode="numeric" value={card.cardNumber} onChange={(e) => setCard({ ...card, cardNumber: e.target.value })} required />

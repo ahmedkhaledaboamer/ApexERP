@@ -56,6 +56,7 @@ function columnsFor(lookups: LookupsApi, leads: LeadRow[]): KanbanColumn<LeadSta
 export default function LeadsPipelinePage() {
   const user = useCurrentUser()
   const readOnly = useReadOnly()
+  const readOnlyHint = useReadOnlyHint()
   if (!user) return null
   const scope = scopeOf(user.role, 'sales')
   if (scope === 'hidden') {
@@ -68,7 +69,6 @@ export default function LeadsPipelinePage() {
       </PageBody>
     )
   }
-  const readOnlyHint = useReadOnlyHint()
   // Why leads can't be moved right now (null = they can). Shown as the hint and when a drop is refused.
   const blockedReason = !can(user.role, 'sales', 'edit')
     ? `Your role (${user.role}) can view the pipeline but not move leads. Ask a manager or your Company Admin.`

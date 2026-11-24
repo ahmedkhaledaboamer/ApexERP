@@ -106,7 +106,7 @@ export interface Column<T> {
 export function SimpleTable<T>({ rows, columns, label, empty, rowKey }: { rows: T[]; columns: Column<T>[]; label: string; empty: string; rowKey: (row: T, i: number) => string }) {
   if (!rows.length) return <p className="py-4 text-center text-[0.8125rem] text-muted">{empty}</p>
   return (
-    <div className="overflow-x-auto">
+    <div className="relative overflow-x-auto">
       <table className="w-full min-w-[32rem] text-[0.8125rem]" aria-label={label}>
         <thead>
           <tr className="border-b border-line text-start text-xs text-muted">

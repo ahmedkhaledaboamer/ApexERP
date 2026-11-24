@@ -8,6 +8,7 @@ import { Button } from '@/shared/components/ui/Button'
 import { Segmented } from '@/shared/components/ui/Segmented'
 import { IconTile, PageHeader } from '@/shared/components/layout/PageHeader'
 import { EventDrawer } from './EventDrawer'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 type View = 'list' | 'calendar'
 
@@ -19,6 +20,7 @@ export function EventsFrame({ description, children }: { description: ReactNode;
   const [creating, setCreating] = useState(false)
   const view: View = pathname.startsWith(PATHS.eventCalendar) ? 'calendar' : 'list'
   const canCreate = !!user && can(user.role, 'marketing', 'create')
+  useNewParam(() => setCreating(true), { when: canCreate })
   return (
     <>
       <PageHeader

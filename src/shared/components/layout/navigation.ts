@@ -1,6 +1,11 @@
 import {
   BarChart3,
+  HeartPulse,
+  Gavel,
+  FileCheck2,
   Banknote,
+  BadgePercent,
+  Building,
   BookUser,
   ChartPie,
   ScanLine,
@@ -19,6 +24,7 @@ import {
   FileSignature,
   FileSpreadsheet,
   FileText,
+  FileChartColumn,
   FolderKanban,
   GraduationCap,
   Laptop,
@@ -59,6 +65,10 @@ import {
   ListTree,
   BookOpen,
   SlidersHorizontal,
+  Truck,
+  FileInput,
+  Scale,
+  ScrollText,
 } from 'lucide-react'
 import type { ModuleKey, Scope } from '@/shared/types'
 import type { PlanModule } from '@/modules/billing/types'
@@ -508,6 +518,16 @@ export const NAV_SECTIONS: NavSection[] = [
         description: 'Review cycles with goals, self and manager reviews, HR calibration and shared results; probation reviews before probation ends.',
       },
       {
+        label: 'Engagement',
+        icon: HeartPulse,
+        to: PATHS.hrEngagement,
+        module: 'hr',
+        scopes: ['full', 'team'],
+        ready: true,
+        phase: 3,
+        description: 'Engagement surveys and eNPS pulses (anonymous, groups of 5+): response rate, drivers, trends and comment themes. Employees answer from My HR.',
+      },
+      {
         label: 'Company Assets',
         icon: Laptop,
         to: PATHS.hrAssets,
@@ -525,6 +545,26 @@ export const NAV_SECTIONS: NavSection[] = [
         ready: true,
         phase: 3,
         description: 'Profile changes and HR letter requests from My HR in one queue; letter templates and verification codes.',
+      },
+      {
+        label: 'Discipline',
+        icon: Gavel,
+        to: PATHS.hrDiscipline,
+        module: 'hr',
+        scopes: ['full', 'team'],
+        ready: true,
+        phase: 3,
+        description: 'Warnings and disciplinary actions with the employee’s acknowledgement, expiry, escalation, warning letters (EN / AR) and payroll deductions.',
+      },
+      {
+        label: 'Policies',
+        icon: FileCheck2,
+        to: PATHS.hrPolicies,
+        module: 'hr',
+        scopes: ['full', 'team'],
+        ready: true,
+        phase: 3,
+        description: 'Publish company policies, track who acknowledged each version by department, reminders and CSV export.',
       },
       // Keep HR Reports the last HR item.
       {
@@ -544,15 +584,26 @@ export const NAV_SECTIONS: NavSection[] = [
     label: 'Accounts & finance',
     dot: 'bg-success-500',
     items: [
-      // Final order: Finance overview, Invoices, Payments, Receivables, Chart of accounts, Journal, Finance settings (Expenses: next phase).
+      // Final order: Finance overview, Invoices, Payments, Receivables, Suppliers, Purchase orders, Bills, Expenses, Banking, Commissions, Financial statements, (Tax, Budgets & forecast), Profitability, Chart of accounts, Journal, Finance settings.
       { label: 'Finance overview', icon: Landmark, to: PATHS.financeOverview, module: 'accounting', ready: true, end: true, phase: 3, description: 'Cash and bank balances, receivables and overdue, revenue this month vs last, the VAT estimate and the latest journal entries.' },
       { label: 'Invoices', icon: Receipt, to: PATHS.financeInvoices, module: 'accounting', ready: true, phase: 3, description: 'Tax invoices from quotations, contracts and won deals; credit notes, recurring billing, print (bilingual in KSA) and ZATCA e-invoicing data.' },
       { label: 'Payments', icon: Wallet, to: PATHS.financePayments, module: 'accounting', ready: true, phase: 3, description: 'Payments received with allocation to invoices, customer credit, refunds and receipts; post-dated cheques; online payment links.' },
       { label: 'Receivables', icon: HandCoins, to: PATHS.financeReceivables, module: 'accounting', ready: true, phase: 3, description: 'Aging by customer, statements of account, credit limits and automatic payment reminders.' },
+      { label: 'Suppliers', icon: Truck, to: PATHS.financeSuppliers, module: 'accounting', ready: true, phase: 3, description: 'The vendor directory with finance profiles (VAT number, terms, bank details), balances, statements and AP aging.' },
+      // Finance roles only (accounting full / view). Employees request purchases from My HR / the user menu (“Request a purchase”); the route stays plan-gated and the API scopes what each sees.
+      { label: 'Purchase orders', icon: ClipboardList, to: PATHS.financePurchaseOrders, module: 'accounting', ready: true, phase: 3, description: 'Purchase requests with amount-based approvals, printable POs and goods / service receipts.' },
+      { label: 'Bills', icon: FileInput, to: PATHS.financeBills, module: 'accounting', ready: true, phase: 3, description: 'Supplier bills with PO matching, approvals, debit notes, payment runs, payment vouchers and payables aging.' },
+      // Finance roles only. Employees file expense claims from My HR / the user menu (“My expense claims”); the route stays plan-gated (the API scopes the rest).
+      { label: 'Expenses', icon: FileSpreadsheet, to: PATHS.financeExpenses, module: 'accounting', ready: true, phase: 3, description: 'Company expenses with receipts and VAT, employee expense claims reimbursed now or through payroll, petty cash funds, categories and policy.' },
+      { label: 'Banking', icon: Building, to: PATHS.financeBanking, module: 'accounting', ready: true, phase: 3, description: 'Bank and cash accounts, transfers (multi-currency), CSV statement import, reconciliation with bank rules, and payroll postings.' },
+      { label: 'Commissions', icon: BadgePercent, to: PATHS.financeCommissions, module: 'accounting', ready: true, phase: 3, description: 'Commission plans (collected revenue or won deals, tiers by target achievement, caps, clawback), monthly statements approved by the Sales Manager and an Accountant, pushed to payroll.' },
+      { label: 'Financial statements', icon: FileChartColumn, to: PATHS.financeStatements, module: 'accounting', ready: true, phase: 3, description: 'Profit and loss (comparisons, department / project / event / customer filters, 12-month trend), balance sheet, cash flow, general ledger and trial balance from the journal; CSV / Excel / print; year-end close.' },
+      { label: 'Tax', icon: ScrollText, to: PATHS.financeTax, module: 'accounting', ready: true, phase: 3, description: 'VAT returns (UAE FTA VAT 201 / KSA ZATCA) by filing period with drill-down, filing and payment; the UAE corporate tax and KSA zakat estimates with provisions.' },
+      { label: 'Budgets & forecast', icon: Target, to: PATHS.financePlanning, module: 'accounting', ready: true, phase: 3, description: 'Department budgets with approval, budget vs actual with 90 % / 100 % alerts, and the 13-week / 6-month cash-flow forecast. Department heads see their own budget from My HR.' },
+      { label: 'Profitability', icon: Scale, to: PATHS.financeProfitability, module: 'accounting', ready: true, phase: 3, description: 'Project, event and customer profitability (ledger revenue and costs plus allocated labour), DSO, ROI and the department P&L; CSV / Excel.' },
       { label: 'Chart of accounts', icon: ListTree, to: PATHS.financeAccounts, module: 'accounting', ready: true, phase: 3, description: 'Accounts by type with balances, system roles, account ledgers and the country template.' },
       { label: 'Journal', icon: BookOpen, to: PATHS.financeJournal, module: 'accounting', ready: true, phase: 3, description: 'Every posting: filters, manual journal entries, reversals, opening balances and the trial balance.' },
       { label: 'Finance settings', icon: SlidersHorizontal, to: PATHS.financeSettings, module: 'accounting', ready: true, phase: 3, description: 'Fiscal year, VAT registration, invoice defaults, exchange rates and the lock date.' },
-      { label: 'Expenses', icon: FileSpreadsheet, to: '/finance/expenses', module: 'accounting', phase: 3, description: 'Expenses with receipts, vendors and bank accounts.' },
     ],
   },
   {
@@ -563,18 +614,22 @@ export const NAV_SECTIONS: NavSection[] = [
       {
         label: 'Reports',
         icon: BarChart3,
-        to: '/reports',
+        to: PATHS.reportsHub,
         module: 'reports',
+        ready: true,
+        // `/reports/performance` has its own item.
+        end: true,
         phase: 1,
-        description: 'Leads by status, industry and source; conversion; agent performance; target completion. Excel and PDF export.',
+        description: 'Every report by area with favourites and recently viewed; leads by status, industry and source, conversion, agent performance and target completion (Sales reports), scheduled e-mails.',
       },
       {
         label: 'Company performance',
         icon: TrendingUp,
-        to: '/reports/performance',
+        to: PATHS.companyPerformance,
         module: 'reports',
+        ready: true,
         phase: 1,
-        description: 'Management view: sales, projects, overdue tasks and, later, financials.',
+        description: 'Management view: revenue, margin, cash, receivables (finance roles), pipeline, delivery, people, a department scorecard and alerts.',
       },
       {
         label: 'Departments',
@@ -600,8 +655,9 @@ export const NAV_SECTIONS: NavSection[] = [
         to: '/integrations',
         module: 'settings',
         planModule: 'integrations',
+        ready: true,
         phase: 1,
-        description: 'Email and website form now; WhatsApp, ads, calendar and payments in phase 3. Status and sync log.',
+        description: 'Email sending, WhatsApp, website forms, calendars, payment gateways, API keys and webhooks. Status and sync log.',
       },
       {
         label: 'Audit log',
@@ -615,8 +671,9 @@ export const NAV_SECTIONS: NavSection[] = [
         label: 'AI assistant',
         icon: Bot,
         to: '/ai',
-        // Hook point for the AI assistant: gated by useEntitlements().hasModule('ai').
+        // Gated by the plan module `ai` (useEntitlements().hasModule('ai')); every role, the API scopes the answers.
         planModule: 'ai',
+        ready: true,
         phase: 1,
         description: 'Drafts emails, suggests services, summarizes notes. Any change asks for your confirmation first.',
       },

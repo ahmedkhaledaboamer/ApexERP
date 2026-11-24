@@ -106,7 +106,7 @@ function cellText(v: unknown): string {
 
 /** RFC 4180-ish CSV: quoted fields, doubled quotes, commas/newlines inside quotes, ; or tab delimiters. */
 export function parseCsv(text: string): string[][] {
-  const src = text.replace(/^﻿/, '')
+  const src = text.replace(/^\uFEFF/, '')
   const firstLine = src.split(/\r?\n/, 1)[0] ?? ''
   const count = (ch: string) => firstLine.split(ch).length - 1
   const delim = count(';') > count(',') ? ';' : count('\t') > count(',') ? '\t' : ','

@@ -17,6 +17,7 @@ import { runTaskReminders } from '@/shared/mocks/services/taskReminders'
 import { runCreativeReminders } from '@/shared/mocks/services/creativeReminders'
 import { runBoothFollowUps } from '@/shared/mocks/services/eventSections'
 import { runTrainingReminders } from '@/shared/mocks/services/trainingReminders'
+import { runBudgetAlerts } from '@/shared/mocks/services/financeBudgets'
 import { delay, fail, ownerName } from '@/shared/mocks/server'
 import { visibleLeads } from '@/shared/mocks/services/leads'
 import { statusLabelOf } from '@/shared/mocks/lookupChecks'
@@ -222,7 +223,10 @@ const STORED_TYPE: Record<StoredNotification['type'], AlertType> = {
   // Self-service: letter / profile change submitted (HR full), letter issued / rejected and profile change decided (the employee): services/hrLetters.ts, hrSelfService.ts, once per request and event.
   'hr-requests': 'hr',
   // Accounts & finance: bounced cheque, cheque to deposit today, invoice 30 days overdue (services/financeCollections*), once per record and event. Invoices: recurring invoice generated (accounting full), invoice voided (its creator): services/financeInvoiceCore.ts, financeInvoices.ts, once per invoice.
+  // Expenses (services/financeExpenses*.ts): expense / claim needs approval (step approvers), approved / rejected / in payroll / reimbursed (the requester), petty fund below 20% (custodian + accountants), replenished (custodian); once per record and event.
   finance: 'finance',
+  // Integrations: a sync failed (services/integrationsCore.ts addSync), once per integration and company day, to Company Admins.
+  integrations: 'integrations',
 }
 const STORED_SEVERITY: Record<StoredNotification['type'], AlertSeverity> = {
   won: 'info',
@@ -242,6 +246,7 @@ const STORED_SEVERITY: Record<StoredNotification['type'], AlertSeverity> = {
   'hr-journey': 'info',
   'hr-requests': 'info',
   finance: 'warning',
+  integrations: 'danger',
 }
 
 function toAlert(n: StoredNotification): Alert {
@@ -271,6 +276,8 @@ export function alertsFor(user: User, now: Date = clockNow()): Alert[] {
   runCreativeReminders(tenantOf(user), now)
   runBoothFollowUps(tenantOf(user), now)
   runTrainingReminders(tenantOf(user), now)
+  // Accounts & finance › Budgets: 90 % / 100 % of the month's or year-to-date budget (stored once, type finance).
+  runBudgetAlerts(tenantOf(user))
   return [...salesAlerts(user, now), ...taskAlerts(user, now), ...storedFor(user).map(toAlert)].sort((a, b) => b.at.localeCompare(a.at))
 }
 

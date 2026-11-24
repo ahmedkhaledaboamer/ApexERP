@@ -141,8 +141,8 @@ export function RecordPaymentDrawer({ open, onClose, initialCustomerId, initialI
       }
     >
       <div className="space-y-4">
-        {error && <p role="alert" className="rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 py-2 text-[0.8125rem] text-danger-700 dark:text-danger-400">{error}</p>}
-        <div className="grid gap-3 sm:grid-cols-2">
+        {error && <p role="alert" className="rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 py-2 text-[0.8125rem] text-danger-700 dark:text-danger-500">{error}</p>}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field id="pay-customer" label="Customer" required>
             <SelectInput id="pay-customer" value={customerId} onChange={(e) => { setCustomerId(e.target.value); setManual({}) }}>
               <option value="">Select a customer…</option>
@@ -276,7 +276,7 @@ export function PaymentDetailDrawer({ id, onClose, canWrite }: { id: string | nu
         <Skeleton className="h-64" />
       ) : (
         <div className="space-y-5">
-          {error && <p role="alert" className="rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 py-2 text-[0.8125rem] text-danger-700 dark:text-danger-400">{error}</p>}
+          {error && <p role="alert" className="rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 py-2 text-[0.8125rem] text-danger-700 dark:text-danger-500">{error}</p>}
           <div className="flex flex-wrap items-center gap-2">
             <PaymentStatusBadge status={p.status} />
             <Badge tone="neutral">{PAYMENT_METHOD_LABEL[p.method]}</Badge>

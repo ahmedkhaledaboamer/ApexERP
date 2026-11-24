@@ -21,6 +21,7 @@ import { SearchInput } from '@/shared/components/form/Field'
 import { Can } from '@/shared/components/permissions/Can'
 import { IconTile, PageBody, PageHeader } from '@/shared/components/layout/PageHeader'
 import { ColumnPicker, DataTable, FacetFilter, useDataTable, type FacetOption } from '@/shared/components/data-table'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 /** A list row plus its place in the tree and member names (for the avatar group). */
 type Row = DepartmentRow & { order: number; level: number; memberNames: string[] }
@@ -38,6 +39,7 @@ export default function DepartmentsPage() {
   const [drawer, setDrawer] = useState<DrawerState>(null)
   const [moving, setMoving] = useState<DepartmentRow | null>(null)
   const activation = useDepartmentActivation()
+  useNewParam(() => setDrawer({ department: null }), { when: isFull })
 
   const data = useMemo<Row[]>(() => {
     const rows = query.data ?? []

@@ -30,6 +30,11 @@ export interface SignupStartInput {
   mobile: string
   password: string
   acceptTerms: boolean
+  /**
+   * Optional company logo (light mode) as an image data URL, checked with the same rules as
+   * Settings › Branding; null for none (the monogram shows). Becomes branding.logoUrl.
+   */
+  logo?: string | null
   /** Honeypot: hidden from people; bots fill it. Must be empty. */
   website?: string
 }

@@ -474,7 +474,7 @@ function duplicatesOf(co: string, email: string, mobile: string, exclude?: strin
 export function checkDuplicates(user: User, emailRaw: string | null, mobileRaw: string | null, exclude?: string | null): DuplicateCheck {
   requireHrFull(user, 'Only HR can add candidates.')
   const co = tenantOf(user)
-  let mobile = ''
+  let mobile: string
   try {
     mobile = normalizeMobile(str(mobileRaw), co)
   } catch {

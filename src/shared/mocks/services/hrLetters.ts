@@ -12,20 +12,38 @@ import type {
   LetterVerification,
   Letterhead,
   NocPurpose,
+  BilingualLayout,
+  DigitStyle,
+  LetterLanguage,
+  PublicLetterVerification,
 } from '@/modules/hr/selfservice/types'
-import { NOC_PURPOSES, NOC_PURPOSE_LABEL } from '@/modules/hr/selfservice/types'
+import { BILINGUAL_LAYOUTS, LETTER_LANGUAGES, NOC_PURPOSES, NOC_PURPOSE_LABEL } from '@/modules/hr/selfservice/types'
 import {
+  AR_CURRENCY,
+  AR_EMPLOYMENT_TYPE,
+  AR_NOC_PURPOSE,
+  AR_REQUIRED_SOURCE,
   PLACEHOLDERS,
+  countryNameAr,
   defaultLetterTypes,
   letterDate,
+  letterDateAr,
   letterMoney,
+  letterMoneyAr,
   letterReference,
   makeVerificationCode,
+  maskedName,
   normalizeCode,
   renderTemplate,
   validateTemplate,
   type LetterValues,
 } from '@/modules/hr/selfservice/letters'
+import { financeSettings } from '@/shared/mocks/data/financeLedger'
+import { resolveWorkspace } from '@/shared/mocks/data/platform'
+import { subscriptionOf } from '@/shared/mocks/data/subscriptions'
+import { companyModules } from '@/shared/mocks/services/billing'
+import { letterVerifyHits } from '@/shared/mocks/data/hrSelfService'
+import { hitRateLimit } from './rateLimit'
 import { issuerFor } from '@/modules/quotations/lib/company'
 import { countryLabel } from '@/shared/lib/country'
 import { recordAudit } from '@/shared/mocks/data/audit'
@@ -108,8 +126,11 @@ function typeView(co: string, t: LetterTypeRecord, opts: { withBody: boolean; em
     description: t.description,
     body: opts.withBody ? t.body : '',
     includesSalary: t.includesSalary,
+    nameAr: t.nameAr,
+    bodyAr: opts.withBody ? t.bodyAr : '',
+    hasArabic: !!t.bodyAr.trim(),
     active: t.active,
-    isDefault: defaultOf(co, t)?.body === t.body,
+    isDefault: defaultOf(co, t)?.body === t.body && defaultOf(co, t)?.bodyAr === t.bodyAr,
     updatedAt: t.updatedAt,
     updatedByName: t.updatedByName,
     available: reason === null,
@@ -140,8 +161,8 @@ function ownType(ctx: HrCtx, id: string): Tenant<LetterTypeRecord> {
   return t
 }
 
-function templateProblems(body: string, includesSalary: boolean): void {
-  const problems = validateTemplate(body, includesSalary)
+function templateProblems(body: string, includesSalary: boolean, opts: { optional?: boolean; arabic?: boolean } = {}): void {
+  const problems = validateTemplate(body, includesSalary, opts).map((x) => (opts.arabic ? `Arabic template: ${x}` : x))
   if (problems.length) throw invalid(problems.join(' '), 'invalid_template', { problems })
 }
 
@@ -163,6 +184,17 @@ export async function updateLetterType(user: User, id: string, input: LetterType
     templateProblems(body, t.includesSalary)
     patch.body = body
   }
+  if (i.nameAr !== undefined) {
+    const nameAr = str(i.nameAr, 200).replace(/\s+/g, ' ')
+    if (nameAr.length > 80) throw invalid('The Arabic name is too long (80 characters max).', 'name_ar')
+    patch.nameAr = nameAr
+  }
+  if (i.bodyAr !== undefined) {
+    // Optional: an empty Arabic template means the letter is offered in English only.
+    const bodyAr = String(i.bodyAr ?? '').replace(/\r\n/g, '\n')
+    templateProblems(bodyAr, t.includesSalary, { optional: true, arabic: true })
+    patch.bodyAr = bodyAr
+  }
   if (i.active !== undefined) {
     if (typeof i.active !== 'boolean') throw invalid('Active must be true or false.', 'active')
     patch.active = i.active
@@ -179,7 +211,7 @@ export async function resetLetterType(user: User, id: string): Promise<LetterTyp
   requireFull(ctx)
   const t = ownType(ctx, id)
   const d = defaultOf(ctx.co, t)!
-  Object.assign(t, { name: d.name, description: d.description, body: d.body, updatedAt: nowIso(), updatedBy: user.id, updatedByName: user.name })
+  Object.assign(t, { name: d.name, description: d.description, body: d.body, nameAr: d.nameAr, bodyAr: d.bodyAr, updatedAt: nowIso(), updatedBy: user.id, updatedByName: user.name })
   recordAudit(user, { action: 'update', entity: 'hr_letter_type', entityId: t.id, summary: `Reset the letter template “${t.name}” to the default`, changes: [] })
   return delay(typeView(ctx.co, t, { withBody: true }))
 }
@@ -207,6 +239,11 @@ function rowView(ctx: HrCtx, r: Tenant<LetterRequestRecord>): LetterRequestRow {
     purpose: r.purpose,
     nocPurpose: r.nocPurpose,
     languageNote: r.languageNote,
+    language: r.language ?? 'en',
+    layout: r.layout ?? null,
+    digits: r.digits ?? 'western',
+    addresseeAr: r.addresseeAr ?? '',
+    purposeAr: r.purposeAr ?? '',
     onBehalf: r.onBehalf,
     requestedByName: r.requestedByName,
     status: r.status,
@@ -217,8 +254,12 @@ function rowView(ctx: HrCtx, r: Tenant<LetterRequestRecord>): LetterRequestRow {
     overrideReason: r.overrideReason,
     referenceNo: r.letter?.referenceNo ?? null,
     issueDate: r.letter?.issueDate ?? null,
+    revokedAt: r.revokedAt ?? null,
+    revokedByName: r.revokedByName ?? null,
+    revokeReason: r.revokeReason ?? '',
     canDecide: isFull(ctx) && r.status === 'pending' && !own,
     canCancel: r.status === 'pending' && (own || isFull(ctx)),
+    canRevoke: isFull(ctx) && r.status === 'issued',
   }
 }
 
@@ -261,6 +302,18 @@ const nextId = (prefix: string, rows: readonly { id: string }[]) => {
   return `${prefix}${max + 1}`
 }
 
+/** Language, bilingual layout and digit style of a request (validated; Arabic needs the type's Arabic template). */
+function languageOf(i: { language?: unknown; layout?: unknown; digits?: unknown }, t: Pick<LetterTypeRecord, 'bodyAr' | 'name'>): { language: LetterLanguage; layout: BilingualLayout | null; digits: DigitStyle } {
+  const language = (i.language ?? 'en') as LetterLanguage
+  if (!LETTER_LANGUAGES.includes(language)) throw invalid('Pick the letter language: English, Arabic or bilingual.', 'language')
+  if (language !== 'en' && !t.bodyAr.trim()) throw invalid(`${t.name} has no Arabic version yet. Ask HR, or request it in English.`, 'no_arabic_template')
+  const layout = language === 'bilingual' ? ((i.layout ?? 'side_by_side') as BilingualLayout) : null
+  if (layout && !BILINGUAL_LAYOUTS.includes(layout)) throw invalid('Pick side by side or stacked for a bilingual letter.', 'layout')
+  const digits = (i.digits ?? 'western') as DigitStyle
+  if (digits !== 'western' && digits !== 'arabic') throw invalid('Pick Western or Arabic digits.', 'digits')
+  return { language, layout, digits }
+}
+
 /** POST /hr/letters/requests — the employee for themselves, or HR full for an employee (`employee_id`). */
 export async function createLetterRequest(user: User, input: LetterRequestInput | null): Promise<LetterRequestDetail> {
   const ctx = hrCtx(user)
@@ -285,6 +338,7 @@ export async function createLetterRequest(user: User, input: LetterRequestInput 
     nocPurpose = i.nocPurpose as NocPurpose
     if (!purpose) throw invalid('Describe the purpose (e.g. travel to Oman from 10 to 14 March).', 'purpose')
   }
+  const lang = languageOf(i, t)
   const overrideReason = forOther ? str(i.overrideReason, 300) : ''
   if (t.code === 'experience_letter' && !LEAVING.has(e.status) && !overrideReason) {
     throw invalid(
@@ -311,6 +365,9 @@ export async function createLetterRequest(user: User, input: LetterRequestInput 
     purpose,
     nocPurpose,
     languageNote: str(i.languageNote, 300),
+    ...lang,
+    addresseeAr: str(i.addresseeAr, 200),
+    purposeAr: str(i.purposeAr, 300),
     requestedBy: user.id,
     requestedByName: user.name,
     onBehalf: forOther,
@@ -321,6 +378,10 @@ export async function createLetterRequest(user: User, input: LetterRequestInput 
     decidedByName: null,
     decidedAt: null,
     letter: null,
+    revokedAt: null,
+    revokedBy: null,
+    revokedByName: null,
+    revokeReason: '',
     notified: [],
     createdAt: at,
     updatedAt: at,
@@ -346,12 +407,12 @@ function pendingForDecision(ctx: HrCtx, id: string): Tenant<LetterRequestRecord>
 const PLACEHOLDER_LABEL = new Map(PLACEHOLDERS.map((p) => [p.key, p.label]))
 
 /** The company prefix of reference numbers: the employee-number prefix (APX, CRS), else from the subdomain. */
-function prefixOf(co: string): string {
+export function prefixOf(co: string): string {
   const fromNo = hrEmployees.find((e) => e.companyId === co)?.employeeNo.match(/^([A-Z]+)-/)?.[1]
   return fromNo ?? (companyById(co)?.subdomain ?? 'HR').slice(0, 3).toUpperCase()
 }
 
-function letterheadOf(co: string): Letterhead {
+export function letterheadOf(co: string): Letterhead {
   const c = companyById(co) ?? null
   const issuer = issuerFor(c)
   return {
@@ -364,7 +425,13 @@ function letterheadOf(co: string): Letterhead {
     licenseNo: issuer.commercialLicenseNo,
     logoUrl: c?.branding.logoUrl ?? null,
     primaryColor: c?.branding.primaryColor ?? null,
+    legalNameAr: legalNameArOf(co),
   }
+}
+
+/** The company legal name in Arabic: Accounts & finance › Settings (the same name KSA tax invoices print). */
+export function legalNameArOf(co: string): string {
+  return financeSettings.get(co).legalNameAr?.trim() ?? ''
 }
 
 /** The values a template is filled with. Pay and bank only for salary letter types. */
@@ -418,6 +485,78 @@ export function letterValues(co: string, e: Employee, t: Pick<LetterTypeRecord, 
   return v
 }
 
+const DEFAULT_ADDRESSEE = 'To whom it may concern'
+
+/**
+ * The Arabic values of a template: the employee's Arabic name and job title, the company's Arabic legal name (no
+ * fallback: missing ones block the issue), Arabic nationality / country names, dates with Arabic month names, the
+ * currency in words, Arabic-Indic digits when chosen (identifiers — reference, employee number, IBAN digits — stay
+ * Western). Pay and bank only for salary letter types, like the English values.
+ */
+export function letterValuesAr(
+  co: string,
+  e: Employee,
+  t: Pick<LetterTypeRecord, 'includesSalary'>,
+  r: Pick<LetterRequestRecord, 'addressee' | 'purpose' | 'nocPurpose' | 'addresseeAr' | 'purposeAr' | 'digits'>,
+  issue: { referenceNo: string; issueDate: string; signatoryName: string; signatoryTitle: string },
+): LetterValues {
+  const c = companyById(co) ?? null
+  const issuer = issuerFor(c)
+  const digits = r.digits ?? 'western'
+  const legalAr = legalNameArOf(co)
+  const g = e.gender
+  const v: LetterValues = {
+    'employee.fullName': e.fullNameAr ?? '',
+    'employee.salutation': g === 'male' ? 'السيد' : g === 'female' ? 'السيدة' : '',
+    'employee.pronoun': g === 'female' ? 'هي' : 'هو',
+    'employee.possessive': g === 'female' ? 'لها' : 'له',
+    'employee.object': g === 'female' ? 'لها' : 'له',
+    'employee.employeeNo': e.employeeNo,
+    'employee.jobTitle': e.jobTitleAr ?? '',
+    'employee.department': departmentName(co, e.departmentId),
+    'employee.nationality': e.nationality ? countryNameAr(e.nationality) : '',
+    'employee.hireDate': letterDateAr(e.hireDate, digits),
+    'employee.exitDate': letterDateAr(e.exitDate, digits),
+    'employee.employmentType': AR_EMPLOYMENT_TYPE[e.employmentType] ?? '',
+    'company.name': legalAr,
+    'company.legalName': legalAr,
+    'company.address': issuer.addressLines.join('، '),
+    'company.country': c ? countryNameAr(c.regional.country) : '',
+    'letter.date': letterDateAr(issue.issueDate, digits),
+    'letter.referenceNo': issue.referenceNo,
+    addressee: r.addresseeAr || (r.addressee && r.addressee !== DEFAULT_ADDRESSEE ? r.addressee : 'لمن يهمه الأمر'),
+    purpose: r.purposeAr || r.purpose || 'تقديمها لمن يهمه الأمر',
+    'noc.purpose': r.nocPurpose ? AR_NOC_PURPOSE[r.nocPurpose] : '',
+    'signatory.name': issue.signatoryName,
+    'signatory.title': issue.signatoryTitle,
+  }
+  if (t.includesSalary) {
+    const k = activeContract(co, e.id)
+    const p = profileOf(co, e.id)
+    if (k) {
+      const allowances = k.housingAllowance + k.transportAllowance + k.otherAllowance
+      Object.assign(v, {
+        'salary.basic': letterMoneyAr(k.basicSalary, digits),
+        'salary.housing': letterMoneyAr(k.housingAllowance, digits),
+        'salary.transport': letterMoneyAr(k.transportAllowance, digits),
+        'salary.other': letterMoneyAr(k.otherAllowance, digits),
+        'salary.allowances': letterMoneyAr(allowances, digits),
+        'salary.total': letterMoneyAr(k.basicSalary + allowances, digits),
+        'salary.currency': AR_CURRENCY[k.currency] ?? k.currency,
+      })
+    }
+    Object.assign(v, { 'bank.name': p.bankName, 'bank.ibanLast4': p.iban ? p.iban.slice(-4) : '' })
+  }
+  return v
+}
+
+/** Labels of missing values for the 422 message: Arabic ones say where to fill them in. */
+function missingLabels(en: string[], ar: string[]): string {
+  return [...en.map((k) => PLACEHOLDER_LABEL.get(k) ?? k), ...ar.map((k) => AR_REQUIRED_SOURCE[k] ?? `${PLACEHOLDER_LABEL.get(k) ?? k} (Arabic)`)]
+    .filter((x, i, a) => a.indexOf(x) === i)
+    .join(', ')
+}
+
 function uniqueCode(): string {
   for (;;) {
     const code = makeVerificationCode()
@@ -426,7 +565,7 @@ function uniqueCode(): string {
 }
 
 /** POST /hr/letters/requests/:id/approve — HR full (not their own): issues the letter. */
-export async function approveLetterRequest(user: User, id: string, input: LetterDecisionInput & { signatoryTitle?: string } | null): Promise<LetterRequestDetail> {
+export async function approveLetterRequest(user: User, id: string, input: (LetterDecisionInput & { signatoryTitle?: string }) | null): Promise<LetterRequestDetail> {
   const ctx = hrCtx(user)
   const r = pendingForDecision(ctx, id)
   const e = employeeById(ctx.co, r.employeeId)
@@ -437,28 +576,53 @@ export async function approveLetterRequest(user: User, id: string, input: Letter
     throw invalid(`${e.fullName} isn’t in a notice period and hasn’t left: give an override reason to issue an experience letter anyway.`, 'not_leaving')
   }
   if (t.includesSalary && !activeContract(ctx.co, e.id)) throw invalid('There is no active contract to take the salary from.', 'no_contract')
-  templateProblems(t.body, t.includesSalary)
+  // HR may change the language / layout / digits at approval; otherwise the request's choice.
+  const lang = languageOf(
+    {
+      language: input?.language ?? r.language ?? 'en',
+      layout: input?.language !== undefined || input?.layout !== undefined ? input?.layout : r.layout,
+      digits: input?.digits ?? r.digits ?? 'western',
+    },
+    t,
+  )
+  const withEn = lang.language !== 'ar'
+  const withAr = lang.language !== 'en'
+  if (withEn) templateProblems(t.body, t.includesSalary)
+  if (withAr) templateProblems(t.bodyAr, t.includesSalary, { arabic: true })
   const issueDate = ctx.today
   const signatoryTitle = str(input?.signatoryTitle, 120) || user.title || 'Human Resources'
+  const rq = { ...r, digits: lang.digits }
+  const valuesFor = (referenceNo: string) => ({
+    en: letterValues(ctx.co, e, t, rq, { referenceNo, issueDate, signatoryName: user.name, signatoryTitle }),
+    ar: letterValuesAr(ctx.co, e, t, rq, { referenceNo, issueDate, signatoryName: user.name, signatoryTitle }),
+  })
   // Everything is checked before the sequence moves, so a refused approval never burns a reference number.
-  const probe = renderTemplate(t.body, letterValues(ctx.co, e, t, r, { referenceNo: 'X', issueDate, signatoryName: user.name, signatoryTitle }))
-  if (probe.missing.length) {
-    throw invalid(`Fill in before issuing: ${probe.missing.map((k) => PLACEHOLDER_LABEL.get(k) ?? k).join(', ')}.`, 'missing_values', { missing: probe.missing })
+  const pv = valuesFor('X')
+  const missEn = withEn ? renderTemplate(t.body, pv.en).missing : []
+  const missAr = withAr ? renderTemplate(t.bodyAr, pv.ar, { rtl: true }).missing : []
+  if (missEn.length || missAr.length) {
+    throw invalid(`Fill in before issuing: ${missingLabels(missEn, missAr)}.`, 'missing_values', { missing: missEn, missingAr: missAr })
   }
   const referenceNo = letterReference(prefixOf(ctx.co), Number(issueDate.slice(0, 4)), nextLetterSeq(ctx.co, Number(issueDate.slice(0, 4))))
-  const rendered = renderTemplate(t.body, letterValues(ctx.co, e, t, r, { referenceNo, issueDate, signatoryName: user.name, signatoryTitle }))
+  const v = valuesFor(referenceNo)
   const letter: IssuedLetter = {
     title: t.name,
     referenceNo,
     issueDate,
     verificationCode: uniqueCode(),
-    body: rendered.text,
+    body: withEn ? renderTemplate(t.body, v.en).text : '',
+    language: lang.language,
+    layout: lang.layout,
+    digits: lang.digits,
+    titleAr: withAr ? t.nameAr || t.name : null,
+    bodyAr: withAr ? renderTemplate(t.bodyAr, v.ar, { rtl: true }).text : null,
+    issueDateAr: withAr ? letterDateAr(issueDate, lang.digits) : null,
     signatoryName: user.name,
     signatoryTitle,
     letterhead: letterheadOf(ctx.co),
   }
   const at = nowIso()
-  Object.assign(r, { status: 'issued', letter, decidedBy: user.id, decidedByName: user.name, decidedAt: at, updatedAt: at })
+  Object.assign(r, { status: 'issued', letter, ...lang, decidedBy: user.id, decidedByName: user.name, decidedAt: at, updatedAt: at })
   if (override) r.overrideReason = override
   logHr(ctx.co, e.id, user, 'letter', `${t.name} issued (${referenceNo})${r.overrideReason ? ` — override: ${r.overrideReason}` : ''}`, at)
   recordAudit(user, { action: 'create', entity: 'hr_letter', entityId: r.id, summary: `Issued ${t.name} ${referenceNo} to ${e.fullName}`, changes: [] })
@@ -493,16 +657,37 @@ export async function cancelLetterRequest(user: User, id: string): Promise<Lette
   return delay(detailView(ctx, r))
 }
 
+/** POST /hr/letters/requests/:id/revoke — HR full: withdraw an issued letter (reason, audited); its verification shows "revoked". */
+export async function revokeLetter(user: User, id: string, input: { reason?: unknown } | null): Promise<LetterRequestDetail> {
+  const ctx = hrCtx(user)
+  requireFull(ctx)
+  const r = visibleRequest(ctx, id)
+  if (r.status !== 'issued' || !r.letter) throw conflict('Only an issued letter can be revoked.', 'not_issued')
+  const reason = str(input?.reason, 500)
+  if (!reason) throw invalid('Give the reason for revoking the letter.', 'reason_required')
+  const at = nowIso()
+  Object.assign(r, { status: 'revoked', revokedAt: at, revokedBy: user.id, revokedByName: user.name, revokeReason: reason, updatedAt: at })
+  logHr(ctx.co, r.employeeId, user, 'letter', `${r.typeName} ${r.letter.referenceNo} revoked: ${reason}`, at)
+  recordAudit(user, { action: 'security', entity: 'hr_letter', entityId: r.id, summary: `Revoked ${r.typeName} ${r.letter.referenceNo}: ${reason}`, changes: [] })
+  const e = employeeById(ctx.co, r.employeeId)
+  if (e?.userId) notifyOnce(r, 'revoked', [e.userId], { title: `Your ${r.typeName.toLowerCase()} ${r.letter.referenceNo} was revoked`, body: reason, link: `/hr/letters/${encodeURIComponent(r.id)}` })
+  return delay(detailView(ctx, r))
+}
+
+const LETTER_CODE_HINT = 'Enter the 12-character verification code printed on the letter (e.g. ABCD-EFGH-JKLM).'
+
 /** GET /hr/letters/verify?code= — HR full: is this an authentic letter of the company? (Another company's code: not valid.) */
 export async function verifyLetter(user: User, rawCode: string | null): Promise<LetterVerification> {
   const ctx = hrCtx(user)
   requireFull(ctx)
   const code = normalizeCode(rawCode)
-  if (!code) throw invalid('Enter the 12-character verification code printed on the letter (e.g. ABCD-EFGH-JKLM).', 'code')
-  const r = hrLetterRequests.find((x) => x.companyId === ctx.co && x.status === 'issued' && x.letter?.verificationCode === code)
+  if (!code) throw invalid(LETTER_CODE_HINT, 'code')
+  const r = hrLetterRequests.find((x) => x.companyId === ctx.co && (x.status === 'issued' || x.status === 'revoked') && x.letter?.verificationCode === code)
   const e = r ? employeeById(ctx.co, r.employeeId) : undefined
   return delay({
-    valid: !!r,
+    valid: r?.status === 'issued',
+    status: !r ? 'not_found' : r.status === 'issued' ? 'valid' : 'revoked',
+    revokedAt: r?.revokedAt ?? null,
     code,
     referenceNo: r?.letter?.referenceNo ?? null,
     employeeName: e?.fullName ?? null,
@@ -510,5 +695,46 @@ export async function verifyLetter(user: User, rawCode: string | null): Promise<
     typeName: r?.typeName ?? null,
     issueDate: r?.letter?.issueDate ?? null,
     issuedByName: r?.letter?.signatoryName ?? null,
+  })
+}
+
+/* ---------------- public verification (no sign-in) ---------------- */
+
+const PUBLIC_NOT_FOUND = 'No letter with this verification code was issued by this company. Check the code, or ask the company’s HR.'
+/** Lookups per client in 10 minutes (a code is 12 characters of a 32-letter alphabet: guessing is hopeless anyway). */
+export const PUBLIC_VERIFY_LIMIT = 20
+const PUBLIC_VERIFY_WINDOW_MS = 10 * 60_000
+
+/**
+ * GET /public/letters/verify?code= — anyone holding a letter (its QR code). The COMPANY comes from the address the page
+ * was opened on (Host; X-Workspace or ?workspace= in the mock), never from the code: a code is looked up in that company
+ * only, so another company's code answers exactly like an unknown one (404). Unknown / suspended / deleted workspace,
+ * no HR module → the same 404. Answers only the company's name / logo, the letter type, reference, issue date, a masked
+ * employee name and valid / revoked: no pay, no employee number, no personal data. Rate-limited per client.
+ */
+export async function verifyLetterPublic(workspace: string | null, rawCode: string | null, clientKey = 'anonymous'): Promise<PublicLetterVerification> {
+  hitRateLimit(letterVerifyHits, [`letter-verify:${clientKey || 'anonymous'}`], { limit: PUBLIC_VERIFY_LIMIT, windowMs: PUBLIC_VERIFY_WINDOW_MS, what: 'verification' })
+  const code = normalizeCode(rawCode)
+  if (!code) throw invalid(LETTER_CODE_HINT, 'code')
+  const host = (workspace ?? '').trim().toLowerCase()
+  const co = host ? (resolveWorkspace(host)?.company.id ?? null) : null
+  const sub = co ? subscriptionOf(co) : undefined
+  const c = co ? companyById(co) : undefined
+  const r = co ? hrLetterRequests.find((x) => x.companyId === co && (x.status === 'issued' || x.status === 'revoked') && x.letter?.verificationCode === code) : undefined
+  if (!co || !c || !r?.letter || !sub || sub.status === 'deleted' || c.status === 'suspended' || !companyModules(co).includes('hr')) {
+    throw new CodedApiError(PUBLIC_NOT_FOUND, 404, 'letter_not_found')
+  }
+  const e = employeeById(co, r.employeeId)
+  return delay({
+    status: r.status === 'issued' ? 'valid' : 'revoked',
+    code,
+    companyName: c.branding.displayName || c.name,
+    logoUrl: c.branding.logoUrl ?? null,
+    monogram: c.branding.monogram ?? '',
+    typeName: r.letter.title,
+    referenceNo: r.letter.referenceNo,
+    issueDate: r.letter.issueDate,
+    employeeNameMasked: maskedName(e?.fullName),
+    revokedAt: r.status === 'revoked' ? (r.revokedAt ?? null) : null,
   })
 }

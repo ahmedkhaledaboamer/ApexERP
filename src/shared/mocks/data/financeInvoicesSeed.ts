@@ -10,6 +10,7 @@ import { financeRecurring, invoiceRecords } from './financeInvoices'
 import { creditCore, issueCore, newInvoiceRecord, voidCore, type Actor } from '@/shared/mocks/services/financeInvoiceCore'
 import { linesFromContract, linesFromQuotation } from '@/shared/mocks/services/financeInvoiceSources'
 import { invoiceSettingsFor } from '@/shared/mocks/services/financeInvoiceSettings'
+import { historyInvoicesOf } from './financeHistorySeed'
 
 /**
  * Seed of Accounts & finance › Invoices, per company (different customers and data), relative to today so
@@ -38,16 +39,20 @@ interface SeedInvoice {
   void?: { daysAfter: number; reason: string }
   credit?: { daysAfter: number; reason: string; amount: number }
   recurring?: string
+  /** The delivery project it bills (journal lines carry project_id: Accounts & finance › Profitability). */
+  project?: string
+  /** The event it is attributed to (deal sourced at an exhibition, sponsorship of an organised event). */
+  event?: string
 }
 
 const NOTES = 'Thank you for your business.'
 
 const APEX: SeedInvoice[] = [
-  { id: 'INV-1001', customerId: 'C-1021', issuedAgo: 75, quotation: { id: 'Q-1001', pct: 100 } },
-  { id: 'INV-1002', customerId: 'C-1017', issuedAgo: 50, quotation: { id: 'Q-1002', pct: 40, milestone: 'Milestone 1 (kick-off, 40%)' } },
-  { id: 'INV-1003', customerId: 'C-1030', issuedAgo: 20, quotation: { id: 'Q-1003', pct: 100 } },
+  { id: 'INV-1001', customerId: 'C-1021', issuedAgo: 75, project: 'PRJ-104', quotation: { id: 'Q-1001', pct: 100 } },
+  { id: 'INV-1002', customerId: 'C-1017', issuedAgo: 50, project: 'PRJ-103', quotation: { id: 'Q-1002', pct: 40, milestone: 'Milestone 1 (kick-off, 40%)' } },
+  { id: 'INV-1003', customerId: 'C-1030', issuedAgo: 20, project: 'PRJ-106', quotation: { id: 'Q-1003', pct: 100 } },
   { id: 'INV-1004', customerId: 'C-1004', issuedAgo: 25, terms: 15, contract: { id: 'CON-1002', pct: 100 }, recurring: 'REC-1001' },
-  { id: 'INV-1005', customerId: 'C-1012', issuedAgo: 10, quotation: { id: 'Q-1007', pct: 50, milestone: 'Milestone 1 (design sign-off, 50%)' } },
+  { id: 'INV-1005', customerId: 'C-1012', issuedAgo: 10, project: 'PRJ-102', quotation: { id: 'Q-1007', pct: 50, milestone: 'Milestone 1 (design sign-off, 50%)' } },
   {
     id: 'INV-1006', customerId: 'C-1025', issuedAgo: 15, currency: 'USD', rate: 3.6725,
     lines: [
@@ -61,20 +66,21 @@ const APEX: SeedInvoice[] = [
     void: { daysAfter: 2, reason: 'Issued twice by mistake (duplicate of the change-request invoice)' },
   },
   {
-    id: 'INV-1008', customerId: 'C-1012', issuedAgo: 25,
+    id: 'INV-1008', customerId: 'C-1012', issuedAgo: 25, project: 'PRJ-102',
     lines: [
       { description: 'Dashboard support & new reports', serviceId: 'S-402', quantity: 24, unitPrice: 300, discount: 0, taxCodeId: 'VAT5' },
       { description: 'System integration (POS)', serviceId: 'S-501', quantity: 10, unitPrice: 350, discount: 100, taxCodeId: 'VAT5' },
     ],
     credit: { daysAfter: 5, reason: '4 support hours not delivered', amount: 1200 },
   },
-  { id: 'INV-1009', customerId: 'C-1025', issuedAgo: 5, contract: { id: 'CON-1009', pct: 30, milestone: 'Milestone 1 (discovery, 30%)' } },
+  { id: 'INV-1009', customerId: 'C-1025', issuedAgo: 5, project: 'PRJ-105', contract: { id: 'CON-1009', pct: 30, milestone: 'Milestone 1 (discovery, 30%)' } },
   {
     id: 'INV-1010', customerId: 'C-1030', issuedAgo: null,
     lines: [{ description: 'Dashboard support & new reports', serviceId: 'S-402', quantity: 12, unitPrice: 300, discount: 0, taxCodeId: 'VAT5' }],
   },
   { id: 'INV-1011', customerId: 'C-1017', issuedAgo: null, quotation: { id: 'Q-1002', pct: 30, milestone: 'Milestone 2 (UAT, 30%)' } },
   {
+    // Separate data-migration work, billed outside the CRM automation project's budget.
     id: 'INV-1012', customerId: 'C-1021', issuedAgo: 60,
     lines: [{ description: 'CRM data migration & clean-up', serviceId: 'S-202', quantity: 1, unitPrice: 12000, discount: 600, taxCodeId: 'VAT5' }],
   },
@@ -93,7 +99,7 @@ const CREST: SeedInvoice[] = [
     lines: [{ description: 'Customs clearance — 3 shipments', serviceId: 'S-903', quantity: 3, unitPrice: 2200, discount: 0, taxCodeId: 'VAT15' }],
   },
   {
-    id: 'INV-5005', customerId: 'C-5003', vat: VAT_EGD, issuedAgo: 8, currency: 'USD', rate: 3.75,
+    id: 'INV-5005', customerId: 'C-5003', vat: VAT_EGD, issuedAgo: 8, project: 'PRJ-107', currency: 'USD', rate: 3.75,
     lines: [
       { description: 'Supply chain assessment — rig spares', serviceId: 'S-905', quantity: 1, unitPrice: 9300, discount: 300, taxCodeId: 'VAT15' },
       { description: 'Export freight to Bahrain (zero-rated)', quantity: 2, unitPrice: 1850, discount: 0, taxCodeId: 'ZR' },
@@ -139,9 +145,23 @@ function actorOf(id: string): Actor {
 /** 07:00 UTC of a company day (10–11 am in the Gulf), the moment a seed action happened. */
 const atDay = (day: string, minutes = 0) => new Date(Date.parse(`${day}T07:00:00Z`) + minutes * 60_000)
 
-function seedCompany(co: string, rows: SeedInvoice[], now: Date): void {
+/** The year's earlier trading (data/financeHistorySeed.ts): issued in date order with the rows above. */
+function historyRows(co: string, today: string): SeedInvoice[] {
+  const dayMs = 86_400_000
+  return historyInvoicesOf(co, today).map((h) => ({
+    id: h.id,
+    customerId: h.customerId,
+    vat: h.vat || undefined,
+    issuedAgo: Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${h.issueDate}T00:00:00Z`)) / dayMs),
+    lines: h.lines,
+    event: h.eventId ?? undefined,
+  }))
+}
+
+function seedCompany(co: string, ownRows: SeedInvoice[], now: Date): void {
   const s = invoiceSettingsFor(co)
   const today = todayIsoIn(s.timezone, now)
+  const rows = [...ownRows, ...historyRows(co, today)]
   const by = actorOf(CREATOR[co])
   type Ev = { day: string; order: number; run: () => void }
   const events: Ev[] = []
@@ -180,6 +200,8 @@ function seedCompany(co: string, rows: SeedInvoice[], now: Date): void {
       contractId,
       leadId,
       recurringId: r.recurring ?? null,
+      projectId: r.project ?? null,
+      eventId: r.event ?? null,
       billingPct: src.billingPct,
       milestone: src.milestone,
       lines: src.lines,

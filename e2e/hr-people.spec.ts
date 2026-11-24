@@ -38,7 +38,7 @@ test('HR creates an employee + document; the department head sees the number mas
   await page.getByRole('button', { name: 'New employee' }).click()
   const drawer = page.getByRole('dialog')
   await drawer.getByLabel('Full name').fill(name)
-  await drawer.getByLabel('Job title').fill('Field Engineer')
+  await drawer.locator('#emp-title').fill('Field Engineer') // not "Job title in Arabic"
   await drawer.getByLabel('Department').selectOption({ label: 'Delivery' })
   await drawer.getByRole('button', { name: 'Add employee' }).click()
   await expect(page.getByRole('heading', { name })).toBeVisible()

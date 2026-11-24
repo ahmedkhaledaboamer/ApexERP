@@ -3,6 +3,8 @@ import ReactDOM from 'react-dom/client'
 import { AppProviders } from '@/app/providers'
 import { AppRouter } from '@/app/router'
 import { DEV_MOCK_PERSISTENCE } from '@/modules/tenancy/dev'
+import { EnvError, getEnv } from '@/shared/lib/env'
+import { reportError } from '@/shared/lib/reportError'
 import './index.css'
 
 /**
@@ -10,6 +12,9 @@ import './index.css'
  * (and VITE_API_URL) to talk to the real server; the mock code is then never loaded.
  */
 async function enableMocks() {
+  // Validates VITE_API_URL / VITE_API_MOCK (a bad value shows the startup screen, not a blank page).
+  getEnv()
+  // (Inline literal check, not env.apiMock: the bundler can then drop the mock from a real-backend build.)
   if (import.meta.env.VITE_API_MOCK === 'false') return
   const { worker } = await import('@/shared/mocks/browser')
   // Dev only: the billing simulator's /dev/billing/* endpoints (dropped from the production build).
@@ -24,6 +29,11 @@ async function enableMocks() {
     await startMockPersistence(worker)
   }
   await worker.start({ onUnhandledRequest: 'bypass', quiet: true })
+  // Dev / e2e only: window.__apexMock.fail('/leads', 500) makes matching requests fail (error states).
+  if (import.meta.env.DEV) {
+    const { installMockFailureHooks } = await import('@/shared/mocks/devFailures')
+    installMockFailureHooks(worker)
+  }
 }
 
 function renderApp() {
@@ -36,9 +46,10 @@ function renderApp() {
   )
 }
 
-/** The mock API couldn't start (e.g. the service worker failed to register): say so instead of a blank page. */
+/** The app couldn't start (bad configuration, or the mock's service worker failed): say so instead of a blank page. */
 function renderStartupError(error: unknown) {
-  console.error('[startup] The mock API failed to start.', error)
+  reportError(error, { source: 'startup' })
+  const configError = error instanceof EnvError
   const root = document.getElementById('root')!
   root.innerHTML = ''
   const box = document.createElement('div')
@@ -48,8 +59,11 @@ function renderStartupError(error: unknown) {
   title.textContent = 'Apex CRM couldn’t start'
   title.style.cssText = 'margin:0 0 0.5rem;font-size:1.125rem'
   const text = document.createElement('p')
-  text.textContent =
-    'The demo API (a service worker) didn’t start. Reload the page. If it keeps happening, open DevTools › Application › Service workers, unregister mockServiceWorker.js and reload.'
+  text.textContent = configError
+    ? 'The app is misconfigured (environment variables). Fix the values below in .env and rebuild.'
+    : import.meta.env.VITE_API_MOCK !== 'false'
+      ? 'The demo API (a service worker) didn’t start. Reload the page. If it keeps happening, open DevTools › Application › Service workers, unregister mockServiceWorker.js and reload.'
+      : 'Something went wrong while starting. Reload the page.'
   text.style.cssText = 'margin:0 0 1rem;color:#52525b'
   const detail = document.createElement('pre')
   detail.textContent = error instanceof Error ? error.message : String(error)

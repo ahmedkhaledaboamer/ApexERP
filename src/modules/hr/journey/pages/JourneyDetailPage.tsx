@@ -91,7 +91,7 @@ function Detail({ j }: { j: JourneyDetail }) {
             {j.finishBlockers.join(' · ')}
           </p>
         )}
-        <div className="grid gap-3 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
           {groups.map((g) => (
             <Card key={g.role}>
               <CardHeader title={OWNER_ROLE_LABEL[g.role]} description={`${g.items.filter((i) => i.status === 'done').length}/${g.items.length} done`} />

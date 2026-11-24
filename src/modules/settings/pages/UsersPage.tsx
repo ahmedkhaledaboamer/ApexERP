@@ -36,6 +36,7 @@ import { Menu, MenuItem, MenuSeparator } from '@/shared/components/ui/Menu'
 import { StatCard } from '@/shared/components/ui/StatCard'
 import { SearchInput } from '@/shared/components/form/Field'
 import { ColumnPicker, DataTable, FacetFilter, useDataTable, type FacetOption } from '@/shared/components/data-table'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 type DrawerState = { open: false } | { open: true; user: SettingsUserRow | null }
 
@@ -46,6 +47,7 @@ export default function UsersPage() {
   const data = useMemo(() => query.data ?? [], [query.data])
   const [search, setSearch] = useState('')
   const [drawer, setDrawer] = useState<DrawerState>({ open: false })
+  useNewParam(() => setDrawer({ open: true, user: null }), { when: canEdit })
   const [statusFor, setStatusFor] = useState<SettingsUserRow | null>(null)
   const departments = useDepartmentsQuery(true)
   const headOf = useMemo(() => headsIndex(departments.data ?? []), [departments.data])

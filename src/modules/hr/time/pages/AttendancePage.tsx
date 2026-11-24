@@ -369,7 +369,7 @@ function SheetView() {
           Export Excel
         </Button>
       </div>
-      <div className="overflow-x-auto rounded-xl border border-line bg-surface">
+      <div className="relative overflow-x-auto rounded-xl border border-line bg-surface">
         <table className="text-[0.75rem]" aria-label={`Attendance sheet ${monthLabel(s.month)}`}>
           <thead>
             <tr className="border-b border-line text-muted">

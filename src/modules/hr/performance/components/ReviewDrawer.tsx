@@ -23,6 +23,7 @@ import {
   type Scores,
 } from '../types'
 import { RatingText, StageBadge } from './bits'
+import { ReviewFeedbackPanel } from '@/modules/hr/engagement/components/RoundPanels'
 
 /**
  * One review, shaped by what the caller may see and do (the API's `viewer` and `can`):
@@ -58,6 +59,8 @@ function ReviewBody({ d }: { d: ReviewDetail }) {
       {d.template.goalsEnabled && <GoalsSection d={d} />}
       {d.template.selfReview && <SelfSection d={d} />}
       <ManagerSection d={d} />
+      {/* 360° feedback (HR › Engagement module): read-only summary for the reviewer / HR, the employee once shared. */}
+      <ReviewFeedbackPanel reviewId={d.id} />
       {(d.can.calibrate || d.can.share || d.calibration) && <HrSection d={d} />}
       {(d.can.acknowledge || d.acknowledgement) && <AckSection d={d} />}
       {d.salesKpis && (

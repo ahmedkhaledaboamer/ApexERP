@@ -13,6 +13,7 @@ import { Button } from '@/shared/components/ui/Button'
 import { SearchInput } from '@/shared/components/form/Field'
 import { IconTile, PageBody, PageHeader } from '@/shared/components/layout/PageHeader'
 import { ColumnPicker, DataTable, FacetFilter, useDataTable } from '@/shared/components/data-table'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 type Action = { kind: 'assign' | 'return' | 'lost' | 'edit'; asset: AssetRow } | null
 
@@ -25,6 +26,7 @@ export default function AssetsPage() {
   const [statuses, setStatuses] = useState<string[]>([])
   const [categories, setCategories] = useState<string[]>([])
   const [creating, setCreating] = useState(false)
+  useNewParam(() => setCreating(true), { when: canManage })
   const [action, setAction] = useState<Action>(null)
   const viewing = params.get('asset')
   const all = useMemo(() => query.data ?? [], [query.data])

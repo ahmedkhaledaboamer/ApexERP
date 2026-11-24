@@ -32,7 +32,7 @@ export function AccountTypeBadge({ type }: { type: AccountType }) {
 /** A plain table (ledger lists are short enough; no column picker). */
 export function SimpleTable({ label, head, children, className, foot }: { label: string; head: ReactNode; children: ReactNode; className?: string; foot?: ReactNode }) {
   return (
-    <div className={cn('overflow-x-auto rounded-xl border border-line bg-surface', className)}>
+    <div className={cn('relative overflow-x-auto rounded-xl border border-line bg-surface', className)}>
       <table className="w-full text-[0.8125rem]" aria-label={label}>
         <thead className="border-b border-line bg-sunken/60 text-start text-xs text-muted">{head}</thead>
         <tbody className="divide-y divide-line">{children}</tbody>

@@ -16,6 +16,8 @@ import { logisticsSourceOf } from '@/shared/mocks/data/eventLogistics'
 import { sponsorshipIncomeOf } from '@/shared/mocks/data/eventSponsors'
 import { lineVendorId, lineVendorView, vendorsToRateOf } from '@/shared/mocks/services/eventLibraryCore'
 import { CodedApiError } from '@/shared/mocks/tenant'
+import { scopeOf } from '@/shared/lib/permissions'
+import { billedByLine, lineCostOf, type LineBilled } from './financeEventCosts'
 
 /**
  * Budget lines, the campaign link and ROI (docs/API.md › Events › Budget & ROI).
@@ -45,13 +47,28 @@ function marketingIn(companyId: string): boolean {
 const linesOf = (e: Pick<Tenant<EventRecord>, 'id' | 'companyId'>) =>
   eventBudgetLines.filter((l) => l.eventId === e.id && l.companyId === e.companyId).sort((a, b) => BUDGET_CATEGORIES.indexOf(a.category) - BUDGET_CATEGORIES.indexOf(b.category) || a.createdAt.localeCompare(b.createdAt))
 
-function lineView(e: Tenant<EventRecord>, l: Tenant<BudgetLineRecord>): BudgetLine {
+function lineView(e: Tenant<EventRecord>, l: Tenant<BudgetLineRecord>, billed: LineBilled | undefined, showBills: boolean): BudgetLine {
   const posted = !!e.campaignId && eventCostLinks.some((k) => k.companyId === e.companyId && k.lineId === l.id && k.campaignId === e.campaignId)
-  return { id: l.id, category: l.category, note: l.note, planned: l.planned, actual: l.actual, posted, source: logisticsSourceOf(e.companyId, l.id), ...lineVendorView(e.companyId, l.vendorId) }
+  return {
+    id: l.id,
+    category: l.category,
+    note: l.note,
+    planned: l.planned,
+    actual: l.actual,
+    posted,
+    source: logisticsSourceOf(e.companyId, l.id),
+    ...lineVendorView(e.companyId, l.vendorId),
+    billed: billed?.billed ?? 0,
+    bills: showBills ? (billed?.bills ?? []).map((b) => ({ ...b })) : [],
+  }
 }
 
 export function budgetOf(e: Tenant<EventRecord>, viewer: User): EventBudget {
   const lines = linesOf(e)
+  // Billed cost (SEAM with Accounts & finance › Bills): amounts for every budget viewer; bill links only for users who
+  // can open bills (accounting full / view).
+  const billed = billedByLine(e.companyId, e.id)
+  const showBills = scopeOf(viewer.role, 'accounting') !== 'hidden'
   const campaign = e.campaignId ? campaigns.find((c) => c.id === e.campaignId && c.companyId === e.companyId) : undefined
   const actualTotal = round2(lines.reduce((s, l) => s + l.actual, 0))
   const postedTotal = campaign
@@ -62,7 +79,10 @@ export function budgetOf(e: Tenant<EventRecord>, viewer: User): EventBudget {
       )
     : 0
   return {
-    lines: lines.map((l) => lineView(e, l)),
+    lines: lines.map((l) => lineView(e, l, billed.perLine.get(l.id), showBills)),
+    billedTotal: round2(lines.reduce((s, l) => s + (billed.perLine.get(l.id)?.billed ?? 0), 0)),
+    unlinkedBilled: billed.unlinked,
+    costTotal: round2(lines.reduce((s, l) => s + lineCostOf(l.actual, billed.perLine.get(l.id)?.billed ?? 0), 0)),
     plannedTotal: round2(lines.reduce((s, l) => s + l.planned, 0)),
     actualTotal,
     budget: e.budget,

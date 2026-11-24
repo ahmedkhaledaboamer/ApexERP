@@ -95,11 +95,11 @@ export function approvedLeaveOn(ctx: Pick<HrCtx, 'co' | 'weekend'>, holidays: Ma
 
 const entriesOf = (co: string, employeeId: string) => hrAttendance.filter((e) => e.companyId === co && e.employeeId === employeeId)
 const strip = (e: Tenant<AttendanceEntry>): AttendanceEntry => {
-  const { companyId: _c, ...rest } = e // eslint-disable-line @typescript-eslint/no-unused-vars
+  const { companyId: _c, ...rest } = e
   return rest
 }
 const plainShift = (s: ShiftRecord & { companyId?: string }): Shift => {
-  const { companyId: _c, ...rest } = s as ShiftRecord & { companyId: string } // eslint-disable-line @typescript-eslint/no-unused-vars
+  const { companyId: _c, ...rest } = s as ShiftRecord & { companyId: string }
   return rest
 }
 
@@ -493,7 +493,7 @@ function canDecideCorrection(ctx: HrCtx, c: CorrectionRecord, emp: Tenant<Employ
 
 function toCorrection(ctx: HrCtx, c: Tenant<CorrectionRecord>): AttendanceCorrection {
   const emp = employeeById(ctx.co, c.employeeId)
-  const { companyId: _c, ...rest } = c // eslint-disable-line @typescript-eslint/no-unused-vars
+  const { companyId: _c, ...rest } = c
   return {
     ...rest,
     employeeName: emp?.fullName ?? '',

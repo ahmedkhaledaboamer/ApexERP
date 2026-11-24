@@ -35,6 +35,7 @@ import { SearchInput } from '@/shared/components/form/Field'
 import { PageBody, PageHeader } from '@/shared/components/layout/PageHeader'
 import { DataTable, FacetFilter, useDataTable } from '@/shared/components/data-table'
 import { KanbanBoard, KanbanCard } from '@/shared/components/kanban'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 type View = 'calendar' | 'board' | 'list'
 type CalView = 'month' | 'week'
@@ -77,6 +78,7 @@ function ContentCalendar() {
   const [filters, setFilters] = useState<Filters>(NO_FILTERS)
   const [search, setSearch] = useState('')
   const [creating, setCreating] = useState<{ date?: string } | null>(null)
+  useNewParam(() => setCreating({}), { when: canEdit })
 
   const setParam = useCallback(
     (updates: Record<string, string | null>) =>

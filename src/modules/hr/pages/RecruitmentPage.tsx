@@ -17,6 +17,7 @@ import { Tabs } from '@/shared/components/ui/Tabs'
 import { useToast } from '@/shared/components/ui/Toast'
 import { IconTile, PageBody, PageHeader } from '@/shared/components/layout/PageHeader'
 import { fmtDate, fmtMoney } from '@/shared/lib/utils'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 type Tab = 'openings' | 'candidates' | 'interviews'
 
@@ -39,6 +40,8 @@ export default function RecruitmentPage() {
   const setTab = (t: Tab) => setParams({ tab: t }, { replace: true })
   const openOpening = (id: string | null) => setParams(id ? { opening: id } : { tab }, { replace: false })
   const [creating, setCreating] = useState<'opening' | 'candidate' | null>(null)
+  useNewParam(() => setCreating('opening'), { kind: 'opening', when: scope === 'full' || scope === 'team' })
+  useNewParam(() => setCreating('candidate'), { kind: 'candidate', when: scope === 'full' })
   const openings = useOpenings(scope === 'full' || scope === 'team')
 
   if (openingId) return <OpeningView id={openingId} onBack={() => openOpening(null)} />
@@ -214,7 +217,7 @@ function OpeningView({ id, onBack }: { id: string; onBack: () => void }) {
   const [adding, setAdding] = useState(false)
   const back = (
     <Button variant="ghost" size="sm" onClick={onBack}>
-      <ArrowLeft />
+      <ArrowLeft className="rtl:rotate-180" />
       All openings
     </Button>
   )

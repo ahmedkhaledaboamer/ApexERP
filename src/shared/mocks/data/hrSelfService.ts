@@ -1,10 +1,11 @@
 import type { EmergencyContact, EmployeeAddress } from '@/modules/hr/peopleTypes'
-import type { IssuedLetter, LetterCode, LetterStatus, NocPurpose, ProfileChangeStatus } from '@/modules/hr/selfservice/types'
+import type { BilingualLayout, DigitStyle, IssuedLetter, LetterCode, LetterLanguage, LetterStatus, NocPurpose, ProfileChangeStatus } from '@/modules/hr/selfservice/types'
 import { defaultLetterTypes } from '@/modules/hr/selfservice/letters'
 import type { Tenant } from '@/shared/mocks/tenant'
 import { APEX_ID, CREST_ID, companyById } from '@/shared/mocks/data/tenancy'
 import { registerArray, registerObject } from '@/shared/mocks/persist/registry'
 import { hrProfiles } from '@/shared/mocks/data/hrPeople'
+import type { RateHit } from '@/shared/mocks/services/rateLimit'
 
 /**
  * HR › Self-service and HR letters: the stores behind services/hrSelfService.ts and services/hrLetters.ts
@@ -13,9 +14,10 @@ import { hrProfiles } from '@/shared/mocks/data/hrPeople'
  *   hr.profileChanges    an employee's request to change their emergency contact / address / mobile / bank account,
  *                        decided by HR full. The proposed IBAN is stored in full (a real backend encrypts it) and is
  *                        served masked, like the profile's; only the HR-full reveal answers it in full.
- *   hr.letterTypes       per company: the five letter types with their editable template text
+ *   hr.letterTypes       per company: the five letter types with their editable template text (English + Arabic)
  *   hr.letterRequests    requests (by the employee or by HR on their behalf) and, once issued, the frozen letter
- *                        (reference number, verification code, rendered text, letterhead, signatory)
+ *                        (reference number, verification code, rendered text in the chosen language(s), letterhead,
+ *                        signatory); HR may revoke an issued letter (reason, audited: the verification shows it)
  *   hr.letterSeq         the per-company yearly reference sequence: `<companyId>:<year>` → last number used
  *
  * `notified` holds the once-only notification keys already sent (submitted / issued / rejected …).
@@ -51,6 +53,9 @@ export interface LetterTypeRecord {
   name: string
   description: string
   body: string
+  /** Arabic name and template ('' = no Arabic version). */
+  nameAr: string
+  bodyAr: string
   includesSalary: boolean
   active: boolean
   updatedAt: string
@@ -70,6 +75,11 @@ export interface LetterRequestRecord {
   purpose: string
   nocPurpose: NocPurpose | null
   languageNote: string
+  language: LetterLanguage
+  layout: BilingualLayout | null
+  digits: DigitStyle
+  addresseeAr: string
+  purposeAr: string
   requestedBy: string
   requestedByName: string
   onBehalf: boolean
@@ -80,6 +90,10 @@ export interface LetterRequestRecord {
   decidedByName: string | null
   decidedAt: string | null
   letter: IssuedLetter | null
+  revokedAt: string | null
+  revokedBy: string | null
+  revokedByName: string | null
+  revokeReason: string
   notified: string[]
   createdAt: string
   updatedAt: string
@@ -118,6 +132,11 @@ function request(co: string, id: string, employeeId: string, userId: string, nam
     purpose: '',
     nocPurpose: null,
     languageNote: '',
+    language: 'en',
+    layout: null,
+    digits: 'western',
+    addresseeAr: '',
+    purposeAr: '',
     requestedBy: userId,
     requestedByName: name,
     onBehalf: false,
@@ -128,6 +147,10 @@ function request(co: string, id: string, employeeId: string, userId: string, nam
     decidedByName: null,
     decidedAt: null,
     letter: null,
+    revokedAt: null,
+    revokedBy: null,
+    revokedByName: null,
+    revokeReason: '',
     // Seeded requests count as already announced (no notification burst on first load).
     notified: ['submitted'],
     createdAt: at,
@@ -141,7 +164,7 @@ function seedRequests(): Tenant<LetterRequestRecord>[] {
   return [
     request(APEX_ID, 'HLR-1', 'EMP-u14', 'u14', 'Yusuf Rahman', 'salary_certificate', 2, { addressee: 'Emirates NBD', purpose: 'a car loan application' }),
     request(APEX_ID, 'HLR-2', 'EMP-u12', 'u12', 'Hassan Qureshi', 'noc', 1, { addressee: 'The Consulate General of Türkiye, Dubai', purpose: 'a tourist visa for travel from 12 to 20 December', nocPurpose: 'visa', languageNote: 'English is fine.' }),
-    request(CREST_ID, 'HLR-101', 'EMP-u107', 'u107', 'Huda Al Zahrani', 'employment_certificate', 3, { addressee: 'Riyad Bank', purpose: 'opening a savings account' }),
+    request(CREST_ID, 'HLR-101', 'EMP-u107', 'u107', 'Huda Al Zahrani', 'employment_certificate', 3, { addressee: 'Riyad Bank', purpose: 'opening a savings account', language: 'bilingual', layout: 'side_by_side', addresseeAr: 'بنك الرياض', purposeAr: 'فتح حساب توفير' }),
   ]
 }
 
@@ -183,3 +206,6 @@ export function nextLetterSeq(companyId: string, year: number): number {
 export function pendingIbans(): string[] {
   return hrProfileChanges.map((c) => c.proposed.bank?.iban ?? '').filter((v) => v.length >= 15)
 }
+
+/** Public letter verification lookups (GET /public/letters/verify): rate limit per client; not company data, not persisted. */
+export const letterVerifyHits: RateHit[] = []

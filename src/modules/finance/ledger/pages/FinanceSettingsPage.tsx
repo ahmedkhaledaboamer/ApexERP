@@ -11,6 +11,7 @@ import { Button } from '@/shared/components/ui/Button'
 import { ErrorState, Skeleton } from '@/shared/components/ui/Feedback'
 import { Checkbox, Field, SelectInput, TextArea, TextInput } from '@/shared/components/form/Field'
 import { useToast } from '@/shared/components/ui/Toast'
+import { ApprovalRulesCard } from '@/modules/finance/purchases/components/ApprovalRulesCard'
 
 /**
  * `/finance/settings`: Finance settings — base currency (from the company), fiscal year, VAT registration (TRN / KSA VAT
@@ -26,10 +27,11 @@ export default function FinanceSettingsPage() {
         {q.isError ? <ErrorState message={errMsg(q.error)} onRetry={() => void q.refetch()} /> : !q.data ? <Skeleton className="h-96" /> : (
           <>
             <GeneralCard s={q.data} />
-            <div className="grid gap-6 xl:grid-cols-2">
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
               <RatesCard s={q.data} />
               <LockDateCard s={q.data} />
             </div>
+            <ApprovalRulesCard />
           </>
         )}
       </PageBody>
@@ -55,7 +57,7 @@ function GeneralCard({ s }: { s: FinanceSettings }) {
       <CardHeader title="Company and invoicing" description={ro ? 'View only.' : undefined} />
       <CardBody>
         <form
-          className="grid gap-4 md:grid-cols-2 xl:grid-cols-3"
+          className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3"
           onSubmit={(e) => {
             e.preventDefault()
             setError(null)
@@ -182,7 +184,7 @@ function RatesCard({ s }: { s: FinanceSettings }) {
         )}
         {isFull && (
           <form
-            className="grid gap-3 sm:grid-cols-[6rem_8rem_1fr_auto] sm:items-end"
+            className="grid grid-cols-1 gap-3 sm:grid-cols-[6rem_8rem_1fr_auto] sm:items-end"
             onSubmit={(e) => {
               e.preventDefault()
               setError(null)
@@ -227,7 +229,7 @@ function LockDateCard({ s }: { s: FinanceSettings }) {
           )}
         </p>
         {s.canMoveLockDate ? (
-          <div className="grid gap-3 sm:grid-cols-[11rem_1fr] sm:items-end">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[11rem_1fr] sm:items-end">
             <Field id="lock-date" label="Lock up to"><TextInput id="lock-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
             <Field id="lock-reason" label="Reason (audit log)"><TextInput id="lock-reason" value={reason} placeholder="e.g. October VAT return filed" onChange={(e) => setReason(e.target.value)} /></Field>
             <div className="flex gap-2 sm:col-span-2">

@@ -14,11 +14,14 @@ import { Modal } from '@/shared/components/ui/Modal'
 import { EmptyState, Skeleton } from '@/shared/components/ui/Feedback'
 import { Field, TextInput } from '@/shared/components/form/Field'
 import { useToast } from '@/shared/components/ui/Toast'
+import { PayrollJournalLink } from '@/modules/finance/banking/components/PayrollJournalLink'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 /** Salary › Runs: the monthly runs and the run drawer (calculate → approve (another HR user) → paid). */
 export function RunsTab({ openRun, onOpenRun }: { openRun: string | null; onOpenRun: (id: string | null) => void }) {
   const runs = useRuns()
   const [creating, setCreating] = useState(false)
+  useNewParam(() => setCreating(true))
   if (runs.error) return <HrError error={runs.error} onRetry={() => runs.refetch()} />
   return (
     <div className="space-y-4">
@@ -150,6 +153,7 @@ function RunBody({ r, onDeleted }: { r: PayrollRunDetail; onDeleted: () => void 
         {r.approvedByName && <span className="text-xs text-muted">· Approved by {r.approvedByName}</span>}
         {r.paidByName && <span className="text-xs text-muted">· Paid {fmtDate(r.paidAt)}</span>}
       </div>
+      <PayrollJournalLink runId={r.id} status={r.status} />
 
       <dl className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         {[
@@ -226,7 +230,7 @@ function RunBody({ r, onDeleted }: { r: PayrollRunDetail; onDeleted: () => void 
 
       {openWarnings.length > 0 && r.status === 'calculated' && (
         <section aria-label="Warnings" className="rounded-xl border border-warning-500/30 bg-warning-500/10 p-3">
-          <h3 className="mb-2 flex items-center gap-1.5 text-[0.8125rem] font-semibold text-ink"><AlertTriangle className="size-4 text-warning-700" aria-hidden />Resolve (fix and recalculate) or acknowledge before approval</h3>
+          <h3 className="mb-2 flex items-center gap-1.5 text-[0.8125rem] font-semibold text-ink"><AlertTriangle className="size-4 text-warning-700 dark:text-warning-500" aria-hidden />Resolve (fix and recalculate) or acknowledge before approval</h3>
           <ul className="space-y-1.5">
             {openWarnings.map(({ l, w }) => (
               <li key={`${l.employeeId}:${w.code}`} className="flex items-center gap-2 text-[0.8125rem]">
@@ -300,13 +304,13 @@ function RunBody({ r, onDeleted }: { r: PayrollRunDetail; onDeleted: () => void 
 
 export function LineItems({ l, currency }: { l: Pick<PayLine, 'items' | 'payMethod' | 'bankName' | 'ibanMasked' | 'payStart' | 'payEnd'>; currency: string }) {
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      {(['earning', 'deduction', 'employer'] as const).map((t) => {
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      {(['earning', 'deduction', 'reimbursement', 'employer'] as const).map((t) => {
         const items = l.items.filter((i) => i.type === t)
         if (!items.length) return null
         return (
           <div key={t}>
-            <p className="mb-1 text-xs font-medium text-muted">{t === 'earning' ? 'Earnings' : t === 'deduction' ? 'Deductions' : 'Employer contributions'}</p>
+            <p className="mb-1 text-xs font-medium text-muted">{t === 'earning' ? 'Earnings' : t === 'deduction' ? 'Deductions' : t === 'reimbursement' ? 'Reimbursements (not taxable)' : 'Employer contributions'}</p>
             <ul className="space-y-0.5">
               {items.map((i) => (
                 <li key={i.code} className="flex justify-between gap-3 text-xs">

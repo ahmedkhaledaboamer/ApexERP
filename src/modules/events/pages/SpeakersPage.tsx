@@ -15,6 +15,7 @@ import { EmptyState } from '@/shared/components/ui/Feedback'
 import { SearchInput } from '@/shared/components/form/Field'
 import { IconTile, PageBody, PageHeader } from '@/shared/components/layout/PageHeader'
 import { ColumnPicker, DataTable, useDataTable } from '@/shared/components/data-table'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 /** `/events/speakers`: the company's speaker directory. Marketing full manages it; marketing view and event teams read it. */
 export default function SpeakersPage() {
@@ -23,6 +24,7 @@ export default function SpeakersPage() {
   const query = useSpeakersQuery()
   const [search, setSearch] = useState('')
   const [creating, setCreating] = useState(false)
+  useNewParam(() => setCreating(true), { when: canManage })
   const data = useMemo(() => query.data ?? [], [query.data])
   const columns = useMemo(() => buildColumns(), [])
   const table = useDataTable({ id: 'event-speakers', data, columns, globalFilter: search, globalFilterFn: speakerSearch, defaultHidden: ['fee'], getRowId: (r) => r.id })

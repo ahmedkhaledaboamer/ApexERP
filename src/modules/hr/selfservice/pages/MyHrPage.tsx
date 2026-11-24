@@ -25,19 +25,28 @@ import { fmtMinutes } from '@/modules/hr/time/calc'
 import { selfServiceApi, useMyHr, useSelfServiceMutation } from '../api'
 import { MY_HR_SLOTS, PORTAL_SLOT_ORDER } from '../portalSlots'
 import {
+  BILINGUAL_LAYOUTS,
+  BILINGUAL_LAYOUT_LABEL,
+  DIGIT_STYLE_LABEL,
+  LETTER_LANGUAGES,
+  LETTER_LANGUAGE_LABEL,
   LETTER_STATUS_LABEL,
   NOC_PURPOSES,
   NOC_PURPOSE_LABEL,
   PROFILE_CHANGE_FIELD_LABEL,
   PROFILE_CHANGE_STATUS_LABEL,
+  type BilingualLayout,
+  type DigitStyle,
+  type LetterLanguage,
   type LetterStatus,
   type MyHr,
   type NocPurpose,
   type ProfileChangeInput,
   type ProfileChangeStatus,
 } from '../types'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
-export const STATUS_TONE: Record<LetterStatus | ProfileChangeStatus, Tone> = { pending: 'amber', issued: 'green', approved: 'green', rejected: 'red', cancelled: 'neutral' }
+export const STATUS_TONE: Record<LetterStatus | ProfileChangeStatus, Tone> = { pending: 'amber', issued: 'green', approved: 'green', rejected: 'red', cancelled: 'neutral', revoked: 'red' }
 
 /** `/hr/me`: "My HR", the self-service portal of every employee (any role with an employee record). Own data only. */
 export default function MyHrPage() {
@@ -100,6 +109,7 @@ const muted = (s: string) => <p className="text-[0.8125rem] text-muted">{s}</p>
 function Portal({ d }: { d: MyHr }) {
   const [changeOpen, setChangeOpen] = useState(false)
   const [letterOpen, setLetterOpen] = useState(false)
+  useNewParam(() => setLetterOpen(true), { kind: 'letter' })
   const [leaveOpen, setLeaveOpen] = useState(false)
   const toast = useToast()
   const cancelChange = useSelfServiceMutation(selfServiceApi.decideProfileChange)
@@ -125,11 +135,11 @@ function Portal({ d }: { d: MyHr }) {
         </p>
       </section>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <TimeCards onRequestLeave={() => setLeaveOpen(true)} />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Card
           title="My profile"
           actions={
@@ -151,7 +161,7 @@ function Portal({ d }: { d: MyHr }) {
             ]}
           />
           {pendingChange && (
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-warning-200 bg-warning-50 p-3 text-[0.8125rem] dark:border-warning-800 dark:bg-warning-950" data-testid="pending-change">
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-warning-500/30 bg-warning-50 p-3 text-[0.8125rem] dark:border-warning-500/30 dark:bg-warning-500/10" data-testid="pending-change">
               <span>
                 Waiting for HR: {pendingChange.fields.map((f) => PROFILE_CHANGE_FIELD_LABEL[f]).join(', ')}
                 {pendingChange.proposed.mobile ? ` → ${pendingChange.proposed.mobile}` : ''}
@@ -225,7 +235,10 @@ function Portal({ d }: { d: MyHr }) {
           <Table label="My letter requests" head={['Letter', 'Addressee', 'Requested', 'Status', '']} minWidth={640}>
             {d.letters.map((l) => (
               <tr key={l.id}>
-                <td className={`${td} text-ink`}>{l.typeName}</td>
+                <td className={`${td} text-ink`}>
+                  {l.typeName}
+                  {l.language !== 'en' && <span className="block text-xs text-muted">{LETTER_LANGUAGE_LABEL[l.language]}</span>}
+                </td>
                 <td className={td}>{l.addressee}</td>
                 <td className={td}>{fmtDate(l.createdAt)}</td>
                 <td className={td}>
@@ -233,7 +246,7 @@ function Portal({ d }: { d: MyHr }) {
                   {l.rejectionReason && <span className="mt-0.5 block text-xs text-muted">{l.rejectionReason}</span>}
                 </td>
                 <td className={`${td} text-end`}>
-                  {l.status === 'issued' ? (
+                  {l.status === 'issued' || l.status === 'revoked' ? (
                     <Link to={letterPath(l.id)} className="text-[0.8125rem] font-medium text-accent-700 hover:underline dark:text-accent-300">
                       Open {l.referenceNo}
                     </Link>
@@ -251,7 +264,7 @@ function Portal({ d }: { d: MyHr }) {
         )}
       </Card>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Card title="My payslips">
           {d.payslips.length ? (
             <ul className="divide-y divide-line text-[0.8125rem]">
@@ -291,7 +304,7 @@ function Portal({ d }: { d: MyHr }) {
         </Card>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Card title="My training and certificates">
           {d.training.enrollments.length || d.training.certificates.length ? (
             <ul className="divide-y divide-line text-[0.8125rem]">
@@ -463,7 +476,7 @@ function ProfileChangeModal({ d, onClose }: { d: MyHr; onClose: () => void }) {
         </>
       }
     >
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <F label="Mobile">
           <TextInput value={f.mobile} onChange={set('mobile')} inputMode="tel" />
         </F>
@@ -503,7 +516,7 @@ function ProfileChangeModal({ d, onClose }: { d: MyHr; onClose: () => void }) {
           </F>
         </div>
       </div>
-      {submit.error && <p className="mt-3 text-[0.8125rem] text-danger-700 dark:text-danger-300" role="alert">{errorMessage(submit.error)}</p>}
+      {submit.error && <p className="mt-3 text-[0.8125rem] text-danger-700 dark:text-danger-500" role="alert">{errorMessage(submit.error)}</p>}
     </Modal>
   )
 }
@@ -516,11 +529,27 @@ function LetterRequestModal({ d, onClose }: { d: MyHr; onClose: () => void }) {
   const [purpose, setPurpose] = useState('')
   const [noc, setNoc] = useState<NocPurpose>('travel')
   const [languageNote, setLanguageNote] = useState('')
+  const [language, setLanguage] = useState<LetterLanguage>('en')
+  const [layout, setLayout] = useState<BilingualLayout>('side_by_side')
+  const [digits, setDigits] = useState<DigitStyle>('western')
+  const [addresseeAr, setAddresseeAr] = useState('')
+  const [purposeAr, setPurposeAr] = useState('')
   const t = types.find((x) => x.id === typeId)
+  const arabic = language !== 'en'
   const submit = useSelfServiceMutation(selfServiceApi.requestLetter)
   function send() {
     submit.mutate(
-      { letterTypeId: typeId, addressee, purpose, nocPurpose: t?.code === 'noc' ? noc : null, languageNote },
+      {
+        letterTypeId: typeId,
+        addressee,
+        purpose,
+        nocPurpose: t?.code === 'noc' ? noc : null,
+        languageNote,
+        language,
+        layout: language === 'bilingual' ? layout : null,
+        digits,
+        ...(arabic ? { addresseeAr, purposeAr } : {}),
+      },
       {
         onSuccess: () => {
           toast.success('Letter requested', 'HR will issue it or tell you why not.')
@@ -576,11 +605,50 @@ function LetterRequestModal({ d, onClose }: { d: MyHr; onClose: () => void }) {
         <F label="Purpose" hint="e.g. a car loan application, travel to Oman from 10 to 14 March">
           <TextInput value={purpose} onChange={(ev) => setPurpose(ev.target.value)} />
         </F>
-        <F label="Language note" hint="Optional, e.g. an Arabic copy is also needed">
+        <F label="Language" hint={t && !t.hasArabic ? 'This letter has no Arabic version yet.' : 'Arabic letters use your name and job title in Arabic from your HR record.'}>
+          <SelectInput value={language} onChange={(ev) => setLanguage(ev.target.value as LetterLanguage)}>
+            {LETTER_LANGUAGES.map((x) => (
+              <option key={x} value={x} disabled={x !== 'en' && !!t && !t.hasArabic}>
+                {LETTER_LANGUAGE_LABEL[x]}
+              </option>
+            ))}
+          </SelectInput>
+        </F>
+        {language === 'bilingual' && (
+          <F label="Bilingual layout">
+            <SelectInput value={layout} onChange={(ev) => setLayout(ev.target.value as BilingualLayout)}>
+              {BILINGUAL_LAYOUTS.map((x) => (
+                <option key={x} value={x}>
+                  {BILINGUAL_LAYOUT_LABEL[x]}
+                </option>
+              ))}
+            </SelectInput>
+          </F>
+        )}
+        {arabic && (
+          <>
+            <F label="Digits in the Arabic text">
+              <SelectInput value={digits} onChange={(ev) => setDigits(ev.target.value as DigitStyle)}>
+                {(['western', 'arabic'] as const).map((x) => (
+                  <option key={x} value={x}>
+                    {DIGIT_STYLE_LABEL[x]}
+                  </option>
+                ))}
+              </SelectInput>
+            </F>
+            <F label="Addressee in Arabic" hint="Optional; otherwise the addressee above, or «لمن يهمه الأمر».">
+              <TextInput dir="rtl" lang="ar" value={addresseeAr} onChange={(ev) => setAddresseeAr(ev.target.value)} />
+            </F>
+            <F label="Purpose in Arabic" hint="Optional">
+              <TextInput dir="rtl" lang="ar" value={purposeAr} onChange={(ev) => setPurposeAr(ev.target.value)} />
+            </F>
+          </>
+        )}
+        <F label="Note to HR" hint="Optional">
           <TextInput value={languageNote} onChange={(ev) => setLanguageNote(ev.target.value)} />
         </F>
       </div>
-      {submit.error && <p className="mt-3 text-[0.8125rem] text-danger-700 dark:text-danger-300" role="alert">{errorMessage(submit.error)}</p>}
+      {submit.error && <p className="mt-3 text-[0.8125rem] text-danger-700 dark:text-danger-500" role="alert">{errorMessage(submit.error)}</p>}
     </Modal>
   )
 }

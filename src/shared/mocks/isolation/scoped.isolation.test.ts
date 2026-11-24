@@ -18,8 +18,18 @@ import { hrJourneys, hrJourneyTemplates } from '@/shared/mocks/data/hrJourney'
 import { hrLetterTypes } from '@/shared/mocks/data/hrSelfService'
 import { hrPerfCycles, hrPerfReviews, hrPerfTemplates } from '@/shared/mocks/data/hrPerformance'
 import { withHr } from './hrTalentEndpoints'
+import * as engFx from './hrEngagementEndpoints'
 import { finToday, ownAccount } from './financeLedgerEndpoints'
 import { collectionsFixtures as colFx } from './financeCollectionsEndpoints'
+import { bankingFixtures as bankFx } from './financeBankingEndpoints'
+import { purchasesFixtures as purFx } from './financePurchasesEndpoints'
+import { gapsFixtures as gapsFx } from './financeGapsEndpoints'
+import { claimBody, expenseBody } from './financeExpensesEndpoints'
+import * as taxFx from './financeTaxEndpoints'
+import { approvedTemplate, waLead } from './integrationsEndpoints'
+import { aiConversationNow } from './aiEndpoints'
+import { finExpenseCategories, finPettyExpenses, finPettyFunds } from '@/shared/mocks/data/financeExpenses'
+import { eventVendors } from '@/shared/mocks/data/eventLibrary'
 import { financeCreditNotes, invoiceRecords } from '@/shared/mocks/data/financeInvoices'
 import { companyById } from '@/shared/mocks/data/tenancy'
 import { todayIsoIn } from '@/shared/lib/companyDay'
@@ -235,6 +245,10 @@ const REFS: Ref[] = [
   { name: 'hr letter request employee', method: 'POST', path: hrPath('/hr/letters/requests'), id: (co) => empIdForUser(co === 'co_apex' ? 'u14' : 'u107'), body: (co, id) => ({ letter_type_id: one(hrLetterTypes, co, (t) => t.code === 'employment_certificate').id, employee_id: id, addressee: 'Ref' }) },
   { name: 'hr letter request type', method: 'POST', path: hrPath('/hr/letters/requests'), id: (co) => one(hrLetterTypes, co, (t) => t.code === 'employment_certificate').id, body: (co, id) => ({ letter_type_id: id, employee_id: empIdForUser(co === 'co_apex' ? 'u14' : 'u107'), addressee: 'Ref' }) },
   { name: 'hr letter requests employee filter', method: 'GET', path: hrPath('/hr/letters/requests'), query: (id) => `?employee_id=${id}`, id: (co) => empIdForUser(co === 'co_apex' ? 'u14' : 'u107') },
+  // HR › Discipline and Policies (isolation/hrComplianceEndpoints.ts): the employee of a record, the list filter, a policy audience department.
+  { name: 'discipline employee', method: 'POST', path: hrPath('/hr/discipline'), id: (co) => empIdForUser(co === 'co_apex' ? 'u14' : 'u107'), body: (_co, id) => ({ employee_id: id, type: 'verbal_warning', category: 'conduct', incident_date: day(-1), description: 'Ref check.' }) },
+  { name: 'discipline employee filter', method: 'GET', path: hrPath('/hr/discipline'), query: (id) => `?employee_id=${id}`, id: (co) => empIdForUser(co === 'co_apex' ? 'u14' : 'u107') },
+  { name: 'policy audience department', method: 'POST', path: hrPath('/hr/policies'), id: (co) => one(departments, co, (d) => d.active).id, body: (_co, id) => ({ title: 'Ref policy', category: 'other', audience: { kind: 'departments', department_ids: [id] } }) },
   // HR › Onboarding & offboarding (isolation/hrJourneyEndpoints.ts).
   { name: 'journey employee', method: 'POST', path: hrPath('/hr/journeys'), id: (co) => empIdForUser(ADMIN[co]), body: (_co, id) => ({ employee_id: id, kind: 'onboarding' }) },
   { name: 'journey template', method: 'POST', path: hrPath('/hr/journeys'), id: (co) => one(hrJourneyTemplates, co, (t) => t.kind === 'onboarding').id, body: (co, id) => ({ employee_id: empIdForUser(ADMIN[co]), kind: 'onboarding', template_id: id }) },
@@ -247,6 +261,14 @@ const REFS: Ref[] = [
   { name: 'performance cycle participant', method: 'POST', path: hrPath('/hr/performance/cycles'), id: (co) => empIdForUser(ADMIN[co]), body: (co, id) => perfCycle(co, { employee_ids: [id] }) },
   { name: 'performance reviews cycle filter', method: 'GET', path: hrPath('/hr/performance/reviews'), query: (id) => `?cycle_id=${id}`, id: (co) => one(hrPerfCycles, co, (c) => c.phase === 'self_review').id },
   { name: 'performance recommended course', method: 'PUT', path: (co) => hrPath(`/hr/performance/reviews/${perfTopReview(co)}/manager`)(co), id: (co) => one(hrCourses, co).id, body: (_co, id) => ({ recommended_course_ids: [id], submit: false }) },
+  // HR › Engagement surveys and 360° feedback (isolation/hrEngagementEndpoints.ts): audience department, one-person survey, results filter, round subject / review / providers, nomination decisions.
+  { name: 'survey audience department', method: 'POST', path: hrPath('/hr/engagement/surveys'), id: (co) => one(departments, co, (d) => d.active).id, body: (_co, id) => ({ name: 'Ref survey', template_key: 'enps_pulse', audience: { type: 'departments', department_ids: [id] } }) },
+  { name: 'survey subject employee', method: 'POST', path: hrPath('/hr/engagement/surveys'), id: (co) => empIdForUser(ADMIN[co]), body: (_co, id) => ({ name: 'Ref survey', template_key: 'onboarding_check_in', subject_employee_id: id }) },
+  { name: 'survey results department filter', method: 'GET', path: (co) => hrPath(`/hr/engagement/surveys/${engFx.closedEnps(co).id}/results`)(co), query: (id) => `?department_id=${id}`, id: (co) => one(departments, co, (d) => d.active).id },
+  { name: 'feedback round subject', method: 'POST', path: hrPath('/hr/feedback/rounds'), id: (co) => empIdForUser(engFx.FB_PENDING_USER[co]), body: (_co, id) => ({ subject_employee_id: id }) },
+  { name: 'feedback round review', method: 'POST', path: hrPath('/hr/feedback/rounds'), id: (co) => one(hrPerfReviews, co, (r) => r.employeeId === empIdForUser(co === APEX ? 'u11' : 'u107') && r.cycleId === one(hrPerfCycles, co, (c) => c.phase === 'self_review').id).id, body: (co, id) => ({ subject_employee_id: empIdForUser(co === APEX ? 'u11' : 'u107'), review_id: id }) },
+  { name: 'feedback round provider', method: 'POST', path: (co) => hrPath(`/hr/feedback/rounds/${engFx.seededRound(co).id}/providers`)(co), id: (co) => engFx.FB_OTHER_EMP[co], body: (_co, id) => ({ providers: [{ employee_id: id, relationship: 'peer' }] }) },
+  { name: 'feedback nomination decision', method: 'POST', path: (co) => hrPath(`/hr/feedback/rounds/${engFx.seededRound(co).id}/nominations/decide`)(co), id: (co) => engFx.pendingInvitation(co).id, body: (_co, id) => ({ approve_ids: [id], reject_ids: [] }) },
   { name: 'journey item assignee', method: 'POST', path: (co) => hrPath(`/hr/journeys/${one(hrJourneys, co, (j) => j.status === 'active').id}/items`)(co), id: (co) => ADMIN[co], body: (_co, id) => ({ title: 'Ref item', owner_role: 'user', assignee_user_id: id }) },
   // Accounts & finance › ledger (isolation/financeLedgerEndpoints.ts): account / dimension ids in bodies and filters
   // (seeded chart ids are shared by design, so the refs use a company-unique `ACC-N…` account).
@@ -259,6 +281,19 @@ const REFS: Ref[] = [
   { name: 'finance default revenue account', method: 'PATCH', path: () => '/finance/settings', id: (co) => ownAccount(co, 'income').id, body: (_co, id) => ({ default_revenue_account_id: id }) },
   { name: 'finance default bank account', method: 'PATCH', path: () => '/finance/settings', id: (co) => ownAccount(co, 'asset').id, body: (_co, id) => ({ default_bank_account_id: id }) },
   { name: 'journal account filter', method: 'GET', path: () => '/finance/journal', query: (id) => `?account_id=${id}`, id: (co) => ownAccount(co).id },
+  // Accounts & finance › financial statements (isolation/financeStatementsEndpoints.ts): dimension / account ids in filters match nothing for a foreign id.
+  { name: 'P&L department filter', method: 'GET', path: () => '/finance/statements/profit-and-loss', query: (id) => `?period=ytd&department_id=${id}`, id: (co) => one(departments, co, (d) => d.active).id },
+  { name: 'P&L project filter', method: 'GET', path: () => '/finance/statements/profit-and-loss', query: (id) => `?period=ytd&project_id=${id}`, id: (co) => one(projects, co).id },
+  { name: 'P&L event filter', method: 'GET', path: () => '/finance/statements/profit-and-loss', query: (id) => `?period=ytd&event_id=${id}`, id: (co) => one(events, co).id },
+  { name: 'P&L customer filter', method: 'GET', path: () => '/finance/statements/profit-and-loss', query: (id) => `?view=monthly&customer_id=${id}`, id: (co) => one(customers, co).id },
+  { name: 'general ledger account filter', method: 'GET', path: () => '/finance/statements/general-ledger', query: (id) => `?account_id=${id}`, id: (co) => ownAccount(co).id },
+  { name: 'general ledger department filter', method: 'GET', path: () => '/finance/statements/general-ledger', query: (id) => `?department_id=${id}`, id: (co) => one(departments, co, (d) => d.active).id },
+  // Accounts & finance › profitability (isolation/profitabilityEndpoints.ts): a foreign project / event / customer / department in a filter answers 404 like a missing one.
+  { name: 'profitability project filter', method: 'GET', path: () => '/finance/profitability/projects', query: (id) => `?project_id=${id}`, id: (co) => one(projects, co).id },
+  { name: 'profitability department filter', method: 'GET', path: () => '/finance/profitability/departments', query: (id) => `?department_id=${id}`, id: (co) => one(departments, co, (d) => d.active).id },
+  { name: 'profitability event filter', method: 'GET', path: () => '/finance/profitability/events', query: (id) => `?event_id=${id}`, id: (co) => one(events, co).id },
+  { name: 'profitability customer filter', method: 'GET', path: () => '/finance/profitability/customers', query: (id) => `?customer_id=${id}`, id: (co) => one(customers, co).id },
+  { name: 'profitability export project filter', method: 'GET', path: () => '/finance/profitability/projects/export', query: (id) => `?project_id=${id}`, id: (co) => one(projects, co).id },
   // Accounts & finance › invoices, credit notes, recurring (isolation/financeInvoicesEndpoints.ts): customer / source / invoice ids in bodies and filters.
   { name: 'invoice customer', method: 'POST', path: () => '/finance/invoices', id: (co) => one(customers, co).id, body: (_co, id) => ({ customer_id: id, lines: [{ description: 'Ref', quantity: 1, unit_price: 10 }] }) },
   { name: 'invoice project', method: 'POST', path: () => '/finance/invoices', id: (co) => one(projects, co).id, body: (co, id) => ({ customer_id: one(customers, co).id, project_id: id, lines: [{ description: 'Ref', quantity: 1, unit_price: 10 }] }) },
@@ -291,6 +326,78 @@ const REFS: Ref[] = [
   { name: 'dunning log customer filter', method: 'GET', path: () => '/finance/dunning/log', query: (id) => `?customer_id=${id}`, id: (co) => colFx.customerId(co) },
   { name: 'credit check customer', method: 'GET', path: () => '/finance/credit-check', query: (id) => `?customer_id=${id}&amount=100`, id: (co) => colFx.customerId(co) },
   { name: 'credit check lead', method: 'GET', path: () => '/finance/credit-check', query: (id) => `?lead_id=${id}&amount=100`, id: (co) => one(customers, co).leadId },
+  // Accounts & finance › purchases & payables (isolation/financePurchasesEndpoints.ts): vendor / PO / bill / account / dimension ids in bodies and filters.
+  { name: 'PO vendor', method: 'POST', path: () => '/finance/purchase-orders', id: (co) => purFx.VENDOR[co], body: (_co, id) => ({ vendor_id: id, lines: [{ description: 'Ref', quantity: 1, unit_price: 10 }] }) },
+  { name: 'PO department', method: 'POST', path: () => '/finance/purchase-orders', id: (co) => one(departments, co, (d) => d.active).id, body: (co, id) => ({ vendor_id: purFx.VENDOR[co], department_id: id, lines: [{ description: 'Ref', quantity: 1, unit_price: 10 }] }) },
+  { name: 'PO line account', method: 'POST', path: () => '/finance/purchase-orders', id: (co) => ownAccount(co).id, body: (co, id) => ({ vendor_id: purFx.VENDOR[co], lines: [{ description: 'Ref', quantity: 1, unit_price: 10, account_id: id }] }) },
+  { name: 'PO line event', method: 'POST', path: () => '/finance/purchase-orders', id: (co) => one(events, co).id, body: (co, id) => ({ vendor_id: purFx.VENDOR[co], lines: [{ description: 'Ref', quantity: 1, unit_price: 10, event_id: id }] }) },
+  { name: 'PO line project', method: 'POST', path: () => '/finance/purchase-orders', id: (co) => one(projects, co).id, body: (co, id) => ({ vendor_id: purFx.VENDOR[co], lines: [{ description: 'Ref', quantity: 1, unit_price: 10, project_id: id }] }) },
+  { name: 'POs vendor filter', method: 'GET', path: () => '/finance/purchase-orders', query: (id) => `?vendor_id=${id}`, id: (co) => purFx.VENDOR[co] },
+  { name: 'bill vendor', method: 'POST', path: () => '/finance/bills', id: (co) => purFx.VENDOR[co], body: (_co, id) => ({ vendor_id: id, supplier_invoice_number: 'REF-1', lines: [{ description: 'Ref', quantity: 1, unit_price: 10 }] }) },
+  { name: 'bill purchase order', method: 'POST', path: () => '/finance/bills', id: (co) => purFx.approvedPo(co), body: (_co, id) => ({ po_id: id, supplier_invoice_number: 'REF-2' }) },
+  { name: 'bill line account', method: 'POST', path: () => '/finance/bills', id: (co) => ownAccount(co).id, body: (co, id) => ({ vendor_id: purFx.VENDOR[co], supplier_invoice_number: 'REF-3', lines: [{ description: 'Ref', quantity: 1, unit_price: 10, account_id: id }] }) },
+  { name: 'bills vendor filter', method: 'GET', path: () => '/finance/bills', query: (id) => `?vendor_id=${id}`, id: (co) => purFx.VENDOR[co] },
+  { name: 'debit note bill', method: 'POST', path: () => '/finance/debit-notes', id: (co) => purFx.openBill(co).id, body: (_co, id) => ({ bill_id: id, reason: 'Ref credit', amount: 1 }) },
+  { name: 'bill payment vendor', method: 'POST', path: () => '/finance/bill-payments', id: (co) => purFx.openBill(co).vendorId, body: (co, id) => ({ vendor_id: id, payment_account_id: 'ACC-1120', allocations: [{ bill_id: purFx.openBill(co).id, amount: 1 }] }) },
+  { name: 'bill payment allocation bill', method: 'POST', path: () => '/finance/bill-payments', id: (co) => purFx.openBill(co).id, body: (co, id) => ({ vendor_id: purFx.openBill(co).vendorId, payment_account_id: 'ACC-1120', allocations: [{ bill_id: id, amount: 1 }] }) },
+  { name: 'payment run bill', method: 'POST', path: () => '/finance/bill-payments/run', id: (co) => purFx.openBill(co).id, body: (_co, id) => ({ payment_account_id: 'ACC-1120', items: [{ bill_id: id, amount: 1 }] }) },
+  { name: 'bill payments bill filter', method: 'GET', path: () => '/finance/bill-payments', query: (id) => `?bill_id=${id}`, id: (co) => purFx.openBill(co).id },
+  { name: 'supplier advance vendor', method: 'POST', path: () => '/finance/supplier-advances', id: (co) => purFx.VENDOR[co], body: (_co, id) => ({ vendor_id: id, payment_account_id: 'ACC-1120', amount: 5 }) },
+  { name: 'supplier advance purchase order', method: 'POST', path: () => '/finance/supplier-advances', id: (co) => purFx.approvedPo(co), body: (_co, id) => ({ po_id: id, payment_account_id: 'ACC-1120', amount: 5 }) },
+  { name: 'supplier advance payment account', method: 'POST', path: () => '/finance/supplier-advances', id: (co) => ownAccount(co).id, body: (co, id) => ({ vendor_id: purFx.VENDOR[co], payment_account_id: id, amount: 5 }) },
+  { name: 'apply advance bill', method: 'POST', path: (co) => `/finance/supplier-advances/${gapsFx.freshAdvance(co)}/apply`, id: (co) => purFx.openBill(co).id, body: (_co, id) => ({ bill_id: id, amount: 1 }) },
+  { name: 'supplier advances vendor filter', method: 'GET', path: () => '/finance/supplier-advances', query: (id) => `?vendor_id=${id}`, id: (co) => purFx.VENDOR[co] },
+  { name: 'supplier default account', method: 'PATCH', path: (co) => `/finance/suppliers/${purFx.supplier(co)}`, id: (co) => ownAccount(co).id, body: (_co, id) => ({ default_expense_account_id: id }) },
+  { name: 'event costs event', method: 'GET', path: () => '/finance/event-costs', query: (id) => `?event_id=${id}`, id: (co) => one(events, co).id },
+  // Accounts & finance › expenses, claims, petty cash (isolation/financeExpensesEndpoints.ts): category / account / vendor / dimension / employee / fund / petty-expense ids.
+  { name: 'expense category', method: 'POST', path: () => '/finance/expenses', id: (co) => one(finExpenseCategories, co).id, body: (co, id) => expenseBody(co, { category_id: id }) },
+  { name: 'expense vendor', method: 'POST', path: () => '/finance/expenses', id: (co) => one(eventVendors, co).id, body: (co, id) => expenseBody(co, { vendor_id: id }) },
+  { name: 'expense paid-from account', method: 'POST', path: () => '/finance/expenses', id: (co) => ownAccount(co, 'asset').id, body: (co, id) => expenseBody(co, { paid_from_account_id: id }) },
+  { name: 'expense petty fund', method: 'POST', path: () => '/finance/expenses', id: (co) => one(finPettyFunds, co).id, body: (co, id) => expenseBody(co, { payment_method: 'petty_cash', petty_fund_id: id }) },
+  { name: 'expense department', method: 'POST', path: () => '/finance/expenses', id: (co) => one(departments, co, (d) => d.active).id, body: (co, id) => expenseBody(co, { department_id: id }) },
+  { name: 'expense project', method: 'POST', path: () => '/finance/expenses', id: (co) => one(projects, co).id, body: (co, id) => expenseBody(co, { project_id: id }) },
+  { name: 'expense event', method: 'POST', path: () => '/finance/expenses', id: (co) => one(events, co).id, body: (co, id) => expenseBody(co, { event_id: id }) },
+  { name: 'expense campaign', method: 'POST', path: () => '/finance/expenses', id: (co) => one(campaigns, co).id, body: (co, id) => expenseBody(co, { campaign_id: id }) },
+  { name: 'expenses category filter', method: 'GET', path: () => '/finance/expenses', query: (id) => `?category_id=${id}`, id: (co) => one(finExpenseCategories, co).id },
+  { name: 'expenses vendor filter', method: 'GET', path: () => '/finance/expenses', query: (id) => `?vendor_id=${id}`, id: (co) => one(eventVendors, co).id },
+  { name: 'expense duplicate check vendor', method: 'POST', path: () => '/finance/expenses/check-duplicate', id: (co) => one(eventVendors, co).id, body: (co, id) => ({ vendor_id: id, amount: 10, date: finToday(co) }) },
+  { name: 'expense category account', method: 'POST', path: () => '/finance/expense-categories', id: (co) => ownAccount(co).id, body: (_co, id) => ({ name: 'Ref category', account_id: id }) },
+  { name: 'claim line category', method: 'POST', path: () => '/finance/expense-claims', id: (co) => one(finExpenseCategories, co).id, body: (co, id) => claimBody(co, { category_id: id }) },
+  { name: 'claim line project', method: 'POST', path: () => '/finance/expense-claims', id: (co) => one(projects, co).id, body: (co, id) => claimBody(co, { project_id: id }) },
+  { name: 'claim line customer', method: 'POST', path: () => '/finance/expense-claims', id: (co) => one(customers, co).id, body: (co, id) => claimBody(co, { customer_id: id }) },
+  { name: 'claim line event', method: 'POST', path: () => '/finance/expense-claims', id: (co) => one(events, co).id, body: (co, id) => claimBody(co, { event_id: id }) },
+  { name: 'claims employee filter', method: 'GET', path: () => '/finance/expense-claims', query: (id) => `?view=all&employee_id=${id}`, id: (co) => empIdForUser(co === APEX ? 'u15' : 'u107') },
+  { name: 'petty fund custodian', method: 'POST', path: () => '/finance/petty-cash/funds', id: (co) => empIdForUser(co === APEX ? 'u4' : 'u104'), body: (_co, id) => ({ name: 'Ref fund', custodian_employee_id: id, float_limit: 100 }) },
+  { name: 'petty fund account', method: 'POST', path: () => '/finance/petty-cash/funds', id: (co) => ownAccount(co, 'asset').id, body: (co, id) => ({ name: 'Ref fund', custodian_employee_id: empIdForUser(co === APEX ? 'u4' : 'u104'), float_limit: 100, account_id: id }) },
+  { name: 'petty expense category', method: 'POST', path: (co) => `/finance/petty-cash/funds/${one(finPettyFunds, co).id}/expenses`, id: (co) => one(finExpenseCategories, co).id, body: (_co, id) => ({ category_id: id, payee_name: 'Ref', amount: 1 }) },
+  { name: 'petty top-up account', method: 'POST', path: (co) => `/finance/petty-cash/funds/${one(finPettyFunds, co).id}/top-up`, id: (co) => ownAccount(co, 'asset').id, body: (_co, id) => ({ amount: 1, from_account_id: id }) },
+  { name: 'petty replenish expense', method: 'POST', path: (co) => `/finance/petty-cash/funds/${one(finPettyFunds, co).id}/replenish`, id: (co) => one(finPettyExpenses, co, (p) => p.status === 'pending').id, body: (_co, id) => ({ approve_ids: [id], from_account_id: 'ACC-1120' }) },  // Accounts & finance › banking, payroll posting, commissions (isolation/financeBankingEndpoints.ts): bank account / journal line / statement line / account / user ids.
+  { name: 'transfer from bank account', method: 'POST', path: () => '/finance/bank-transfers', id: (co) => bankFx.otherBank(co).id, body: (co, id) => ({ from_bank_account_id: id, to_bank_account_id: bankFx.mainBank(co).id, amount_from: 1 }) },
+  { name: 'transfer to bank account', method: 'POST', path: () => '/finance/bank-transfers', id: (co) => bankFx.otherBank(co).id, body: (co, id) => ({ from_bank_account_id: bankFx.mainBank(co).id, to_bank_account_id: id, amount_from: 1 }) },
+  { name: 'bank account ledger account', method: 'POST', path: () => '/finance/bank-accounts', id: (co) => ownAccount(co, 'asset').id, body: (_co, id) => ({ name: 'Ref bank', ledger_account_id: id }) },
+  { name: 'match statement line', method: 'POST', path: (co) => `/finance/bank-accounts/${bankFx.otherBank(co).id}/matches`, id: (co) => bankFx.freshPair(co).statementLineId, body: (co, id) => ({ statement_line_ids: [id], journal_line_ids: [bankFx.freshPair(co).journalLineId] }) },
+  { name: 'match journal line', method: 'POST', path: (co) => `/finance/bank-accounts/${bankFx.otherBank(co).id}/matches`, id: (co) => bankFx.freshPair(co).journalLineId, body: (co, id) => ({ statement_line_ids: [bankFx.freshPair(co).statementLineId], journal_line_ids: [id] }) },
+  { name: 'entry from statement line account', method: 'POST', path: (co) => `/finance/bank-statement-lines/${bankFx.freshPair(co).statementLineId}/create-entry`, id: (co) => ownAccount(co).id, body: (_co, id) => ({ account_id: id }) },
+  { name: 'bank rule account', method: 'POST', path: () => '/finance/bank-rules', id: (co) => ownAccount(co).id, body: (_co, id) => ({ contains: 'ref', account_id: id }) },
+  { name: 'bank rule bank account', method: 'POST', path: () => '/finance/bank-rules', id: (co) => bankFx.otherBank(co).id, body: (_co, id) => ({ contains: 'ref', account_id: 'ACC-6800', bank_account_id: id }) },
+  { name: 'payroll paid-from account', method: 'PUT', path: (co) => `/finance/payroll-postings/${bankFx.run(co).id}/paid-from`, id: (co) => ownAccount(co, 'asset').id, body: (_co, id) => ({ account_id: id }) },
+  { name: 'transfers bank account filter', method: 'GET', path: () => '/finance/bank-transfers', query: (id) => `?bank_account_id=${id}`, id: (co) => bankFx.otherBank(co).id },
+  { name: 'reconciliations bank account filter', method: 'GET', path: () => '/finance/bank-reconciliations', query: (id) => `?bank_account_id=${id}`, id: (co) => bankFx.mainBank(co).id },
+  { name: 'commission plan user', method: 'POST', path: () => '/finance/commission-plans', id: (co) => one(users, co, (u) => u.role === 'Sales Agent').id, body: (_co, id) => ({ name: 'Ref plan', rate: 1, user_ids: [id] }) },
+  { name: 'commission statements user filter', method: 'GET', path: () => '/finance/commission-statements', query: (id) => `?user_id=${id}`, id: (co) => one(users, co, (u) => u.role === 'Sales Agent').id },
+  // Accounts & finance › tax and planning (isolation/financeTaxEndpoints.ts): foreign departments / accounts answer like missing ones.
+  { name: 'VAT payment account', method: 'POST', path: (co) => `/finance/vat-returns/${taxFx.filedReturn(co).id}/pay`, id: (co) => ownAccount(co, 'asset').id, body: (_co, id) => ({ account_id: id }) },
+  { name: 'budget line department', method: 'PUT', path: (co) => `/finance/budgets/${taxFx.draftBudget(co).id}/lines`, id: (co) => taxFx.ownDept(co).id, body: (_co, id) => ({ lines: [{ department_id: id, account_id: 'ACC-6600', annual: 100 }] }) },
+  { name: 'budget line account', method: 'PUT', path: (co) => `/finance/budgets/${taxFx.draftBudget(co).id}/lines`, id: (co) => ownAccount(co).id, body: (co, id) => ({ lines: [{ department_id: taxFx.ownDept(co).id, account_id: id, annual: 100 }] }) },
+  { name: 'budget copy department', method: 'POST', path: (co) => `/finance/budgets/${taxFx.draftBudget(co).id}/copy-actuals`, id: (co) => taxFx.ownDept(co).id, body: (co, id) => ({ from_year: Number(finToday(co).slice(0, 4)), department_id: id }) },
+  { name: 'budget vs actual department filter', method: 'GET', path: (co) => `/finance/budgets/${taxFx.seedBudget(co).id}/vs-actual`, query: (id) => `?department_id=${id}`, id: (co) => taxFx.ownDept(co).id },
+  // Insights & admin › Integrations (isolation/integrationsEndpoints.ts): the lead / template of a WhatsApp send, the webhook's default owner.
+  { name: 'whatsapp send lead', method: 'POST', path: () => '/integrations/whatsapp/messages', id: (co) => waLead(co).id, body: (co, id) => ({ lead_id: id, template_id: approvedTemplate(co), to: waLead(co).mobile, params: ['A', 'B'] }) },
+  { name: 'whatsapp send template', method: 'POST', path: () => '/integrations/whatsapp/messages', id: (co) => approvedTemplate(co), body: (co, id) => ({ lead_id: waLead(co).id, template_id: id, to: waLead(co).mobile, params: ['A', 'B'] }) },
+  { name: 'website webhook default owner', method: 'PUT', path: () => '/integrations/website/webhook', id: (co) => one(users, co, (u) => u.role === 'Sales Agent').id, body: (_co, id) => ({ default_owner_id: id }) },
+  // Insights & admin › AI assistant (isolation/aiEndpoints.ts): the record a question is asked from ("Ask AI" context).
+  { name: 'ai context lead', method: 'POST', path: (co) => `/ai/conversations/${aiConversationNow(co)}/messages`, id: (co) => openLead(co).id, body: (_co, id) => ({ content: 'Summarize this', context: { type: 'lead', id } }) },
+  { name: 'ai context customer', method: 'POST', path: (co) => `/ai/conversations/${aiConversationNow(co)}/messages`, id: (co) => one(customers, co).id, body: (_co, id) => ({ content: 'Summarize this', context: { type: 'customer', id } }) },
 ]
 
 describe('Ids of the other company in a body or query behave like ids that don’t exist', () => {

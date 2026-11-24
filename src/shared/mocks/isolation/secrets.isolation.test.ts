@@ -79,7 +79,8 @@ describe('§8 Sweep: every GET endpoint, every viewer', () => {
         if (res.status === 200) expect(leaksIn(res.body, co), `${u.role} ${keyOf(e.method, e.path)}`).toEqual([])
       }
     }
-  }, 30_000)
+    // Every role × every list endpoint: ~12 s alone with the full demo books, several times that in the full parallel run.
+  }, 120_000)
 
   it('platform owner: every platform GET (for both companies) is free of secrets', async () => {
     for (const e of gets.filter((x) => x.kind === 'platform')) {

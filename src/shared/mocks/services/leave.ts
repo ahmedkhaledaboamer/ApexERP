@@ -74,7 +74,7 @@ const ACTIVE: LeaveRequestRecord['status'][] = ['pending_head', 'pending_hr', 'a
 
 const typesOf = (co: string) => hrLeaveTypes.filter((t) => t.companyId === co)
 const plainType = (t: Tenant<LeaveType>): LeaveType => {
-  const { companyId: _c, ...rest } = t // eslint-disable-line @typescript-eslint/no-unused-vars
+  const { companyId: _c, ...rest } = t
   return rest
 }
 const nameOf = (co: string, userId: string | null) => (userId ? (users.find((u) => u.id === userId && u.companyId === co)?.name ?? '') : '')
@@ -177,7 +177,7 @@ function canSee(ctx: HrCtx, r: Tenant<LeaveRequestRecord>): boolean {
 function toRequest(ctx: HrCtx, r: Tenant<LeaveRequestRecord>): LeaveRequest {
   const emp = employeeById(ctx.co, r.employeeId)
   const type = typesOf(ctx.co).find((t) => t.id === r.leaveTypeId)
-  const { companyId: _c, approvals, ...rest } = r // eslint-disable-line @typescript-eslint/no-unused-vars
+  const { companyId: _c, approvals, ...rest } = r
   return {
     ...rest,
     employeeName: emp?.fullName ?? '',

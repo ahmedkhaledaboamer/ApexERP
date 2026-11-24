@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, type ReactNode } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { X } from 'lucide-react'
 import { cn } from '@/shared/lib/utils'
+import { onTopEscape } from './layerStack'
 
 interface ModalProps {
   open: boolean
@@ -37,13 +38,11 @@ export function Modal({ open, onClose, title, description, children, footer, siz
       )
       first?.focus()
     })
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onCloseRef.current()
-    }
-    document.addEventListener('keydown', onKey)
+    // Escape closes this modal only when it is the topmost layer (e.g. a modal opened from a drawer).
+    const offEscape = onTopEscape(() => onCloseRef.current())
     return () => {
       cancelAnimationFrame(raf)
-      document.removeEventListener('keydown', onKey)
+      offEscape()
       previouslyFocused?.focus()
     }
   }, [open])

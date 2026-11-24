@@ -50,6 +50,7 @@ export type SystemAccountRole =
   | 'undeposited_funds' // received, not yet in the bank
   | 'pdc_receivable' // post-dated cheques held
   | 'customer_advances' // unapplied customer credit / overpayments
+  | 'supplier_advances' // prepayments to suppliers before their bill (1420)
   | 'payment_gateway_clearing'
   | 'fx_gain_loss'
   | 'rounding'
@@ -77,7 +78,7 @@ export interface Account {
 /* ---------------- journal (general ledger) ---------------- */
 
 /** What created the entry; `sourceId` is that document's id. Manual entries have sourceType 'manual'. */
-export type JournalSourceType = 'manual' | 'invoice' | 'credit_note' | 'payment' | 'payment_refund' | 'pdc' | 'opening_balance' | 'payroll' | 'bill' | 'expense' | 'bank'
+export type JournalSourceType = 'manual' | 'invoice' | 'credit_note' | 'payment' | 'payment_refund' | 'pdc' | 'opening_balance' | 'payroll' | 'bill' | 'expense' | 'bank' | 'vat_return' | 'tax_provision' | 'year_end_close'
 
 export interface JournalLine {
   accountId: string

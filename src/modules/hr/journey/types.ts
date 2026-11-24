@@ -38,16 +38,18 @@ export const DEFAULT_PROBATION_DAYS = 90
 /**
  * Optional link action of an item: a shortcut to the screen that does it, and an automatic tick when the real
  * record appears (asset of the category held, enrolled in the course / every mandatory course, document of the
- * type on file, a signed contract). `probation_review` is the seam for HR › Performance (probation reviews).
+ * type on file, a signed contract, every policy addressed to the employee acknowledged — HR › Policies). `probation_review` is
+ * the seam for HR › Performance (probation reviews).
  */
-export type ItemActionKind = 'assign_asset' | 'enrol_course' | 'upload_document' | 'sign_contract' | 'probation_review'
-export const ITEM_ACTION_KINDS: ItemActionKind[] = ['assign_asset', 'enrol_course', 'upload_document', 'sign_contract', 'probation_review']
+export type ItemActionKind = 'assign_asset' | 'enrol_course' | 'upload_document' | 'sign_contract' | 'probation_review' | 'acknowledge_policies'
+export const ITEM_ACTION_KINDS: ItemActionKind[] = ['assign_asset', 'enrol_course', 'upload_document', 'sign_contract', 'probation_review', 'acknowledge_policies']
 export const ITEM_ACTION_LABEL: Record<ItemActionKind, string> = {
   assign_asset: 'Assign asset',
   enrol_course: 'Enrol in course',
   upload_document: 'Upload document',
   sign_contract: 'Sign contract',
   probation_review: 'Probation review',
+  acknowledge_policies: 'Acknowledge policies',
 }
 
 export interface ItemAction {

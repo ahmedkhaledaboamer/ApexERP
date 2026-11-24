@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useState, type ReactNode } from 'react'
 import { Provider } from 'react-redux'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter } from 'react-router-dom'
@@ -6,6 +6,9 @@ import { makeStore, type RootState } from '@/app/store'
 import { makeQueryClient } from '@/app/queryClient'
 import { useAppSelector } from '@/store/hooks'
 import { watchSessionTransitions } from '@/app/sessionTransitions'
+import { bindAuthSession } from '@/app/authSession'
+import { SessionExpiryHost } from '@/app/SessionExpiryHost'
+import { AppErrorBoundary } from '@/shared/components/layout/ErrorBoundary'
 import { TenantProvider } from '@/modules/tenancy/TenantProvider'
 
 interface AppProvidersProps {
@@ -20,13 +23,23 @@ export function AppProviders({ preloadedState, persistSession = true, children }
   const [store] = useState(() => makeStore(preloadedState, { persistSession }))
   const [queryClient] = useState(makeQueryClient)
   // Session transitions clear the query cache, tenant storage and tenant-scoped state (sync, in dispatch).
-  useState(() => watchSessionTransitions(store, queryClient, { persist: persistSession }))
+  // A layout effect (not a useState initializer, which StrictMode runs twice and never cleans up):
+  // one subscription on the kept store, in place before any child effect dispatches, removed on unmount.
+  useLayoutEffect(() => watchSessionTransitions(store, queryClient, { persist: persistSession }), [store, queryClient, persistSession])
+  // Token refresh, session expiry (→ /login), offline detection and failed-write toasts.
+  // An effect, not a useState initializer: StrictMode runs initializers twice (two bindings, one of
+  // them on a store that is thrown away, whose writes put stale tokens back into storage). A layout
+  // effect binds before any query starts fetching (those start in passive effects) and unbinds on unmount.
+  useLayoutEffect(() => bindAuthSession(store), [store])
   return (
     <Provider store={store}>
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
           <ThemeRoot>
-            <TenantProvider>{children}</TenantProvider>
+            <AppErrorBoundary>
+              <SessionExpiryHost />
+              <TenantProvider>{children}</TenantProvider>
+            </AppErrorBoundary>
           </ThemeRoot>
         </BrowserRouter>
       </QueryClientProvider>

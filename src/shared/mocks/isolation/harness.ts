@@ -10,8 +10,11 @@ import { users } from '@/shared/mocks/db'
 import { APEX_ID, CREST_ID } from '@/shared/mocks/data/tenancy'
 import { resetClock } from '@/shared/mocks/clock'
 import { hrProfiles } from '@/shared/mocks/data/hrPeople'
+import { finBankAccounts } from '@/shared/mocks/data/financeBanking'
 import { pendingIbans } from '@/shared/mocks/data/hrSelfService'
 import { hrPayrollProfiles } from '@/shared/mocks/data/hrPayroll'
+import { finSupplierProfiles } from '@/shared/mocks/data/financePurchases'
+import { integrationSecrets } from '@/shared/mocks/data/integrations'
 import { platformTokenFor, tokenFor } from '@/shared/mocks/server'
 
 /**
@@ -116,7 +119,7 @@ export async function api(token: string | null, method: string, path: string, op
   const res = (pick.length ? await getResponse(pick, req.clone()) : undefined) ?? (await getResponse(ALL_HANDLERS, req))
   if (!res) throw new Error(`No handler for ${m} ${path}`)
   const text = await res.text()
-  let body: unknown = null
+  let body: unknown
   try {
     body = text ? JSON.parse(text) : null
   } catch {
@@ -124,7 +127,8 @@ export async function api(token: string | null, method: string, path: string, op
   }
   const out: Res = { status: res.status, body, text, method: m, path }
   recorded.push(out)
-  const leaks = [...secretsIn(body, `${m} ${path}`), ...hrSensitiveIn(text, `${m} ${url.pathname.replace(/^\/api/, '')}`)]
+  const route = `${m} ${url.pathname.replace(/^\/api/, '')}`
+  const leaks = [...secretsIn(body, `${m} ${path}`), ...hrSensitiveIn(text, route), ...integrationSecretsIn(text, route)]
   if (leaks.length) throw new Error(`Secrets guard: ${m} ${path} answered with secrets:\n  ${leaks.join('\n  ')}`)
   return out
 }
@@ -165,6 +169,7 @@ export function luhn(digits: string): boolean {
 const SESSION_PATHS = [
   /^POST \/auth\/login(\/2fa)?$/,
   /^POST \/auth\/switch-role$/,
+  /^POST \/auth\/refresh$/,
   /^POST \/auth\/dev\/sign-in$/,
   /^POST \/auth\/impersonation\//,
   /^POST \/platform\/auth\/login$/,
@@ -181,6 +186,8 @@ const SESSION_PATHS = [
 const ALLOWED_SECRET_KEYS: Record<string, string[]> = {
   'POST /security/2fa/setup': ['secret'],
   'POST /security/2fa/verify': ['recovery_codes'],
+  // Integrations › API keys: the new key, answered once on creation (only its hash is stored).
+  'POST /integrations/api-keys': ['secret'],
 }
 
 /**
@@ -213,7 +220,9 @@ export function secretsIn(body: unknown, where: string): string[] {
     }
     if (v && typeof v === 'object') {
       for (const [k, x] of Object.entries(v)) {
-        if (SECRET_KEY.test(bare(k)) && x !== null && x !== undefined && x !== '' && !(path === '$' && allowed.includes(k))) out.push(`${path}.${k}: secret field`)
+        // A session response carries its refresh token next to the access token (docs/API.md › Auth › Session and Refresh).
+        const sessionRefresh = sessionCall && path === '$' && bare(k).toLowerCase() === 'refreshtoken'
+        if (SECRET_KEY.test(bare(k)) && x !== null && x !== undefined && x !== '' && !(path === '$' && allowed.includes(k)) && !sessionRefresh) out.push(`${path}.${k}: secret field`)
         if (SESSION_TOKEN_KEY.test(bare(k)) && !sessionCall && typeof x === 'string') out.push(`${path}.${k}: token outside an auth response`)
         walk(x, `${path}.${k}`)
       }
@@ -235,6 +244,12 @@ export const REVEAL_PATHS: RegExp[] = [
   /^POST \/hr\/payroll\/runs\/[^/]+\/bank-file$/,
   // HR full: the proposed IBAN of a pending self-service bank account change (audited).
   /^POST \/hr\/profile-changes\/[^/]+\/reveal$/,
+  // Accounts & finance full: a supplier's IBAN (audited; Finance › Suppliers).
+  /^POST \/finance\/suppliers\/[^/]+\/reveal-iban$/,
+  // Accounts & finance full: a company bank account's full number / IBAN (audited; Finance › Banking).
+  /^POST \/finance\/bank-accounts\/[^/]+\/reveal$/,
+  // Accounts & finance full: the bank upload file of a supplier payment run (supplier + company IBANs; audited).
+  /^POST \/finance\/payment-runs\/[^/]+\/bank-file$/,
 ]
 
 export function hrSensitiveValues(): string[] {
@@ -243,6 +258,13 @@ export function hrSensitiveValues(): string[] {
   for (const p of hrPayrollProfiles) if (p.personId && p.personId.length >= 10) out.add(p.personId)
   // Proposed IBANs of pending self-service changes (served masked like the profile's).
   for (const iban of pendingIbans()) out.add(iban)
+  // Supplier IBANs (Accounts & finance › Suppliers; served masked, revealed only by the audited POST).
+  for (const p of finSupplierProfiles) if (p.iban && p.iban.length >= 15) out.add(p.iban)
+  // Company bank accounts (Accounts & finance › Banking): number and IBAN stored full, served masked.
+  for (const b of finBankAccounts) {
+    if (b.iban && b.iban.length >= 15) out.add(b.iban)
+    if (b.accountNumber && b.accountNumber.length >= 10) out.add(b.accountNumber)
+  }
   return [...out]
 }
 
@@ -260,6 +282,30 @@ export function hrSensitiveIn(text: string, where: string, values: readonly stri
       break
     }
   }
+  return out
+}
+
+/**
+ * Integration credentials (Insights & admin › Integrations): every stored SMTP password, OAuth token, WhatsApp access
+ * token, gateway secret key, webhook signing secret and website webhook token (data/integrations.ts
+ * `integrationSecrets`), plus any full company API key (`apx_live_…`, stored as a hash only). None may appear in a
+ * response, except: the new API key on its creation (once), and the website webhook token in its own URL, served to
+ * Company Admins only by the website endpoints (they paste it into the third-party form tool; docs/API.md › Integrations).
+ */
+const API_KEY_VALUE = /apx_live_[A-Za-z0-9]{32}/
+const API_KEY_PATHS = [/^POST \/integrations\/api-keys$/]
+const WEBSITE_TOKEN_PATHS = [/^GET \/integrations\/website$/, /^PUT \/integrations\/website\/webhook$/, /^POST \/integrations\/website\/webhook\/rotate$/]
+
+export function integrationSecretsIn(text: string, where: string): string[] {
+  const route = where.replace(/\?.*$/, '')
+  if (!text) return []
+  const out: string[] = []
+  for (const [key, value] of integrationSecrets) {
+    if (!value || value.length < 8 || !text.includes(value)) continue
+    if (key.endsWith('|website|token') && WEBSITE_TOKEN_PATHS.some((re) => re.test(route))) continue
+    out.push(`${route}: integration credential ${key.split('|').slice(1).join('/')} ending ${value.slice(-4)}`)
+  }
+  if (API_KEY_VALUE.test(text) && !API_KEY_PATHS.some((re) => re.test(route))) out.push(`${route}: full API key`)
   return out
 }
 

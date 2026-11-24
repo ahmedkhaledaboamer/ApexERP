@@ -19,6 +19,13 @@ const authSlice = createSlice({
     signedOut(state) {
       state.session = null
     },
+    /** POST /auth/refresh rotated the tokens of the same session (user, tenant and cache stay). */
+    tokensRefreshed(state, action: PayloadAction<{ token: string; refreshToken?: string; expiresAt?: string }>) {
+      if (!state.session) return
+      state.session.token = action.payload.token
+      if (action.payload.refreshToken !== undefined) state.session.refreshToken = action.payload.refreshToken
+      if (action.payload.expiresAt !== undefined) state.session.expiresAt = action.payload.expiresAt
+    },
     /** Server copy of the tenant (GET /tenant) replaces the one saved with the session. */
     tenantRefreshed(state, action: PayloadAction<Company>) {
       if (state.session && state.session.tenant.id === action.payload.id) state.session.tenant = action.payload
@@ -26,7 +33,7 @@ const authSlice = createSlice({
   },
 })
 
-export const { signedIn, signedOut, tenantRefreshed } = authSlice.actions
+export const { signedIn, signedOut, tenantRefreshed, tokensRefreshed } = authSlice.actions
 export default authSlice.reducer
 
 /*

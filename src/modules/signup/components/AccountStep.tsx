@@ -15,6 +15,8 @@ import { PATHS } from '@/app/paths'
 import { Button } from '@/shared/components/ui/Button'
 import { Checkbox, Field, SelectInput, TextInput } from '@/shared/components/form/Field'
 import { ErrorAlert, PasswordMeter, StepHeading } from '@/modules/signup/components/SignupParts'
+import { ImageField } from '@/modules/settings/branding/ImageField'
+import { LOGO_MAX_BYTES, formatBytes } from '@/modules/settings/branding'
 
 export type AccountValues = Required<SignupStartInput>
 type Errors = Partial<Record<keyof AccountValues, string>>
@@ -29,6 +31,7 @@ export const EMPTY_ACCOUNT: AccountValues = {
   mobile: '',
   password: '',
   acceptTerms: false,
+  logo: null,
   website: '',
 }
 
@@ -206,6 +209,18 @@ export function AccountStep({ values, onChange, subdomainEdited, onSubdomainEdit
               Your address can’t be changed later.
             </p>
           </Field>
+
+          <div className="rounded-lg border border-line p-3.5">
+            <ImageField
+              kind="logoLight"
+              title="Company logo (optional)"
+              hint={`PNG, JPG, SVG or WebP up to ${formatBytes(LOGO_MAX_BYTES)}. Shown in the header, on the sign-in page and on your documents. You can change it later in Settings › Branding.`}
+              value={values.logo}
+              surface="light"
+              disabled={start.isPending}
+              onChange={(url) => change('logo', url)}
+            />
+          </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field id="su-country" label="Country" required>

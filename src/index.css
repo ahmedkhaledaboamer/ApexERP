@@ -84,6 +84,25 @@
   --animate-fade-in: fade-in 160ms var(--ease-out-strong);
   --animate-pop-in: pop-in 180ms var(--ease-out-strong);
   --animate-slide-in-end: slide-in-end 240ms var(--ease-out-strong);
+  --animate-otp-pop: otp-pop 150ms var(--ease-out-strong);
+  --animate-otp-shake: otp-shake 320ms ease-in-out;
+
+  /* One-time-code boxes: a digit lands with a small pop; a wrong code shakes the row. */
+  @keyframes otp-pop {
+    from {
+      transform: scale(0.92);
+    }
+  }
+  @keyframes otp-shake {
+    20%,
+    60% {
+      transform: translateX(-5px);
+    }
+    40%,
+    80% {
+      transform: translateX(5px);
+    }
+  }
 
   @keyframes fade-in {
     from {
@@ -131,20 +150,20 @@
   }
   /*
    * UI scale. Every size in the app is in rem, so this one value sets the density.
-   * Laptops (incl. 1920px screens at 125% Windows scaling ≈ 1536 CSS px) get the compact 80%;
-   * wide monitors 87.5%; phones a little larger for legibility.
+   * Laptops (incl. 1920px screens at 125% Windows scaling ≈ 1536 CSS px) get 87.5%;
+   * wide monitors 93.75%; phones the browser default for legibility.
    */
   html {
-    font-size: 87.5%;
+    font-size: 93.75%;
   }
   @media (max-width: 1600px) {
     html {
-      font-size: 80%;
+      font-size: 87.5%;
     }
   }
   @media (max-width: 640px) {
     html {
-      font-size: 93.75%;
+      font-size: 100%;
     }
   }
   body {

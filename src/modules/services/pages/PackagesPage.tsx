@@ -18,6 +18,7 @@ import { IconTile, PageBody, PageHeader } from '@/shared/components/layout/PageH
 import { ActiveBadge, CategoryIcon, useServicesAccess } from '@/modules/services/components/ServiceBits'
 import { PackageDrawer } from '@/modules/services/components/PackageDrawer'
 import { useReadOnly } from '@/shared/lib/readOnly'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 
 type Show = 'active' | 'inactive' | 'all'
 type DrawerState = { pkg: PackageRow | null } | null
@@ -29,6 +30,7 @@ export default function PackagesPage() {
   const [show, setShow] = useState<Show>('active')
   const [q, setQ] = useState('')
   const [drawer, setDrawer] = useState<DrawerState>(null)
+  useNewParam(() => setDrawer({ pkg: null }), { when: canEdit })
   const { hash } = useLocation()
   const target = hash ? decodeURIComponent(hash.slice(1)) : ''
 

@@ -15,6 +15,7 @@ import type {
 } from '@/modules/signup/types'
 import type { PaymentMethod, Plan } from '@/modules/billing/types'
 import { DEFAULT_PALETTE } from '@/modules/tenancy/branding'
+import { checkImageDataUrl } from '@/modules/settings/branding'
 import { isCountryCode, regionalDefaults } from '@/modules/tenancy/regionDefaults'
 import { monogramFor, subdomainProblem } from '@/modules/tenancy/subdomain'
 import { ApiError } from '@/shared/lib/apiError'
@@ -240,6 +241,12 @@ export async function startSignup(input: Partial<SignupStartInput> | null, clien
   const pw = signupPasswordProblem(password)
   if (pw) throw err(pw, 422, 'weak_password')
   if (body.acceptTerms !== true) throw err('Accept the terms of service to continue.', 422, 'terms_required')
+  let logoUrl: string | null = null
+  if (body.logo !== undefined && body.logo !== null && body.logo !== '') {
+    const logo = checkImageDataUrl('logoLight', body.logo)
+    if (!logo.ok) throw err(logo.message, 422, 'invalid_logo')
+    logoUrl = logo.dataUrl
+  }
 
   const t = now()
   const p: PendingSignup = {
@@ -252,6 +259,7 @@ export async function startSignup(input: Partial<SignupStartInput> | null, clien
     adminEmail,
     mobile,
     password,
+    logoUrl,
     createdAt: iso(t),
     code: newCode(),
     codeSentAt: iso(t),
@@ -448,7 +456,7 @@ function createWorkspace(p: PendingSignup, plan: Plan, card: PaymentMethod | nul
     regional: regionalDefaults(p.country),
     branding: {
       displayName: p.companyName,
-      logoUrl: null,
+      logoUrl: p.logoUrl ?? null,
       monogram: monogramFor(p.companyName),
       palette: { ...DEFAULT_PALETTE },
       emailSenderName: p.companyName,

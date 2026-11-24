@@ -43,6 +43,7 @@ import { EmptyState, ErrorState, Skeleton } from '@/shared/components/ui/Feedbac
 import { Gauge } from '@/shared/components/ui/Gauge'
 import { StatCard } from '@/shared/components/ui/StatCard'
 import { PageBody, PageHeader } from '@/shared/components/layout/PageHeader'
+import { MyCommissionsLink } from '@/modules/finance/commissions/components/MyCommissionsLink'
 
 /** How far ahead managers may plan targets. */
 const MAX_MONTHS_AHEAD = 3
@@ -99,6 +100,7 @@ function SalesTargets({ scope }: { scope: ReturnType<typeof scopeOf> }) {
         actions={
           <>
             <MonthSwitcher month={month} thisMonth={thisMonth} lastAllowed={lastAllowed} onChange={goTo} />
+            <MyCommissionsLink />
             {data?.canEdit && data.rows.length > 0 && (
               <Button write onClick={() => setEditing(data.rows[0].userId)}>
                 <Pencil />

@@ -49,7 +49,7 @@ export function TemplateDrawer({ template, onClose }: { template: TemplateView |
       }
     >
       <div className="space-y-3">
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field id="tpl-name" label="Name" required><TextInput id="tpl-name" value={name} onChange={(e) => setName(e.target.value)} /></Field>
           <Field id="tpl-kind" label="Kind">
             <SelectInput id="tpl-kind" value={kind} disabled={!!template} onChange={(e) => setKind(e.target.value as JourneyKind)}>
@@ -73,7 +73,7 @@ export function TemplateDrawer({ template, onClose }: { template: TemplateView |
         <label className="flex items-center gap-2 text-[0.8125rem]"><Checkbox checked={active} onChange={(e) => setActive(e.target.checked)} />Active (used for new journeys)</label>
         <ul className="space-y-2" aria-label="Template items">
           {rows.map((r, i) => (
-            <li key={r.id ?? `new-${i}`} className="grid gap-2 rounded-lg border border-line p-2 sm:grid-cols-12">
+            <li key={r.id ?? `new-${i}`} className="grid grid-cols-1 gap-2 rounded-lg border border-line p-2 sm:grid-cols-12">
               <TextInput aria-label="Item title" placeholder="Title" value={r.title} onChange={(e) => patch(i, { title: e.target.value })} className="sm:col-span-4" />
               <SelectInput aria-label="Owner" value={r.ownerRole} onChange={(e) => patch(i, { ownerRole: e.target.value as Row['ownerRole'] })} className="sm:col-span-2">
                 {OWNER_ROLES.map((o) => <option key={o} value={o}>{OWNER_ROLE_LABEL[o]}</option>)}

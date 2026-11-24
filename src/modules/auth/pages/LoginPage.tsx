@@ -6,14 +6,17 @@ import type { Session } from '@/shared/types'
 import { PATHS } from '@/app/paths'
 import { login, loginTwoFactor } from '@/modules/auth/api/authApi'
 import { isTwoFactorChallenge } from '@/modules/auth/types'
-import { ApiError } from '@/shared/lib/apiError'
+import { ApiError, SESSION_EXPIRED_MESSAGE } from '@/shared/lib/apiError'
 import { DemoOtpHint, OtpInput } from '@/modules/auth/components/OtpInput'
 import { Button } from '@/shared/components/ui/Button'
 import { Field, SelectInput, TextInput } from '@/shared/components/form/Field'
 import { useAppDispatch, useAppSelector } from '@/store/hooks'
 import { signedIn } from '@/store/authSlice'
 import { publicWorkspaceLoaded } from '@/store/tenantSlice'
-import { DEMO_PASSWORD } from '@/shared/lib/constants'
+import { DEMO_PASSWORD as MOCK_DEMO_PASSWORD } from '@/shared/lib/constants'
+
+/** The mock's demo password; '' in a real-backend build (inline env check, so the bundler drops the constant). */
+const DEMO_PASSWORD = import.meta.env.VITE_API_MOCK !== 'false' ? MOCK_DEMO_PASSWORD : ''
 import { currentWorkspace, setWorkspace } from '@/shared/lib/tenantContext'
 import { getDevAccounts } from '@/modules/tenancy/api'
 import { DEV_TENANT_TOOLS } from '@/modules/tenancy/dev'
@@ -23,7 +26,10 @@ import { TenantLogo } from '@/modules/tenancy/components/TenantLogo'
 
 export default function LoginPage() {
   const signedInAlready = useAppSelector((s) => s.auth.session !== null)
-  if (signedInAlready) return <Navigate to={PATHS.dashboard} replace />
+  const location = useLocation()
+  // Signed in (also right after sign-in, which may render before `finish` navigates): go where the
+  // user was heading (state.from, e.g. after "Your session expired"), else the dashboard.
+  if (signedInAlready) return <Navigate to={redirectTarget(location.state)} replace />
   return <LoginScreen />
 }
 
@@ -38,6 +44,7 @@ function LoginScreen() {
   /** Set when the password was right but the account has 2FA: the OTP step shows instead. */
   const [challengeId, setChallengeId] = useState<string | null>(null)
   const idleMinutes = idleSignOutMinutes(location.state)
+  const sessionExpired = idleMinutes === null && expiredSignOut(location.state)
   const branding = useBranding()
 
   function finish(session: Session) {
@@ -109,6 +116,13 @@ function LoginScreen() {
             <p role="status" className="mt-6 flex items-start gap-2 rounded-lg border border-warning-100 bg-warning-50 px-3 py-2 text-[0.8125rem] text-warning-700 dark:border-warning-500/20 dark:bg-warning-500/10 dark:text-warning-500">
               <Clock className="mt-0.5 size-4 shrink-0" aria-hidden />
               You were signed out after {idleMinutes} minute{idleMinutes === 1 ? '' : 's'} of inactivity. Sign in again to continue.
+            </p>
+          )}
+
+          {sessionExpired && (
+            <p id="session-expired-notice" role="status" className="mt-6 flex items-start gap-2 rounded-lg border border-warning-100 bg-warning-50 px-3 py-2 text-[0.8125rem] text-warning-700 dark:border-warning-500/20 dark:bg-warning-500/10 dark:text-warning-500">
+              <Clock className="mt-0.5 size-4 shrink-0" aria-hidden />
+              {SESSION_EXPIRED_MESSAGE}
             </p>
           )}
 
@@ -409,7 +423,16 @@ function idleSignOutMinutes(state: unknown): number | null {
   return null
 }
 
+/** Set when a request found the session expired (app/SessionExpiryHost). */
+function expiredSignOut(state: unknown): boolean {
+  return !!state && typeof state === 'object' && 'reason' in state && state.reason === 'expired'
+}
+
 function redirectTarget(state: unknown): string {
-  if (state && typeof state === 'object' && 'from' in state && typeof state.from === 'string') return state.from
+  // Only an in-app path (never another origin, never back to /login: no redirect loops).
+  if (state && typeof state === 'object' && 'from' in state && typeof state.from === 'string') {
+    const from = state.from
+    if (from.startsWith('/') && !from.startsWith('//') && !/^\/login(?:[/?#]|$)/.test(from)) return from
+  }
   return PATHS.dashboard
 }
