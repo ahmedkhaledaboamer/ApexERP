@@ -22,12 +22,11 @@ test('admin: search "invoice" + Enter opens the invoice editor', async ({ page }
   await expect(page.getByRole('heading', { name: 'New invoice' })).toBeVisible({ timeout: 30_000 })
 })
 
-test('admin: New contract opens the contract form; New task focuses the task form; Escape closes', async ({ page }) => {
+test('admin: New contract opens the contract form; New task opens the task popup; Escape closes', async ({ page }) => {
   await signInAs(page, 'u1')
   await page.goto('/dashboard')
-  // No customer form exists (customers come from a won lead), so the menu has none.
   await openNew(page)
-  await expect(page.getByRole('menuitem', { name: 'New customer' })).toHaveCount(0)
+  await expect(page.getByRole('menuitem', { name: 'New customer', exact: true })).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(page.getByRole('textbox', { name: 'Search what to create' })).toHaveCount(0)
 
@@ -40,8 +39,9 @@ test('admin: New contract opens the contract form; New task focuses the task for
 
   await openNew(page)
   await page.getByRole('menuitem', { name: 'New task', exact: true }).first().click() // in "Common" and in Projects & tasks
+  await expect(page.getByRole('dialog').filter({ hasText: 'New task' })).toBeVisible({ timeout: 30_000 })
   await expect(page).toHaveURL(/\/tasks\/my$/)
-  await expect(page.getByRole('textbox', { name: 'Task title' })).toBeFocused({ timeout: 30_000 })
+  await expect(page.getByRole('dialog').filter({ hasText: 'New task' }).getByRole('textbox', { name: 'Title', exact: true })).toBeFocused()
 })
 
 test('a Sales Agent sees self-service but no finance / HR-admin items', async ({ page }) => {

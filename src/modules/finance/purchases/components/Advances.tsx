@@ -124,7 +124,7 @@ export function AdvanceDrawer({ open, onClose, vendorId, po }: { open: boolean; 
         </>
       }
     >
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field id="adv-vendor" label="Supplier">
           <SelectInput id="adv-vendor" value={vendor} disabled={!!po} onChange={(e) => setVendor(e.target.value)}>
             {m?.suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}

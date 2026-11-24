@@ -109,7 +109,7 @@ export function Notices({ d }: { d: VatReturnDetail }) {
   return (
     <div className="space-y-2">
       {d.warnings.map((w) => (
-        <p key={w} className="flex gap-2 rounded-lg border border-warning-300 bg-warning-50 px-3 py-2 text-[0.8125rem] text-ink dark:bg-warning-500/10">
+        <p key={w} className="flex gap-2 rounded-lg border border-warning-500/40 bg-warning-50 px-3 py-2 text-[0.8125rem] text-ink dark:bg-warning-500/10">
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning-600" aria-hidden />
           {w}
         </p>
@@ -273,7 +273,7 @@ function PayModal({ d, settings, onClose }: { d: VatReturnDetail; settings: TaxS
 export function FilingInfo({ d }: { d: VatReturnDetail }) {
   if (d.status === 'draft') return null
   return (
-    <dl className="grid gap-x-6 gap-y-2 rounded-xl border border-line bg-surface px-4 py-3 text-[0.8125rem] sm:grid-cols-3">
+    <dl className="grid grid-cols-1 gap-x-6 gap-y-2 rounded-xl border border-line bg-surface px-4 py-3 text-[0.8125rem] sm:grid-cols-3">
       <div><dt className="text-xs text-muted">Filed</dt><dd>{fmtDate(d.filedDate)} · ref. <span className="num">{d.filingReference}</span>{d.filedByName ? ` · ${d.filedByName}` : ''}</dd></div>
       <div><dt className="text-xs text-muted">Settlement entry</dt><dd>{d.settlementEntry ? <EntryLink id={d.settlementEntry.id} number={d.settlementEntry.number} /> : '—'}</dd></div>
       <div><dt className="text-xs text-muted">Payment</dt><dd>{d.paymentEntry ? <>{fmtDate(d.paidDate)} · <EntryLink id={d.paymentEntry.id} number={d.paymentEntry.number} />{d.paymentReference ? ` · ${d.paymentReference}` : ''}</> : d.totals.payable > 0 ? 'Not paid yet' : 'Nothing to pay'}</dd></div>

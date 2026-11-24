@@ -94,7 +94,7 @@ function decodeText(bytes: Uint8Array): string {
 /** Text before the root element: BOM, whitespace, an XML declaration and comments only. */
 function svgRootOk(text: string): boolean {
   const rest = text
-    .replace(/^﻿/, '')
+    .replace(/^\uFEFF/, '')
     .replace(/^\s*<\?xml[\s\S]*?\?>/i, '')
     .replace(/^(\s*<!--[\s\S]*?-->)+/, '')
     // A DOCTYPE (with an internal subset) is recognised here and refused by `svgProblem`.

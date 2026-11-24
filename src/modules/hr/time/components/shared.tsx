@@ -48,9 +48,9 @@ export function Metric({ label, value, hint, tone }: { label: string; value: Rea
       <p
         className={cn(
           'num mt-1 text-[1.375rem] font-semibold text-ink',
-          tone === 'danger' && 'text-danger-600 dark:text-danger-300',
-          tone === 'warning' && 'text-warning-600 dark:text-warning-300',
-          tone === 'success' && 'text-success-600 dark:text-success-300',
+          tone === 'danger' && 'text-danger-600 dark:text-danger-500',
+          tone === 'warning' && 'text-warning-600 dark:text-warning-500',
+          tone === 'success' && 'text-success-600 dark:text-success-500',
         )}
       >
         {value}
@@ -62,7 +62,7 @@ export function Metric({ label, value, hint, tone }: { label: string; value: Rea
 
 export function Table({ head, children, minWidth = 640, label }: { head: ReactNode[]; children: ReactNode; minWidth?: number; label: string }) {
   return (
-    <div className="overflow-x-auto rounded-xl border border-line bg-surface">
+    <div className="relative overflow-x-auto rounded-xl border border-line bg-surface">
       <table className="w-full text-[0.8125rem]" style={{ minWidth: `${minWidth / 16}rem` }} aria-label={label}>
         <thead>
           <tr className="border-b border-line text-start text-xs text-muted">

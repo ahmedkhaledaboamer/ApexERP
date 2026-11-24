@@ -91,7 +91,7 @@ export function ImportStatementModal({ bankAccountId, onClose }: { bankAccountId
         {error && <p role="alert" className="text-danger-600">{error}</p>}
         {mapping && preview && (
           <>
-            <div className="grid gap-2 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
               {colSelect('date', 'Date', false)}
               {colSelect('description', 'Description', false)}
               {colSelect('reference', 'Reference')}

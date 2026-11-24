@@ -92,7 +92,7 @@ export function VsActualTab({ budgetId, department, month, onChange }: { budgetI
       {q.error ? <FinError error={q.error as Error} onRetry={() => void q.refetch()} /> : !r ? <Skeleton className="h-96" /> : (
         <>
           {r.departmentScoped && <p className="text-[0.8125rem] text-muted">You see the department{r.departments.length === 1 ? '' : 's'} you head.</p>}
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {r.departments.map((d) => <DeptCard key={d.departmentId} d={d} currency={r.currency} />)}
           </div>
           {!r.rows.length ? <EmptyState title="Nothing budgeted or spent" body="No budget lines or department actuals for this selection." /> : (

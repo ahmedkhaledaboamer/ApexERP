@@ -291,7 +291,7 @@ function DocumentsTab({ e }: { e: EmployeeDetail }) {
       {e.documents.length === 0 ? (
         <CardBody><p className="text-[0.8125rem] text-muted">No documents yet.</p></CardBody>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="relative overflow-x-auto">
           <table className="w-full text-[0.8125rem]" aria-label="Documents">
             <thead className="text-start text-xs text-muted">
               <tr className="border-b border-line">

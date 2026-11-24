@@ -117,7 +117,7 @@ function Preview({ end, onDone }: { end: string; onDone: () => void }) {
                 ))}
               </SimpleTable>
             )}
-            <dl className="grid gap-2 text-[0.8125rem] sm:grid-cols-3">
+            <dl className="grid grid-cols-1 gap-2 text-[0.8125rem] sm:grid-cols-3">
               <div><dt className="text-xs text-muted">Net {p.netProfit >= 0 ? 'profit' : 'loss'}</dt><dd><Amount value={p.netProfit} currency={p.currency} strong /></dd></div>
               <div><dt className="text-xs text-muted">Lock date now</dt><dd>{p.lockDate ? fmtDate(p.lockDate) : 'None'}</dd></div>
               <div><dt className="text-xs text-muted">Lock date after the close</dt><dd>{p.newLockDate ? fmtDate(p.newLockDate) : 'None'}</dd></div>

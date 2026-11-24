@@ -108,7 +108,7 @@ export default function BillDetailPage() {
       />
       <PageBody className="space-y-4">
         {error && <p role="alert" className="text-[0.8125rem] text-danger-600">{error}</p>}
-        {b.status === 'rejected' && b.rejectionReason && <p className="rounded-lg bg-danger-50 p-3 text-[0.8125rem] text-danger-700 dark:bg-danger-500/10">Rejected: {b.rejectionReason}</p>}
+        {b.status === 'rejected' && b.rejectionReason && <p className="rounded-lg bg-danger-50 p-3 text-[0.8125rem] text-danger-700 dark:bg-danger-500/10 dark:text-danger-500">Rejected: {b.rejectionReason}</p>}
         {b.status === 'void' && b.voidReason && <p className="rounded-lg bg-sunken p-3 text-[0.8125rem] text-ink-2">Void: {b.voidReason}</p>}
 
         <Section title="Bill">
@@ -190,7 +190,7 @@ export default function BillDetailPage() {
           ))}
         </SimpleTable>
 
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <Section title="Approvals">
             <ApprovalTimeline steps={b.approvals} baseCurrency={base} pending={b.status === 'pending_approval'} />
           </Section>
@@ -380,7 +380,7 @@ function PayDrawer({ open, onClose, bill }: { open: boolean; onClose: () => void
         </>
       }
     >
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field id="pay-date" label="Payment date"><TextInput id="pay-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
         <Field id="pay-account" label="Pay from">
           <SelectInput id="pay-account" value={account} onChange={(e) => setAccount(e.target.value)}>

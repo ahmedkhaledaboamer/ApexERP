@@ -48,3 +48,9 @@ when the connection is back; writes are not queued.
 `window.__apexAuth.expireAccessToken() / expireSession()` and
 `window.__apexMock.fail('/customers', 500, { requestId })` / `fail(path, 'network')` / `clear()`.
 Used by `e2e/session.spec.ts`.
+
+## Backend integration
+
+The checklist for connecting a real backend (env vars, `npm run build:prod` / `check:bundle`, auth and refresh
+contract, error envelope and request ids, uploads, scheduled jobs, tenant isolation tests to mirror, open decisions)
+is in [BACKEND-HANDOFF.md](BACKEND-HANDOFF.md). Every route the mock serves: [API-ROUTES.md](API-ROUTES.md).

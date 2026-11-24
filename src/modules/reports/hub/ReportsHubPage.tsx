@@ -79,7 +79,7 @@ function Hub({ email }: { email: string }) {
           <>
             <SearchInput aria-label="Search reports" placeholder="Search reports" value={search} onChange={(e) => setSearch(e.target.value)} className="max-w-sm" />
             {!search && (
-              <div className="grid gap-5 lg:grid-cols-2">
+              <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
                 <Shortlist title="Favourites" icon={<Star />} empty="Star a report to keep it here." ids={data.favourites} reports={data.reports} />
                 <Shortlist title="Recently viewed" icon={<Clock />} empty="Reports you open appear here." ids={data.recent.map((r) => r.reportId)} reports={data.reports} />
               </div>
@@ -96,7 +96,7 @@ function Hub({ email }: { email: string }) {
                       {AREA_ICON[area]}
                       {HUB_AREA_LABEL[area]}
                     </h2>
-                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                       {rows.map((r) => (
                         <ReportTile key={r.id} r={r} canSchedule={data.canSchedule} onSchedule={setSchedule} />
                       ))}

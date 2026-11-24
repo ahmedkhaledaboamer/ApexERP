@@ -1,7 +1,7 @@
 import { http, type HttpHandler } from 'msw'
-import type { ContactInput, ContactUpdateInput, ContractInput, ContractUpdateInput, CustomerUpdateInput } from '@/modules/crm/types'
+import type { ContactInput, ContactUpdateInput, ContractInput, ContractUpdateInput, CustomerCreateInput, CustomerUpdateInput } from '@/modules/crm/types'
 import * as svc from '@/shared/mocks/services/crm'
-import { contactInputMapper, contactRowMapper, customerDetailMapper, customerRowMapper, customerUpdateMapper, contractInputMapper, contractRowMapper } from '@/shared/api/mappers'
+import { contactInputMapper, contactRowMapper, customerCreateMapper, customerDetailMapper, customerRowMapper, customerUpdateMapper, contractInputMapper, contractRowMapper } from '@/shared/api/mappers'
 import { API, bodyAs, respondAs, userFrom } from './utils'
 
 type Params = { id: string }
@@ -9,6 +9,10 @@ type Params = { id: string }
 /** CRM endpoints: customers (360° profile), contacts across leads and customers, contracts. */
 export const crmHandlers: HttpHandler[] = [
   http.get(`${API}/customers`, ({ request }) => respondAs(customerRowMapper, () => svc.getCustomers(userFrom(request)))),
+  http.post(`${API}/customers`, async ({ request }) => {
+    const body = await bodyAs<CustomerCreateInput>(request, customerCreateMapper)
+    return respondAs(customerRowMapper, () => svc.createCustomer(userFrom(request), body))
+  }),
   http.get<Params>(`${API}/customers/:id`, ({ request, params }) =>
     respondAs(customerDetailMapper, () => svc.getCustomer(userFrom(request), params.id)),
   ),

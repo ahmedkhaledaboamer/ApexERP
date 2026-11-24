@@ -17,7 +17,7 @@ export function QuotationCreditNotice({ leadId, amount, currency }: { leadId?: s
       role={blocked ? 'alert' : 'status'}
       className={
         blocked
-          ? 'flex items-start gap-2 rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 py-2 text-[0.8125rem] text-danger-700 dark:text-danger-400'
+          ? 'flex items-start gap-2 rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 py-2 text-[0.8125rem] text-danger-700 dark:text-danger-500'
           : 'flex items-start gap-2 rounded-lg border border-warning-500/30 bg-warning-500/10 px-3 py-2 text-[0.8125rem] text-ink-2'
       }
     >

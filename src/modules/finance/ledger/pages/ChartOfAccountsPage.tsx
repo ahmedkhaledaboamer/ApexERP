@@ -211,7 +211,7 @@ function AccountModal({ account, accounts, onClose }: { account: AccountRow | nu
         </div>
       }
     >
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field id="acc-code" label="Code" required hint="3–10 digits, unique in your chart">
           <TextInput id="acc-code" value={code} inputMode="numeric" onChange={(e) => setCode(e.target.value)} />
         </Field>

@@ -50,7 +50,7 @@ function Connection({ wa, canEdit }: { wa: WhatsAppIntegration; canEdit: boolean
       {wa.lastError && <ErrorNote>{wa.lastError}</ErrorNote>}
       {canEdit && (
         <form
-          className="grid gap-3 sm:grid-cols-2"
+          className="grid grid-cols-1 gap-3 sm:grid-cols-2"
           onSubmit={(e) => {
             e.preventDefault()
             connect.mutate(
@@ -224,10 +224,11 @@ function Conversations({ canEdit }: { canEdit: boolean }) {
           {(q.data ?? []).length === 0 && <li className="px-3 py-4 text-center text-[0.8125rem] text-muted">No conversations yet.</li>}
         </ul>
       )}
-      {canEdit && (
+      {/* Demo only: the mock's inbound simulator. A real backend receives messages through the Meta webhook. */}
+      {canEdit && import.meta.env.VITE_API_MOCK !== 'false' && (
         <details className="rounded-lg border border-dashed border-line p-3">
           <summary className="cursor-pointer text-xs text-muted">Simulate an inbound message (demo)</summary>
-          <div className="mt-2 grid gap-2 sm:grid-cols-3">
+          <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
             <TextInput aria-label="From number" placeholder="Mobile number" value={sim.from} onChange={(e) => setSim((x) => ({ ...x, from: e.target.value }))} />
             <TextInput aria-label="Sender name" placeholder="Name (optional)" value={sim.name} onChange={(e) => setSim((x) => ({ ...x, name: e.target.value }))} />
             <TextInput aria-label="Message" placeholder="Message" value={sim.text} onChange={(e) => setSim((x) => ({ ...x, text: e.target.value }))} />

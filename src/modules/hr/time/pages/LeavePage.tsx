@@ -410,7 +410,7 @@ export function RequestForm({ onClose }: { onClose: () => void }) {
             </F>
           )}
           {p && (
-            <div className={cn('rounded-lg border px-3 py-2 text-[0.8125rem]', p.problem ? 'border-danger-600/40 text-danger-600 dark:text-danger-300' : 'border-line text-ink-2')} role="status" data-testid="leave-preview">
+            <div className={cn('rounded-lg border px-3 py-2 text-[0.8125rem]', p.problem ? 'border-danger-600/40 text-danger-600 dark:text-danger-500' : 'border-line text-ink-2')} role="status" data-testid="leave-preview">
               <p className="num font-medium">
                 {p.days} working {p.days === 1 ? 'day' : 'days'}
                 {p.balance && !p.balance.allowNegative ? ` · ${p.balance.remainingDays} left before this request` : ''}
@@ -453,7 +453,7 @@ function CalendarView() {
         </span>
       </div>
       {c.conflicts.length > 0 && (
-        <p className="flex items-center gap-2 rounded-lg border border-warning-600/40 px-3 py-2 text-[0.8125rem] text-warning-600 dark:text-warning-300" role="alert">
+        <p className="flex items-center gap-2 rounded-lg border border-warning-600/40 px-3 py-2 text-[0.8125rem] text-warning-600 dark:text-warning-500" role="alert">
           <AlertTriangle className="size-4" aria-hidden />
           {new Set(c.conflicts.map((x) => x.date)).size} days with more than {c.thresholdPct}% of a department off.
         </p>
@@ -477,7 +477,7 @@ function CalendarView() {
                 <span className="num text-xs font-medium text-ink-2">{Number(d.slice(8))}</span>
                 {conflict && <AlertTriangle className="size-3.5 text-warning-600" aria-label={`Conflict: ${conflict.join(', ')}`} />}
               </div>
-              {holidays.has(d) && <p className="truncate text-[0.6875rem] text-success-600 dark:text-success-300">{holidays.get(d)}</p>}
+              {holidays.has(d) && <p className="truncate text-[0.6875rem] text-success-600 dark:text-success-500">{holidays.get(d)}</p>}
               {!weekend &&
                 !holidays.has(d) &&
                 off.map((e) => (

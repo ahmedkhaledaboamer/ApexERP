@@ -408,7 +408,7 @@ export function RemindersTab({ canWrite }: { canWrite: boolean }) {
   const setStep = (i: number, patch: Partial<DunningStep>) => setDraft((d) => d && { ...d, dunningSteps: d.dunningSteps.map((x, j) => (j === i ? { ...x, ...patch } : x)) })
   const disabled = !canWrite
   return (
-    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+    <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
       <Card>
         <CardHeader title="Payment reminders" description="Emailed to the customer’s billing contact once per invoice and step, on the company’s calendar. Owners are notified at steps marked so." />
         <CardBody className="space-y-4">

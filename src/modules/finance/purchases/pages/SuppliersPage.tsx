@@ -178,7 +178,7 @@ function SupplierDrawer({ id, onClose }: { id: string | null; onClose: () => voi
               <Link to={financeSupplierStatementPath(s.id)} className="text-brand-700 hover:underline dark:text-brand-300">Statement</Link>
             </div>
           </div>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field id="sp-vat" label="VAT / TRN number" hint="VAT is recoverable only from VAT-registered suppliers">
               <TextInput id="sp-vat" value={f.vatNumber} disabled={ro} onChange={(e) => set('vatNumber', e.target.value)} />
             </Field>
@@ -304,7 +304,7 @@ function NewSupplierDrawer({ open, onClose, onCreated }: { open: boolean; onClos
         </>
       }
     >
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field id="ns-name" label="Company name" required className="sm:col-span-2"><TextInput id="ns-name" value={f.name} onChange={(e) => set('name', e.target.value)} /></Field>
         <Field id="ns-cat" label="Category">
           <SelectInput id="ns-cat" value={f.category} onChange={(e) => set('category', e.target.value as VendorCategory)}>

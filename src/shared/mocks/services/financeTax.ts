@@ -441,7 +441,7 @@ export function draftItems(co: string, ret: Pick<VatReturnRecord, 'id' | 'from' 
   const out: VatItem[] = []
   for (const e of entriesOf(co)) {
     if (e.date < trackingFrom || counted.has(e.id)) continue
-    let correction = false
+    let correction: boolean
     if (e.date >= ret.from && e.date <= ret.to) correction = false
     else if (e.date < ret.from && filed.some((f) => e.date >= f.from && e.date <= f.to) && correctionTarget(co, e.date)?.id === ret.id) correction = true
     else continue

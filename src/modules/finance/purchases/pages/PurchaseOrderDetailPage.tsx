@@ -82,7 +82,7 @@ export default function PurchaseOrderDetailPage() {
       />
       <PageBody className="space-y-4">
         {error && <p role="alert" className="text-[0.8125rem] text-danger-600">{error}</p>}
-        {po.rejectionReason && po.status === 'rejected' && <p className="rounded-lg bg-danger-50 p-3 text-[0.8125rem] text-danger-700 dark:bg-danger-500/10">Rejected: {po.rejectionReason}</p>}
+        {po.rejectionReason && po.status === 'rejected' && <p className="rounded-lg bg-danger-50 p-3 text-[0.8125rem] text-danger-700 dark:bg-danger-500/10 dark:text-danger-500">Rejected: {po.rejectionReason}</p>}
         {po.cancelReason && <p className="rounded-lg bg-sunken p-3 text-[0.8125rem] text-ink-2">Cancelled: {po.cancelReason}</p>}
         <Section title="Order">
           <Facts
@@ -139,7 +139,7 @@ export default function PurchaseOrderDetailPage() {
           ))}
         </SimpleTable>
 
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <Section title="Approvals">
             <ApprovalTimeline steps={po.approvals} baseCurrency={base} pending={po.status === 'pending_approval'} />
           </Section>

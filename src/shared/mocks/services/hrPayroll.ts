@@ -155,7 +155,7 @@ function emitPayroll(e: PayrollEvent): void {
 const nameOfUser = (co: string, id: string | null) => (id ? (users.find((u) => u.id === id && u.companyId === co)?.name ?? null) : null)
 const deptName = (co: string, id: string | null) => (id ? (departments.find((d) => d.companyId === co && d.id === id)?.name ?? null) : null)
 const strip = <T extends { companyId: string }>(r: T): Omit<T, 'companyId'> => {
-  const { companyId: _c, ...rest } = r // eslint-disable-line @typescript-eslint/no-unused-vars
+  const { companyId: _c, ...rest } = r
   return rest
 }
 
@@ -419,7 +419,7 @@ function adjustmentsFor(co: string, employeeId: string, month: string): Tenant<A
 }
 
 function adjustmentView(a: Tenant<AdjustmentRecord>): PayAdjustment {
-  const { createdBy: _b, ...rest } = strip(a) // eslint-disable-line @typescript-eslint/no-unused-vars
+  const { createdBy: _b, ...rest } = strip(a)
   return { ...rest, paidRunIds: [...a.paidRunIds], employeeName: employeeById(a.companyId, a.employeeId)?.fullName ?? 'Unknown', locked: a.recurrence === 'once' && a.paidRunIds.length > 0 }
 }
 
@@ -579,7 +579,7 @@ export async function deleteAdjustment(user: User, id: string): Promise<{ id: st
 const repaidOf = (l: LoanRecord) => sum(l.repayments.map((r) => r.amount))
 
 function loanView(l: Tenant<LoanRecord>): PayLoan {
-  const { createdBy: _b, ...rest } = strip(l) // eslint-disable-line @typescript-eslint/no-unused-vars
+  const { createdBy: _b, ...rest } = strip(l)
   const repaid = repaidOf(l)
   return {
     ...rest,
@@ -848,7 +848,7 @@ function runRow(r: Tenant<PayrollRunRecord>): PayrollRunRow {
 }
 
 function lineView(runId: string, l: PayLineRecord): PayLine {
-  const { adjustmentIds: _a, loanInstallments: _l, notifiedAt: _n, ...rest } = l // eslint-disable-line @typescript-eslint/no-unused-vars
+  const { adjustmentIds: _a, loanInstallments: _l, notifiedAt: _n, ...rest } = l
   return { ...rest, runId, items: l.items.map((i) => ({ ...i })), warnings: l.warnings.map((w) => ({ ...w })) }
 }
 

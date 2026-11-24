@@ -32,14 +32,14 @@ export function ForecastTab() {
   const last = buckets[buckets.length - 1]
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
         <Kpi label={`Cash today (${fmtDate(f.today)})`} value={f.openingCash} currency={f.currency} />
         <Kpi label={`Lowest balance · ${f.lowestWeek.label}`} value={f.lowestWeek.closing} currency={f.currency} warn={f.lowestWeek.belowMinimum} />
         <Kpi label={`Closing after ${view === 'weeks' ? '13 weeks' : '6 months'}`} value={last.closing} currency={f.currency} />
         <Kpi label="Minimum cash" value={f.settings.minimumCash} currency={f.currency} />
       </div>
       {f.lowestWeek.belowMinimum && (
-        <p role="alert" className="flex gap-2 rounded-lg border border-warning-300 bg-warning-50 px-3 py-2 text-[0.8125rem] dark:bg-warning-500/10" data-testid="lowest-week-warning">
+        <p role="alert" className="flex gap-2 rounded-lg border border-warning-500/40 bg-warning-50 px-3 py-2 text-[0.8125rem] dark:bg-warning-500/10" data-testid="lowest-week-warning">
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning-600" aria-hidden />
           {f.lowestWeek.negative ? 'Cash goes negative' : 'Cash falls below the minimum'} in {f.lowestWeek.label}: <Amount value={f.lowestWeek.closing} currency={f.currency} strong />. Chase collections or move payments.
         </p>
@@ -50,7 +50,7 @@ export function ForecastTab() {
       </div>
       <ForecastChart f={f} buckets={buckets} />
       <ForecastTable f={f} buckets={buckets} />
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Assumptions f={f} />
         <ManualLines f={f} />
       </div>
@@ -78,7 +78,7 @@ export function ForecastTab() {
 
 function Kpi({ label, value, currency, warn }: { label: string; value: number; currency: string; warn?: boolean }) {
   return (
-    <div className={cn('rounded-xl border border-line bg-surface px-4 py-3', warn && 'border-warning-300')}>
+    <div className={cn('rounded-xl border border-line bg-surface px-4 py-3', warn && 'border-warning-500/40')}>
       <p className="text-xs text-muted">{label}</p>
       <p className="mt-1 text-lg"><Amount value={value} currency={currency} strong /></p>
     </div>
@@ -126,7 +126,7 @@ function ForecastTable({ f, buckets }: { f: CashForecast; buckets: ForecastBucke
   return (
     <SimpleTable
       label="Cash-flow forecast table"
-      head={<tr><th className={cn(th, 'sticky start-0 bg-sunken')}>{f.currency}</th>{buckets.map((b) => <th key={b.key} className={cn(thEnd, b.key === lowKey && 'text-warning-700')} title={`${b.from} – ${b.to}`}>{b.key.startsWith('W') ? `${b.key} · ${fmtDate(b.from).replace(/ \d{4}$/, '')}` : b.label}</th>)}</tr>}
+      head={<tr><th className={cn(th, 'sticky start-0 bg-sunken')}>{f.currency}</th>{buckets.map((b) => <th key={b.key} className={cn(thEnd, b.key === lowKey && 'text-warning-700 dark:text-warning-500')} title={`${b.from} – ${b.to}`}>{b.key.startsWith('W') ? `${b.key} · ${fmtDate(b.from).replace(/ \d{4}$/, '')}` : b.label}</th>)}</tr>}
     >
       {row('Opening cash', (b) => b.opening, true)}
       {INFLOW_CATEGORIES.map((c) => <Fragment key={c}>{row(`+ ${FORECAST_CATEGORY_LABEL[c]}`, (b) => catSum(b, c))}</Fragment>)}
@@ -220,7 +220,7 @@ function ManualLines({ f }: { f: CashForecast }) {
         ))}
       </ul>
       {f.canEdit && (
-        <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_8rem_7rem_7rem_auto] sm:items-end">
+        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_8rem_7rem_7rem_auto] sm:items-end">
           <Field id="fl-label" label="Label"><TextInput id="fl-label" value={label} onChange={(e) => setLabel(e.target.value)} /></Field>
           <Field id="fl-date" label="Date"><TextInput id="fl-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
           <Field id="fl-amount" label="Amount"><TextInput id="fl-amount" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>

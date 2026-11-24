@@ -102,7 +102,7 @@ export default function PurchaseOrderEditorPage() {
   if (existing.data && !existing.data.can.edit) {
     return (
       <PageBody>
-        <p className="text-[0.8125rem] text-muted">This order can’t be edited any more. <Link className="text-brand-700 hover:underline" to={financePurchaseOrderPath(existing.data.id)}>Back to the order</Link></p>
+        <p className="text-[0.8125rem] text-muted">This order can’t be edited any more. <Link className="text-brand-700 hover:underline dark:text-brand-300" to={financePurchaseOrderPath(existing.data.id)}>Back to the order</Link></p>
       </PageBody>
     )
   }
@@ -120,7 +120,7 @@ export default function PurchaseOrderEditorPage() {
         }
       />
       <PageBody className="space-y-5">
-        <div className="grid gap-4 rounded-xl border border-line bg-surface p-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 rounded-xl border border-line bg-surface p-4 md:grid-cols-2 xl:grid-cols-4">
           <Field id="po-vendor" label="Supplier" required>
             <SelectInput id="po-vendor" aria-label="Supplier" value={vendorId} onChange={(e) => {
               setVendorId(e.target.value)

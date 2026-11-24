@@ -18,7 +18,7 @@ const crest = { modules: planOf('business').modules } // co_crest: no hr
 const ids = (role: Role, entitlements = apex) => availableCreateActions({ role, entitlements }).map((a) => a.id).sort()
 
 const SELF = ['design-request', 'leave', 'letter', 'expense-claim', 'purchase-request', 'ai-conversation']
-const SALES = ['lead', 'contact', 'quotation', 'contract']
+const SALES = ['lead', 'contact', 'customer', 'quotation', 'contract']
 const SERVICES = ['service', 'package']
 const MARKETING = ['campaign', 'content', 'bulk-email', 'lead-form', 'landing-page', 'utm-link', 'audience', 'brand-asset']
 const EVENTS = ['event', 'event-template', 'speaker', 'venue', 'vendor', 'sponsor', 'trip']
@@ -108,6 +108,7 @@ const ROUTES = new Map<string, boolean>([
 /** Where each URL target's trigger is handled: the file and the code that reads the param. */
 const HANDLERS: Record<string, { file: string; code: string }> = {
   contact: { file: 'src/modules/crm/pages/ContactsPage.tsx', code: 'useNewParam(' },
+  customer: { file: 'src/modules/crm/pages/CustomersPage.tsx', code: 'useNewParam(' },
   contract: { file: 'src/modules/crm/pages/ContractsPage.tsx', code: 'useNewParam(' },
   service: { file: 'src/modules/services/pages/ServiceCatalogPage.tsx', code: 'useNewParam(' },
   package: { file: 'src/modules/services/pages/PackagesPage.tsx', code: 'useNewParam(' },

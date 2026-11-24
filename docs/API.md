@@ -11,7 +11,164 @@ VITE_API_MOCK=false
 
 The TypeScript types in `src/shared/types/index.ts` and `src/modules/*/types.ts` are the exact
 JSON shapes and the source of truth. The mock implementations in `src/shared/mocks/services/`
-show the business rules each endpoint must enforce.
+show the business rules each endpoint must enforce. On the wire the field names are snake_case
+(see Conventions › Wire format); the mappers in `src/shared/api/` convert them.
+
+Companion docs: **`docs/API-ROUTES.md`** (every mock route, one line each, with its tenant-scoping kind and a link to
+its section here, plus the error-code catalog), **`docs/BACKEND-HANDOFF.md`** (integration checklist and open
+decisions), **`docs/DB-ALIGNMENT.md`** (tables and columns per module), **`docs/TESTING.md`** (isolation suite).
+
+## Contents
+
+<!-- toc: generated from the headings; regenerate rather than edit by hand -->
+- [Multi-tenancy (read first)](#multi-tenancy-read-first)
+  - [Tenant isolation guarantees](#tenant-isolation-guarantees)
+- [Production boundary: mock-only and backend-only routes](#production-boundary-mock-only-and-backend-only-routes)
+- [Conventions](#conventions)
+  - [Error body](#error-body)
+  - [Error code catalog](#error-code-catalog)
+- [Auth](#auth)
+  - [Session and Refresh](#session-and-refresh)
+- [Leads](#leads)
+- [Follow-ups](#follow-ups)
+- [Sales targets](#sales-targets)
+- [Dashboard](#dashboard)
+- [Services](#services)
+- [CRM](#crm)
+- [Quotations](#quotations)
+- [Reports](#reports)
+  - [Company performance](#company-performance)
+  - [Reports hub](#reports-hub)
+- [Lookups & automation](#lookups--automation)
+- [My account](#my-account)
+- [Settings: users](#settings-users)
+- [Settings: security](#settings-security)
+- [Settings: templates](#settings-templates)
+- [Settings: company profile](#settings-company-profile)
+- [Settings: branding](#settings-branding)
+- [Self-service sign-up (public)](#self-service-sign-up-public)
+- [Subscription, roles, email connection](#subscription-roles-email-connection)
+- [Plans, limits and subscription lifecycle](#plans-limits-and-subscription-lifecycle)
+  - [Models](#models)
+  - [Endpoints](#endpoints)
+  - [Limits (enforced by the API)](#limits-enforced-by-the-api)
+  - [Request policy (every authenticated request, in `userFrom`)](#request-policy-every-authenticated-request-in-userfrom)
+  - [Lifecycle](#lifecycle)
+  - [Dev only (mock; loaded with a dynamic import only when `import.meta.env.DEV`, so not in the production bundle)](#dev-only-mock-loaded-with-a-dynamic-import-only-when-importmetaenvdev-so-not-in-the-production-bundle)
+- [Super-Admin Console (platform)](#super-admin-console-platform)
+  - [Auth](#auth-1)
+  - [Permission matrix](#permission-matrix)
+  - [Endpoints](#endpoints-1)
+  - [Company actions](#company-actions)
+  - [Module overrides](#module-overrides)
+  - [Subdomain aliases](#subdomain-aliases)
+  - [Versioned plans](#versioned-plans)
+  - [Trial conversion](#trial-conversion)
+  - [Impersonation](#impersonation)
+  - [Platform audit](#platform-audit)
+- [Onboarding](#onboarding)
+- [Departments](#departments)
+- [The Won flow](#the-won-flow)
+- [Tasks](#tasks)
+- [Projects](#projects)
+- [Changes to earlier endpoints (tasks & Won)](#changes-to-earlier-endpoints-tasks--won)
+- [Events](#events)
+  - [Plan gating](#plan-gating)
+  - [Permissions (decision)](#permissions-decision)
+  - [Models](#models-1)
+  - [Endpoints](#endpoints-2)
+  - [Rules](#rules)
+  - [Advanced features: permissions at a glance](#advanced-features-permissions-at-a-glance)
+  - [Templates & prep checklist](#templates--prep-checklist)
+  - [Agenda & speakers](#agenda--speakers)
+  - [Tickets, capacity, waitlist & questions](#tickets-capacity-waitlist--questions)
+  - [Check-in, tickets & badges](#check-in-tickets--badges)
+  - [Invitations, reminders & calendar](#invitations-reminders--calendar)
+  - [Booth capture & leaderboard](#booth-capture--leaderboard)
+  - [After the event](#after-the-event)
+  - [Feedback survey](#feedback-survey)
+  - [Budget & ROI](#budget--roi)
+  - [Cross-event sections: Attendees, Booth leads, Event analytics](#cross-event-sections-attendees-booth-leads-event-analytics)
+  - [Speakers, venues & vendors](#speakers-venues--vendors)
+  - [Sponsors & exhibitors](#sponsors--exhibitors)
+  - [Travel & logistics](#travel--logistics)
+  - [Isolation](#isolation)
+- [Marketing](#marketing)
+  - [Models](#models-2)
+  - [Endpoints](#endpoints-3)
+  - [Exclusions (enforced server-side, at send time)](#exclusions-enforced-server-side-at-send-time)
+  - [Monthly email limit (`emailsPerMonth`)](#monthly-email-limit-emailspermonth)
+  - [Queue and fairness](#queue-and-fairness)
+  - [Simulations (mock only)](#simulations-mock-only)
+  - [Isolation](#isolation-1)
+  - [Lead generation](#lead-generation)
+  - [Audiences](#audiences)
+  - [Website & SEO](#website--seo)
+  - [Isolation (growth)](#isolation-growth)
+  - [Content calendar](#content-calendar)
+  - [Design requests](#design-requests)
+  - [Brand assets](#brand-assets)
+  - [Isolation (creative)](#isolation-creative)
+  - [Ads integrations](#ads-integrations)
+  - [Marketing analytics](#marketing-analytics)
+- [HR](#hr)
+  - [Employees](#employees)
+  - [Employee contracts](#employee-contracts)
+  - [Company assets](#company-assets)
+  - [Recruitment](#recruitment)
+  - [Training](#training)
+  - [Attendance](#attendance)
+  - [Leave](#leave)
+  - [Public holidays](#public-holidays)
+  - [Salary management](#salary-management)
+  - [HR reports](#hr-reports)
+  - [Self-service](#self-service)
+  - [HR letters](#hr-letters)
+  - [Letters: languages and verification](#letters-languages-and-verification)
+  - [Discipline](#discipline)
+  - [Policies](#policies)
+  - [Onboarding & offboarding](#onboarding--offboarding)
+  - [Performance](#performance)
+  - [Engagement surveys](#engagement-surveys)
+  - [360° feedback](#360-feedback)
+- [Finance](#finance)
+  - [Ledger & settings](#ledger--settings)
+  - [Invoices](#invoices)
+  - [Credit notes](#credit-notes)
+  - [Recurring invoices](#recurring-invoices)
+  - [ZATCA](#zatca)
+  - [Payments](#payments)
+  - [PDC](#pdc)
+  - [Receivables](#receivables)
+  - [Payment links](#payment-links)
+  - [Expenses](#expenses)
+  - [Expense claims](#expense-claims)
+  - [Petty cash](#petty-cash)
+  - [Suppliers](#suppliers)
+  - [Purchase orders](#purchase-orders)
+  - [Bills](#bills)
+  - [Approval rules](#approval-rules)
+  - [Bank accounts](#bank-accounts)
+  - [Reconciliation](#reconciliation)
+  - [Payroll posting](#payroll-posting)
+  - [Commissions](#commissions)
+  - [Financial statements](#financial-statements)
+  - [Year-end close](#year-end-close)
+  - [Profitability](#profitability)
+  - [VAT returns](#vat-returns)
+  - [Corporate tax & zakat](#corporate-tax--zakat)
+  - [Budgets](#budgets)
+  - [Cash-flow forecast](#cash-flow-forecast)
+- [AI assistant](#ai-assistant)
+  - [Endpoints](#endpoints-4)
+  - [Message (`POST /ai/conversations/:id/messages` → `messages\[1\]`)](#message-post-aiconversationsidmessages--messages1)
+  - [Tools (`src/modules/ai-agent/toolSchemas.ts`: `AI_TOOL_SCHEMAS`, Anthropic tool format)](#tools-srcmodulesai-agenttoolschemasts-ai_tool_schemas-anthropic-tool-format)
+  - [Backend notes (replacing the mock engine with Claude)](#backend-notes-replacing-the-mock-engine-with-claude)
+- [Integrations](#integrations)
+  - [Endpoints](#endpoints-5)
+  - [Rules](#rules-1)
+  - [What the real backend must do](#what-the-real-backend-must-do)
+<!-- /toc -->
 
 ## Multi-tenancy (read first)
 
@@ -139,6 +296,58 @@ directions between two companies:
   Accepted exceptions: the TOTP secret of `POST /security/2fa/setup` and the one-time recovery
   codes of `POST /security/2fa/verify`, shown once to the user enrolling their own account.
 
+## Production boundary: mock-only and backend-only routes
+
+The mock registers **942 routes** (940 `http.*` registrations in `src/shared/mocks/handlers/`; the PDC
+`deposit` / `clear` / `bounce` actions share one). Every one of them is listed in **`docs/API-ROUTES.md`**
+(generated from the handlers: method, path, tenant-scoping kind from the isolation table, module, the section of this
+file that documents it, handler file). This section lists the ones a production backend must treat differently.
+
+**Never implement (mock / dev only).** Each is a `dev` entry of the isolation table
+(`src/shared/mocks/isolation/endpoints.ts`, with its `reason`). `/auth/dev/*` exists wherever the mock runs (dev and
+demo builds); `/dev/billing/*` is registered in development only (`handlers/index.ts`):
+
+| Method | Path | Why it exists in the mock |
+|---|---|---|
+| GET | `/auth/dev/accounts` | Dev tenant switcher: lists every seeded account of every tenant. |
+| POST | `/auth/dev/sign-in` | Dev tenant switcher: signs in as any seeded account **without a password**. |
+| GET | `/dev/billing/state` | Billing simulator: mock clock and simulation flags. |
+| POST | `/dev/billing/advance` | Moves the mock clock and runs the lifecycle for all companies. |
+| POST | `/dev/billing/status` | Forces a subscription status. |
+| POST | `/dev/billing/fail-next-payment` | Makes the next automatic charge fail. |
+| POST | `/dev/billing/usage` | Fakes usage percentages per limit. |
+| POST | `/dev/billing/reset` | Clears the simulator's offsets. |
+
+Also dev only and not HTTP: the browser hooks `window.__apexAuth` (force token expiry) and `window.__apexMock`
+(`src/shared/mocks/devFailures.ts`: forced 5xx / network failures). `npm run check:bundle` fails a production build
+that still contains any of them.
+
+**Demo / simulation routes: do not ship as-is.**
+
+| Method | Path | Status in production |
+|---|---|---|
+| POST | `/auth/switch-role` | Demo role switcher (signs in as the seeded user of a role, skips 2FA). The client calls it only when `VITE_API_MOCK` is not `false` (`Header.tsx`). Omit it. |
+| POST | `/integrations/whatsapp/inbound` | Simulates Meta's inbound webhook. In production inbound messages arrive on a signed Meta webhook (see Integrations › What the real backend must do). **Note:** the "Simulate an inbound message (demo)" control in `WhatsAppPanel.tsx` is not gated by `VITE_API_MOCK`; the frontend should hide it for a real backend. |
+| POST | `/ai/credits/consume` | Not called by the frontend (only a type in `modules/billing/types.ts`). Credits are consumed server-side by `POST /ai/conversations/:id/messages`; keep this internal or drop it. |
+| POST | `/integrations/email/connect`, `/integrations/calendar/me/connect` | Take `{ state, approve }` from the mock's in-app consent dialog (`OAuthConsentModal`). A real OAuth flow redirects to the provider and back to a callback; the contract for that redirect is an **open decision** (BACKEND-HANDOFF.md). `POST /integrations/oauth/start` and `POST /marketing/ads/connections` (`consent: true`) are in the same situation. |
+
+Simulated *behaviour* behind otherwise real endpoints (keep the endpoint, replace the simulation): email test failure
+for SMTP hosts containing "fail"/"invalid", DKIM propagation timing, WhatsApp template review after 10 s, payment
+gateway test (merchant ids ending in 000 decline), outgoing-webhook receiver failures for hosts containing "fail" or
+`.invalid`, marketing opens / replies (Marketing › Simulations), ad-provider accounts and syncs (Ads integrations),
+invoice e-mail sending. ZATCA signing / clearance / reporting is not simulated at all: the mock only produces the
+invoice data (Finance › ZATCA › "Not done here (backend)"). Each is described in its section.
+
+**Backend-only (not served by the mock, needed in production).**
+
+| Route | Why |
+|---|---|
+| `POST /public/payments/:provider/webhook` | Payment-gateway callbacks (shown to admins as `webhook_url` in `GET /integrations/payments`). Verify the provider signature, idempotent on the provider transaction id. |
+| WhatsApp Cloud API webhook (inbound messages, statuses, `message_template_status_update`) | Replaces `/integrations/whatsapp/inbound` and the simulated template review. |
+| OAuth callbacks (Google / Microsoft email, Google / Outlook calendar, Meta / LinkedIn / Google ads) | Replace the `{ state, approve }` consent step above. |
+| Ad-provider lead webhooks | The mock simulates them (`receiveLeadWebhook`, Ads integrations › Lead ads → leads). |
+| `POST /auth/logout` | **Not served by the mock and not called by the client** (sign-out only clears client state). It is referenced as exempt from impersonation read mode (`services/impersonation.ts`). Revoking the refresh-token family on sign-out needs this endpoint plus a client change: open decision. |
+
 ## Conventions
 
 - **Auth:** `Authorization: Bearer <token>` on every request except login. The server decides
@@ -173,6 +382,28 @@ directions between two companies:
   never a datetime): "today", "overdue" and "+N days" use the company's timezone (Settings › Company ›
   Regional) at the server's clock; a datetime there is refused (`422`). Money is in the company currency (`tenant.regional.currency`; AED for Apex Aora).
 - **IDs:** strings.
+- **Success bodies:** the resource itself as bare JSON (object or array), **no `{ data: … }` envelope**, status `200`
+  for every success including creates and deletes (the mock never answers `201` / `204`; `respond()` in
+  `handlers/utils.ts`). A backend may use `201`, but must keep a JSON body where this file names one (many deletes
+  answer `{ removed: true }`, `{ deleted: true }` or the updated parent). Only the public API (`/public/v1/*`) wraps
+  lists in `{ data: [] }`.
+- **Pagination: none.** No endpoint takes `page` / `per_page` / cursors; lists return every visible row and the client
+  paginates, sorts and filters in the browser (`src/shared/components/data-table/useDataTable.ts`). A few logs are
+  capped server-side and say so in their row (e.g. email log 500, sync log 1,000, webhook deliveries 200, public
+  `GET /public/v1/leads` 100 newest). Server-side pagination for large tables is an open decision (BACKEND-HANDOFF.md).
+- **Request headers:** `Authorization: Bearer <access token>`, `X-Workspace: <subdomain>` (stands in for the Host
+  header; see Multi-tenancy), `Content-Type: application/json`. Public endpoints may take `X-Api-Key`
+  (`/public/v1/*`) or `X-Client-Id` (rate-limit key of `/public/integrations/forms/:token`). Client timeout 20 s
+  (120 s for `/billing/export`, `/leads/import/check`, `/leads/import`).
+- **File uploads are JSON, not multipart.** The client never sends `FormData`: files travel as metadata plus a
+  base64 `data:` URL inside the JSON body (branding logos / favicon, `POST /finance/bills/:id/attachments`,
+  `POST /marketing/assets`, `POST /marketing/design-requests/:id/attachments`, `POST /hr/employees/:id/documents`
+  (`file {…}`)), or as metadata only (`POST /hr/recruitment/candidates/:id/cv`, `POST /tasks/:id/attachments`;
+  certificates take a `file_url`). Size and type limits are per endpoint and uploads count toward the plan's
+  `storageMb` (`402 LIMIT_REACHED`). Imports are parsed in the browser and posted as rows (`/leads/import*`,
+  `/events/:id/attendees/import`, `/marketing/seo/keywords/import`) or posted as CSV text (`/hr/attendance/import`,
+  `/finance/bank-accounts/:id/statements*`). Real file storage (multipart or pre-signed object-storage uploads) is an
+  open decision.
 - **Scope:** unless noted, Sales/CRM endpoints are scoped by the caller's `sales` permission
   (own / team / full); a hidden scope gets `403`. Writes need `edit` (or `create`) on `sales`.
 - **Wire format (database column names):** every company endpoint except auth / tenant / account / alerts and the
@@ -203,6 +434,17 @@ directions between two companies:
   (`open`, `won`, `lost`, `cold`, `parked`; everything but `open` is out of the pipeline), forecasts use its
   `probability`, and stage moves enforce its `requires_next_step` / `requires_loss_reason` flags. On the wire
   (leads) these fields are `status_id`, `source_id`, `industry_id`, `sub_industry_id`, `loss_reason_id`. `sourceType` (list key) and `sourceDetail` (free text: link or name) are separate fields.
+
+### Error code catalog
+
+Every machine `code` the mock services can return, with its status and the service that throws it, is in
+`docs/API-ROUTES.md` › **Error code catalog** (generated from `src/shared/mocks/services/`). Most are listed next to
+their endpoint in this file; the catalog marks the few that are not (mainly finance validation codes such as
+`invalid_rate`, `missing_rate`, `no_lines`, `zero_total`, `mixed_currencies`), with the mock's message. Many errors
+carry no `code` at all (just `status` + `message`); the UI only branches on the codes named in this file. Generic
+validation failures use `422 validation_failed`. Extra error fields are top-level siblings of `message` / `code`
+(`errorBody()` in `handlers/utils.ts` spreads them: e.g. `{ message, code: "missing_values", missing, missingAr }`,
+`{ message, code: "validation_failed", field: "iban" }`).
 
 ## Auth
 
@@ -351,6 +593,7 @@ Customer `status`: `active | paused | vip | churned`. `annualValue`: Monthly ×1
 | Method | Path | Body | Returns | Rules |
 |---|---|---|---|---|
 | GET | `/customers` | | `CustomerRow[]` (+ account_manager_name, contacts_count, active_contract_value, active_contracts, next_renewal, days_to_renewal, last_activity_at) | Newest first. |
+| POST | `/customers` | `{name, industry_id, sub_industry_id?, source_id, status?, website?, address_line?, city?, account_manager_id?, contact?: {name, title?, mobile?, email?}}` | `CustomerRow` | An existing client added directly (most customers come from the Won flow). Sales **edit** (`403` for view / hidden). Name required (≤120); industry, sub-industry and source must be active list items; status / website / emirate / address as PATCH; owner defaults to the caller, reassign rules as leads (own scope: only themselves, `403`; unknown or other company's user `422`); contact: name required once any contact field is filled, mobile / email format as contacts. `409` when the company already has a customer with that name, or a lead with the same name / email / domain (convert it with the Won flow instead). Records a backing lead in the Won status (`source_detail` "Added directly as a customer", `won_at`, a status-history row) carrying the contact, so `customers.lead_id`, contacts, notes and the timeline work as for won customers; no contract or projects. Counts 1 + contacts toward `leadsContacts` (`402 LIMIT_REACHED`). |
 | GET | `/customers/:id` | | `CustomerDetail` (+ `lead` summary, `contacts`, `contracts`, last 10 `recent_activities`, `notes`, `lifetime_value`) | lifetimeValue = billed to date, or won value without contracts. |
 | PATCH | `/customers/:id` | `{status?, website?, address_line?, city?, account_manager_id?}` | `CustomerRow` | Status `active`/`paused`/`vip`/`churned` (else `422`); website valid URL (https:// added); emirate valid; address ≤200; reassign rules as leads. |
 | GET | `/contacts` | | `ContactRow[]` snake_case `{id, lead_id, name, title, mobile, email, is_decision_maker, company_name, record_type (Lead/Customer), record_id, owner_name}` | Contacts on leads and customers in scope. |
@@ -525,7 +768,7 @@ Security events are audited with action `security`, entity `security`, id `2fa`/
 | PATCH | `/templates/:id` | `{ name?, purpose?, subject?, body? }` | `MessageTemplate` | Company Admin; channel can't change. |
 | POST | `/templates/:id/duplicate` | | `MessageTemplate` | "Name (copy)", active, not default. |
 | POST | `/templates/:id/default` | | `MessageTemplate` | Only default for its channel+purpose; `422` if inactive. |
-| POST | `/templates/:id/deactivate` / `reactivate` | | `MessageTemplate` | No delete. |
+| POST | `/templates/:id/deactivate`, `/templates/:id/reactivate` | | `MessageTemplate` | No delete. |
 
 Validation (`422`): name required, ≤80, unique per channel; purpose valid for the channel; email needs a
 subject; body required (≤5000; WhatsApp ≤1024); unknown `{{variables}}` are listed in the message.
@@ -847,7 +1090,7 @@ starts now on the plan, an ended trial converting to its selected plan, see Tria
 | Limit | Counted as | Checked by (402 `LIMIT_REACHED`) |
 |---|---|---|
 | `users` | active users of the company (live) | `POST /settings/users`, `POST /settings/users/:id/reactivate` |
-| `leadsContacts` | leads + contacts of the company (live; customers are converted leads, not counted again) | `POST /leads` (quick add and full form: 1 + its contacts), `PATCH /leads/:id` (only contacts added), `POST /contacts`, `POST /leads/import` (partial, see below) |
+| `leadsContacts` | leads + contacts of the company (live; customers are converted leads, not counted again) | `POST /leads` (quick add and full form: 1 + its contacts), `POST /customers` (its backing lead + contact), `PATCH /leads/:id` (only contacts added), `POST /contacts`, `POST /leads/import` (partial, see below) |
 | `storageMb` | sum of task attachment sizes, MB (live) | `POST /tasks/:id/attachments` |
 | `emailsPerMonth` | emails sent in the current billing period (counter) | `POST /leads/:id/messages` with `channel: 'email'` (WhatsApp is not counted), `POST /quotations/:id/send` |
 | `aiCredits` | credits used in the current billing period (counter) | `POST /ai/credits/consume`, one per AI assistant message (`POST /ai/conversations/:id/messages`) |
@@ -2894,7 +3137,7 @@ HR full in Employees › edit, validated as Arabic script), the company's **Arab
 Settings `legal_name_ar`, also for `{{company.name}}`), nationality / country names in Arabic, dates with the Gulf month
 names (يناير … ديسمبر), the currency in words (درهم إماراتي, ريال سعودي), السيد / السيدة. The department, the address,
 the bank and the signatory fall back to their English values. A missing Arabic value blocks the issue like an English
-one: `422 missing_values` with `missing` (English keys) and `missing_ar` (Arabic keys; the message says where to fill
+one: `422 missing_values` with `missing` (English keys) and `missingAr` (Arabic keys; camelCase on the wire today because error bodies are never mapped — `missing_ar` would be the snake_case form, decide one; the message says where to fill
 them in). `422 no_arabic_template` when the type has no Arabic template. The Arabic text is rendered RTL: every line
 starts with RLM (U+200F) and each inserted value with Latin letters or digits is wrapped in FSI … PDI (U+2068 / U+2069).
 The issued letter adds `language, layout, digits, title_ar, body_ar, issue_date_ar`, and `letterhead.legal_name_ar`.
@@ -2926,7 +3169,7 @@ else → `404` like a missing id.
 | GET | `/hr/discipline` | full / team / self | `employee_id, status (active · expired · withdrawn), type, mine=1` | rows `id, case_no, employee_id, employee_name, employee_no, department_name, type, category, incident_date, issue_date, expires_on, status, ack_status (pending · acknowledged · appealed), ack_at, issued_by_name, attachment_count` |
 | POST | `/hr/discipline` | full | `employee_id*, type* (verbal_warning · written_warning · final_warning · suspension_paid · suspension_unpaid · deduction), category* (attendance · conduct · performance · policy_breach · safety · other), incident_date* (not in the future), description*, description_ar, expiry_months (0 · 3 · 6 · 12 · 24; default verbal 6, written / final 12, others 0 = never), suspension_days (1–30) + suspension_start (suspensions), deduction_amount + deduction_month yyyy-MM (deduction; default this month), attachments [{name, size_bytes, mime_type, url}] (≤ 5)` | the detail. Case number `<PFX>-DA-<year>-0001` per company and year. A **deduction** creates a one-off payroll adjustment (`kind deduction`, `source_ref discipline:<id>`, idempotent, moved to the next unpaid month if needed). Activity + audit; the employee is notified. `403` for yourself, `422` validation / `employee_left`; foreign or missing `employee_id` → `404`; attachments count against `storageMb` (`402 LIMIT_REACHED`) |
 | GET | `/hr/discipline/:id` | in scope | — | row + `description, description_ar, expiry_months, suspension_days, suspension_start, deduction_amount, deduction_month, currency` (pay: `null` for a department head), `adjustment_id` (full), `employee_comment, attachments[], withdrawn_at, withdrawn_by_name, withdraw_reason, escalation {active_verbal, active_written, active_final, suggestion, message}, can_acknowledge, can_withdraw, can_manage` |
-| GET | `/hr/discipline/:id/letter` | full, or the employee | `language (en · ar · bilingual), digits` | the **warning letter** `{language, digits, case_no, issue_date, issue_date_ar, title, title_ar, body, body_ar, employee_name, signatory_name, signatory_title, letterhead}` rendered from fixed EN / AR templates (extra placeholders `warning.*`). `422 missing_values` (`missing_ar`) like letters. Anyone else `404` |
+| GET | `/hr/discipline/:id/letter` | full, or the employee | `language (en · ar · bilingual), digits` | the **warning letter** `{language, digits, case_no, issue_date, issue_date_ar, title, title_ar, body, body_ar, employee_name, signatory_name, signatory_title, letterhead}` rendered from fixed EN / AR templates (extra placeholders `warning.*`). `422 missing_values` (`missingAr`) like letters. Anyone else `404` |
 | POST | `/hr/discipline/:id/attachments` | full | `{ attachments: [...] }` | the detail |
 | POST | `/hr/discipline/:id/withdraw` | full | `{ reason* }` | the detail (`status withdrawn`); an **unpaid** deduction adjustment is removed (a paid one stays: history). Audited; the employee is notified. `409 already_withdrawn` |
 | POST | `/hr/discipline/:id/acknowledge` | **the employee only** | `{ comment?, appeal? }` (appeal needs a comment) | the detail (`ack_status acknowledged \| appealed`). HR full and the issuer are notified. `403` anyone else, `409 already_acknowledged · withdrawn`, `422 comment_required` |

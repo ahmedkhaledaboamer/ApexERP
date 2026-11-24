@@ -77,7 +77,7 @@ function CreateModal({ years, onClose, onCreated }: { years: number[]; onClose: 
         </>
       }
     >
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field id="bud-year" label="Fiscal year" required>
           <SelectInput id="bud-year" value={year} onChange={(e) => setYear(e.target.value)}>{options.map((y) => <option key={y} value={y}>{y}</option>)}</SelectInput>
         </Field>
@@ -182,7 +182,7 @@ function LineModal({ b, line, onClose }: { b: BudgetDetail; line: BudgetLine | n
     >
       <div className="space-y-3">
         {!line && (
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field id="bl-dept" label="Department" required>
               <SelectInput id="bl-dept" value={dept} onChange={(e) => setDept(e.target.value)}>{b.departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</SelectInput>
             </Field>
@@ -196,7 +196,7 @@ function LineModal({ b, line, onClose }: { b: BudgetDetail; line: BudgetLine | n
           <Button size="sm" variant={mode === 'months' ? 'primary' : 'secondary'} onClick={() => setMode('months')}>Month by month</Button>
         </div>
         {mode === 'annual' ? (
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field id="bl-annual" label={`Annual amount (${b.currency})`} required><TextInput id="bl-annual" type="number" min={0} value={annual} onChange={(e) => setAnnual(e.target.value)} /></Field>
             <Field id="bl-pattern" label="Spread">
               <SelectInput id="bl-pattern" value={pattern} onChange={(e) => setPattern(e.target.value as SpreadPattern)}>{(Object.keys(SPREAD_LABEL) as SpreadPattern[]).map((p) => <option key={p} value={p}>{SPREAD_LABEL[p]}</option>)}</SelectInput>
@@ -235,7 +235,7 @@ function CopyModal({ b, onClose }: { b: BudgetDetail; onClose: () => void }) {
         </>
       }
     >
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Field id="cp-year" label="Actuals of"><SelectInput id="cp-year" value={year} onChange={(e) => setYear(e.target.value)}>{[b.fiscalYear, b.fiscalYear - 1, b.fiscalYear - 2].map((y) => <option key={y} value={y}>{y}</option>)}</SelectInput></Field>
         <Field id="cp-pct" label="Adjust by %"><TextInput id="cp-pct" type="number" value={pct} onChange={(e) => setPct(e.target.value)} /></Field>
         <Field id="cp-dept" label="Department"><SelectInput id="cp-dept" value={dept} onChange={(e) => setDept(e.target.value)}><option value="">All</option>{b.departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</SelectInput></Field>

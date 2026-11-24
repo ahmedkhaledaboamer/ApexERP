@@ -84,13 +84,19 @@ const call = (u: User, method: string, path: string, body?: unknown) => callApi(
 
 function keysIn(v: unknown, out = new Set<string>()): Set<string> {
   if (Array.isArray(v)) v.forEach((x) => keysIn(x, out))
-  else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) (out.add(k), keysIn(x, out))
+  else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) {
+    out.add(k)
+    keysIn(x, out)
+  }
   return out
 }
 /** Every value of a key anywhere in a JSON value. */
 function valuesOf(v: unknown, key: string, out: unknown[] = []): unknown[] {
   if (Array.isArray(v)) v.forEach((x) => valuesOf(x, key, out))
-  else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) (k === key && out.push(x), valuesOf(x, key, out))
+  else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) {
+    if (k === key) out.push(x)
+    valuesOf(x, key, out)
+  }
   return out
 }
 

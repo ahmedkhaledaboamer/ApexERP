@@ -71,7 +71,7 @@ export function SyncLogTab() {
       ) : rows.length === 0 ? (
         <EmptyState title="Nothing logged" body="Connections, tests, syncs and failures of every integration show up here." />
       ) : (
-        <div className="overflow-x-auto">
+        <div className="relative overflow-x-auto">
           <table className="w-full text-[0.8125rem]" aria-label="Sync log">
             <thead className="bg-sunken text-xs text-muted">
               <tr>
@@ -134,7 +134,7 @@ export function EmailLogTab() {
       ) : rows.length === 0 ? (
         <EmptyState title="No emails yet" body="Invoice and statement emails, payment reminders, bulk emails and test emails show up here." />
       ) : (
-        <div className="overflow-x-auto">
+        <div className="relative overflow-x-auto">
           <table className="w-full text-[0.8125rem]" aria-label="Email log">
             <thead className="bg-sunken text-xs text-muted">
               <tr>

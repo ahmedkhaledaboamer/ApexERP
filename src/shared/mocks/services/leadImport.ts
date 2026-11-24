@@ -241,7 +241,7 @@ export async function runImport(user: User, req: ImportRequest): Promise<ImportR
       continue
     }
 
-    let ownerId: string | null = null
+    let ownerId: string | null
     if (ownScope) ownerId = user.id
     else if (req.ownerRule === 'file' && r.ownerId && !ownerProblem(user, r.ownerId)) ownerId = r.ownerId
     else ownerId = autoOwnerFor(user)

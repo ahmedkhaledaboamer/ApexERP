@@ -84,7 +84,7 @@ export default function IntegrationsPage() {
         ) : (
           <div className="space-y-6">
             {q.data.recentErrors > 0 && (
-              <button type="button" onClick={() => set({ tab: 'sync-log' })} className="flex w-full items-center gap-2 rounded-lg border border-danger-200 bg-danger-50 px-4 py-2.5 text-start text-[0.8125rem] text-danger-700 dark:border-danger-500/30 dark:bg-danger-500/10 dark:text-danger-500">
+              <button type="button" onClick={() => set({ tab: 'sync-log' })} className="flex w-full items-center gap-2 rounded-lg border border-danger-500/30 bg-danger-50 px-4 py-2.5 text-start text-[0.8125rem] text-danger-700 dark:border-danger-500/30 dark:bg-danger-500/10 dark:text-danger-500">
                 <AlertTriangle className="size-4 shrink-0" aria-hidden />
                 {q.data.recentErrors} failed sync{q.data.recentErrors === 1 ? '' : 's'} in the last 7 days. Open the sync log.
               </button>

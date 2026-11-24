@@ -121,7 +121,7 @@ export function RevokeModal({ id, what, onClose }: { id: string; what: string; o
       <F label="Reason">
         <TextArea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} />
       </F>
-      {m.error && <p className="mt-3 text-[0.8125rem] text-danger-700 dark:text-danger-300" role="alert">{errorMessage(m.error)}</p>}
+      {m.error && <p className="mt-3 text-[0.8125rem] text-danger-700 dark:text-danger-500" role="alert">{errorMessage(m.error)}</p>}
     </Modal>
   )
 }

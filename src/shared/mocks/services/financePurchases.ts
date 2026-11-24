@@ -759,7 +759,7 @@ export function updatePurchaseOrder(user: User, id: string, input: Partial<PoInp
   if (po.status !== 'draft' && po.status !== 'rejected') conflict('Only a draft or rejected request can be edited.', 'not_editable')
   const co = tenantOf(user)
   const f = poFields(user, co, input, po)
-  const lines = input?.lines !== undefined ? buildLines(co, po.id, input.lines, { vendorId: f.vendorId, vatNumber: effectiveProfile(co, f.vendorId).vatNumber }).map(({ poLineId: _p, vatRecoverable: _v, ...l }) => ({ ...l, receivedQty: 0 })) : po.lines // eslint-disable-line @typescript-eslint/no-unused-vars
+  const lines = input?.lines !== undefined ? buildLines(co, po.id, input.lines, { vendorId: f.vendorId, vatNumber: effectiveProfile(co, f.vendorId).vatNumber }).map(({ poLineId: _p, vatRecoverable: _v, ...l }) => ({ ...l, receivedQty: 0 })) : po.lines
   Object.assign(po, f, { lines, updatedAt: at() })
   applyTotals(po)
   po.history.push(hist(actorOf(user), 'edited', 'Request edited', po.updatedAt))

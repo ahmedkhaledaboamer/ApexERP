@@ -249,8 +249,8 @@ describe('time entries (entry_date, hours, description, is_billable)', () => {
     const project = projects.find((p) => p.companyId === 'co_apex')!
     const before = projectActualHours(project)
     const t = await createTask(admin, { title: 'Billable work', projectId: project.id })
-    let view = await addTimeEntry(admin, t.id, { entryDate: '2026-11-17', hours: 1.5, description: 'Workshop' })
-    view = await addTimeEntry(admin, t.id, { entryDate: '2026-11-18', hours: 2, isBillable: false })
+    await addTimeEntry(admin, t.id, { entryDate: '2026-11-17', hours: 1.5, description: 'Workshop' })
+    const view = await addTimeEntry(admin, t.id, { entryDate: '2026-11-18', hours: 2, isBillable: false })
     expect(view.loggedHours).toBe(3.5)
     expect(view.timeEntries.map((e) => [e.entryDate, e.hours, e.isBillable, e.description])).toEqual([
       ['2026-11-18', 2, false, null],

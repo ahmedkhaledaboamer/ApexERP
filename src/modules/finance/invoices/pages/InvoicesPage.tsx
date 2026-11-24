@@ -187,7 +187,7 @@ function InvoicesTab() {
 
 function InvoiceTable({ rows, base }: { rows: InvoiceRow[]; base: string }) {
   return (
-    <div className="overflow-x-auto rounded-xl border border-line bg-surface">
+    <div className="relative overflow-x-auto rounded-xl border border-line bg-surface">
       <table className="w-full text-[0.8125rem]" aria-label="Invoices">
         <thead className="border-b border-line bg-sunken/60 text-xs text-muted">
           <tr>
@@ -236,7 +236,7 @@ function CreditNotesTab({ highlight }: { highlight: string | null }) {
   const rows = list.data ?? []
   if (rows.length === 0) return <EmptyState title="No credit notes" body="Issue one from an invoice (Credit note)." icon={<Receipt />} />
   return (
-    <div className="overflow-x-auto rounded-xl border border-line bg-surface">
+    <div className="relative overflow-x-auto rounded-xl border border-line bg-surface">
       <table className="w-full text-[0.8125rem]" aria-label="Credit notes">
         <thead className="border-b border-line bg-sunken/60 text-xs text-muted">
           <tr>
@@ -280,7 +280,7 @@ function RecurringTab({ canWrite }: { canWrite: boolean }) {
   const act = (id: string, status: RecurringSchedule['status']) =>
     update.mutate({ id, status }, { onError: (e) => toast.error('Couldn’t update the schedule', (e as Error).message) })
   return (
-    <div className="overflow-x-auto rounded-xl border border-line bg-surface">
+    <div className="relative overflow-x-auto rounded-xl border border-line bg-surface">
       <table className="w-full text-[0.8125rem]" aria-label="Recurring invoices">
         <thead className="border-b border-line bg-sunken/60 text-xs text-muted">
           <tr>

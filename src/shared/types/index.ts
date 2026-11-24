@@ -76,6 +76,11 @@ export interface Lead {
   customerId: string | null
   /** leads.won_at: when the Won flow converted the lead (null / absent until then). */
   wonAt?: string | null
+  /**
+   * leads.added_as_customer: the backing record of a customer added directly (POST /customers), not
+   * a real sales opportunity: kept out of the leads list, the pipeline and the sales numbers.
+   */
+  addedAsCustomer?: boolean
   /** What the company itself offers, as tags (instead of a long free-text field). */
   companyServices: string[]
   /** Catalog services of interest (service ids). */

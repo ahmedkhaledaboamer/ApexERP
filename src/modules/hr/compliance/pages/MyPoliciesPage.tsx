@@ -55,7 +55,7 @@ export default function MyPoliciesPage() {
         ) : !q.data.length ? (
           <EmptyState title="No policies for you" body="HR hasn’t published a policy that applies to you." icon={<FileCheck2 />} />
         ) : (
-          <div className="grid gap-4 lg:grid-cols-[20rem_1fr]">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[20rem_1fr]">
             <ul className="space-y-1" aria-label="Policies">
               {q.data.map((p) => (
                 <li key={p.id}>
@@ -92,12 +92,12 @@ function PolicyView({ p }: { p: MyPolicy }) {
         <p className="text-xs text-muted">
           {POLICY_CATEGORY_LABEL[p.category]} · version {p.version} · effective {fmtDate(p.effectiveDate)}
         </p>
-        {p.reacknowledge && p.changeNote && <p className="mt-1 text-[0.8125rem] text-warning-700 dark:text-warning-300">What changed: {p.changeNote}</p>}
+        {p.reacknowledge && p.changeNote && <p className="mt-1 text-[0.8125rem] text-warning-700 dark:text-warning-500">What changed: {p.changeNote}</p>}
       </div>
       <PolicyBody body={p.body} />
       <FileLink file={p.file} />
       {p.acknowledged ? (
-        <p className="flex items-center gap-2 text-[0.8125rem] text-success-700 dark:text-success-400" role="status">
+        <p className="flex items-center gap-2 text-[0.8125rem] text-success-700 dark:text-success-500" role="status">
           <CheckCircle2 className="size-4" aria-hidden /> You acknowledged version {p.version} on {fmtDate(p.acknowledgedAt ?? '')}.
         </p>
       ) : (
@@ -108,7 +108,7 @@ function PolicyView({ p }: { p: MyPolicy }) {
           <Button disabled={!read} loading={m.isPending} onClick={() => m.mutate({ id: p.id, version: p.version }, { onSuccess: () => toast.success('Policy acknowledged') })}>
             Acknowledge
           </Button>
-          {m.error && <p className="text-[0.8125rem] text-danger-700 dark:text-danger-300" role="alert">{errorMessage(m.error)}</p>}
+          {m.error && <p className="text-[0.8125rem] text-danger-700 dark:text-danger-500" role="alert">{errorMessage(m.error)}</p>}
         </div>
       )}
     </section>

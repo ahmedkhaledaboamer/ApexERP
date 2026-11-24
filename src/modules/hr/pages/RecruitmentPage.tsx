@@ -217,7 +217,7 @@ function OpeningView({ id, onBack }: { id: string; onBack: () => void }) {
   const [adding, setAdding] = useState(false)
   const back = (
     <Button variant="ghost" size="sm" onClick={onBack}>
-      <ArrowLeft />
+      <ArrowLeft className="rtl:rotate-180" />
       All openings
     </Button>
   )

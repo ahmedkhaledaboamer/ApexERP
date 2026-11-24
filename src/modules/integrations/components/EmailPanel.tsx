@@ -126,7 +126,7 @@ function EmailBody({ email, canEdit }: { email: EmailIntegration; canEdit: boole
                 )}
                 {d.checkedAt && <span className="text-xs text-muted">checked {when(d.checkedAt)}</span>}
               </div>
-              <div className="grid gap-1 text-xs sm:grid-cols-[4rem_1fr_auto] sm:items-center">
+              <div className="grid grid-cols-1 gap-1 text-xs sm:grid-cols-[4rem_1fr_auto] sm:items-center">
                 <span className="text-muted">Host</span>
                 <code className="truncate font-mono">{d.host}</code>
                 <CopyButton text={d.host} size="xs" />
@@ -176,7 +176,7 @@ function SmtpForm({ email }: { email: EmailIntegration }) {
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF((x) => ({ ...x, [k]: e.target.value }))
   return (
     <form
-      className="grid gap-3 sm:grid-cols-2"
+      className="grid grid-cols-1 gap-3 sm:grid-cols-2"
       onSubmit={(e) => {
         e.preventDefault()
         save.mutate(
@@ -236,7 +236,7 @@ function Senders({ email, canEdit }: { email: EmailIntegration; canEdit: boolean
     <Section title="Default senders" hint={`Who emails come from, per purpose. Addresses must be on ${email.domain}.`}>
       <div className="space-y-2">
         {SENDER_PURPOSES.map((p) => (
-          <div key={p.key} className="grid gap-2 sm:grid-cols-[9rem_1fr_1fr] sm:items-center">
+          <div key={p.key} className="grid grid-cols-1 gap-2 sm:grid-cols-[9rem_1fr_1fr] sm:items-center">
             <span className="text-[0.8125rem] text-ink-2">{p.label}</span>
             <TextInput aria-label={`${p.label} name`} disabled={!canEdit} value={s[p.key].name} placeholder="Name" onChange={(e) => setS((x) => ({ ...x, [p.key]: { ...x[p.key], name: e.target.value } }))} />
             <TextInput aria-label={`${p.label} address`} disabled={!canEdit} value={s[p.key].address} placeholder={`team@${email.domain}`} onChange={(e) => setS((x) => ({ ...x, [p.key]: { ...x[p.key], address: e.target.value } }))} />

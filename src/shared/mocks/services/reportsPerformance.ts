@@ -28,7 +28,7 @@ import { overdueTasks, projectsVisibleTo, tasksVisibleTo } from '@/shared/mocks/
 import { CodedApiError, tenantOf } from '@/shared/mocks/tenant'
 import { resolveRange } from '@/modules/hr/reports/calc'
 import { companyModules } from './billing'
-import { visibleLeads } from './leads'
+import { pipelineLeads } from './leads'
 import { balancesByAccount, financeAccessOf, financeSettingsOf, getFinanceOverview } from './financeLedger'
 import { payablesOverview } from './financePurchasesCore'
 import { companyReceivables, departmentPnlRows, eventRowsFor, incomeStatementIn, profitLines, projectRowsFor } from './financeProfitability'
@@ -149,7 +149,7 @@ function financialOf(ctx: Ctx): FinancialKpis {
 
 function salesOf(ctx: Ctx): SalesKpis {
   const { user, co, timezone: tz } = ctx
-  const list = visibleLeads(user)
+  const list = pipelineLeads(user)
   const open = list.filter((l) => !isClosedStatus(co, l.status))
   const closedIn = (pred: (s: string) => boolean) => list.filter((l) => pred(l.status) && within(localDay(l.stageChangedAt, tz), ctx.from, ctx.to))
   const won = closedIn((s) => isWonStatus(co, s))

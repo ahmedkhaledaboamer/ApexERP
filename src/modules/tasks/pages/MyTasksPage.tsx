@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { ListChecks, PartyPopper, X } from 'lucide-react'
+import { ListChecks, PartyPopper, Plus, X } from 'lucide-react'
 import type { TaskLinkType, TaskPriority, TaskView } from '@/modules/tasks/types'
 import { TASK_LINK_TYPES, TASK_PRIORITIES, TASK_PRIORITY_LABEL } from '@/modules/tasks/types'
 import { useProjectsQuery, useTasksQuery } from '@/modules/tasks/hooks/useTasks'
@@ -11,6 +11,7 @@ import { EmptyState, ErrorState, Skeleton } from '@/shared/components/ui/Feedbac
 import { Switch, SelectInput } from '@/shared/components/form/Field'
 import { PageBody } from '@/shared/components/layout/PageHeader'
 import { QuickAddTask } from '@/modules/tasks/components/QuickAddTask'
+import { TaskCreateDialog } from '@/modules/tasks/components/TaskCreateDialog'
 import { useNewParam } from '@/shared/hooks/useNewParam'
 import { TaskGroups } from '@/modules/tasks/components/TaskGroups'
 import { TaskPageFrame } from '@/modules/tasks/components/TaskPageFrame'
@@ -28,9 +29,9 @@ export default function MyTasksPage() {
   const showDone = params.get('done') === '1'
 
   const { canEdit, canCreate } = useTaskPermissions()
-  // `?new=1` (header "+ New" › New task): focus the quick-add form.
-  const [focusKey, setFocusKey] = useState(0)
-  useNewParam(() => setFocusKey((k) => k + 1), { when: canCreate })
+  // `?new=1` (header "+ New" › New task, command palette): the full task popup.
+  const [creating, setCreating] = useState(false)
+  useNewParam(() => setCreating(true), { when: canCreate })
   const query = useTasksQuery({ mine: true, includeDone: showDone })
   const projects = useProjectsQuery()
   const openTask = useOpenTask()
@@ -67,10 +68,18 @@ export default function MyTasksPage() {
       title="My tasks"
       icon={<ListChecks />}
       description={query.data ? <span className="num">{`${open.length} open · ${overdue} overdue`}</span> : 'Loading…'}
+      actions={
+        canCreate && (
+          <Button write size="sm" onClick={() => setCreating(true)}>
+            <Plus />
+            New task
+          </Button>
+        )
+      }
     >
       <PageBody className="max-w-5xl space-y-4">
         <Can module="tasks" action="create">
-          <QuickAddTask focusKey={focusKey} />
+          <QuickAddTask />
         </Can>
 
         <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filters">
@@ -157,6 +166,7 @@ export default function MyTasksPage() {
         </Card>
       </PageBody>
       {status.dialog}
+      {canCreate && <TaskCreateDialog open={creating} onClose={() => setCreating(false)} />}
     </TaskPageFrame>
   )
 }

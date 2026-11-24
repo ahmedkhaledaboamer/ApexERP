@@ -230,7 +230,7 @@ function RunBody({ r, onDeleted }: { r: PayrollRunDetail; onDeleted: () => void 
 
       {openWarnings.length > 0 && r.status === 'calculated' && (
         <section aria-label="Warnings" className="rounded-xl border border-warning-500/30 bg-warning-500/10 p-3">
-          <h3 className="mb-2 flex items-center gap-1.5 text-[0.8125rem] font-semibold text-ink"><AlertTriangle className="size-4 text-warning-700" aria-hidden />Resolve (fix and recalculate) or acknowledge before approval</h3>
+          <h3 className="mb-2 flex items-center gap-1.5 text-[0.8125rem] font-semibold text-ink"><AlertTriangle className="size-4 text-warning-700 dark:text-warning-500" aria-hidden />Resolve (fix and recalculate) or acknowledge before approval</h3>
           <ul className="space-y-1.5">
             {openWarnings.map(({ l, w }) => (
               <li key={`${l.employeeId}:${w.code}`} className="flex items-center gap-2 text-[0.8125rem]">
@@ -304,7 +304,7 @@ function RunBody({ r, onDeleted }: { r: PayrollRunDetail; onDeleted: () => void 
 
 export function LineItems({ l, currency }: { l: Pick<PayLine, 'items' | 'payMethod' | 'bankName' | 'ibanMasked' | 'payStart' | 'payEnd'>; currency: string }) {
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       {(['earning', 'deduction', 'reimbursement', 'employer'] as const).map((t) => {
         const items = l.items.filter((i) => i.type === t)
         if (!items.length) return null

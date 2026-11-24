@@ -157,7 +157,7 @@ export function PolicyEditor({ policy, onClose, onSaved }: { policy?: PolicyDeta
         <F label="Title">
           <TextInput value={title} onChange={(e) => setTitle(e.target.value)} />
         </F>
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <F label="Category">
             <SelectInput value={category} onChange={(e) => setCategory(e.target.value as PolicyCategory)}>
               {POLICY_CATEGORIES.map((c) => (
@@ -211,7 +211,7 @@ export function PolicyEditor({ policy, onClose, onSaved }: { policy?: PolicyDeta
             <TextInput value={changeNote} onChange={(e) => setChangeNote(e.target.value)} />
           </F>
         ) : null}
-        {m.error && <p className="text-[0.8125rem] text-danger-700 dark:text-danger-300" role="alert">{errorMessage(m.error)}</p>}
+        {m.error && <p className="text-[0.8125rem] text-danger-700 dark:text-danger-500" role="alert">{errorMessage(m.error)}</p>}
       </div>
     </Drawer>
   )

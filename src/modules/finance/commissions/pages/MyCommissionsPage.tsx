@@ -35,7 +35,7 @@ export default function MyCommissionsPage() {
                   <li key={s.id} className="rounded-xl border border-line bg-surface">
                     <button type="button" className="flex w-full items-center justify-between gap-3 px-4 py-3 text-start" aria-expanded={open === s.id} onClick={() => setOpen(open === s.id ? null : s.id)}>
                       <span className="flex items-center gap-2">
-                        {open === s.id ? <ChevronDown className="size-4" aria-hidden /> : <ChevronRight className="size-4" aria-hidden />}
+                        {open === s.id ? <ChevronDown className="size-4" aria-hidden /> : <ChevronRight className="size-4 rtl:rotate-180" aria-hidden />}
                         <span className="font-medium text-ink">{monthName(s.month)}</span>
                         <StatementStatus s={s} />
                       </span>

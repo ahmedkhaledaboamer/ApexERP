@@ -30,7 +30,7 @@ export function AiSettingsPanel() {
   if (settings.isError) return <ErrorState message={settings.error.message} onRetry={() => void settings.refetch()} />
   const s = settings.data
   return (
-    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+    <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
       <Card>
         <CardHeader
           title="Assistant per role"

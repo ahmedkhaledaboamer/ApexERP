@@ -77,7 +77,7 @@ export function ExpensesTab({ onOpen }: { onOpen: (id: string) => void }) {
             <tr key={e.id} className="cursor-pointer hover:bg-hover" onClick={() => onOpen(e.id)}>
               <td className={td}><button type="button" className="num font-medium text-brand-600 hover:underline" onClick={(ev) => { ev.stopPropagation(); onOpen(e.id) }}>{e.number}</button></td>
               <td className={td}><span className="num">{fmtDate(e.date)}</span></td>
-              <td className={td}>{e.payeeName}{e.duplicateOf.length ? <span className="ms-1 text-xs text-warning-700">· possible duplicate</span> : null}</td>
+              <td className={td}>{e.payeeName}{e.duplicateOf.length ? <span className="ms-1 text-xs text-warning-700 dark:text-warning-500">· possible duplicate</span> : null}</td>
               <td className={td}>{e.categoryName}</td>
               <td className={td}>{EXPENSE_PAYMENT_METHOD_LABEL[e.paymentMethod]}</td>
               <td className={tdEnd}><Amount value={e.amount} currency={e.currency} /></td>
@@ -199,7 +199,7 @@ export function RecordExpenseDrawer({ open, onClose, onSaved }: { open: boolean;
       {!d || !v ? (
         <Skeleton className="h-96" />
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field id="exp-date" label="Date" required><TextInput id="exp-date" type="date" value={v.date} max={today()} onChange={(e) => set({ date: e.target.value })} /></Field>
           <Field id="exp-vendor" label="Supplier" hint="Or type the payee below.">
             <SelectInput id="exp-vendor" value={v.vendorId} onChange={(e) => { const vd = d.vendors.find((x) => x.id === e.target.value); set({ vendorId: e.target.value, payeeName: vd?.name ?? '', payeeVatNumber: vd?.taxNumber ?? v.payeeVatNumber }) }}>
@@ -251,7 +251,7 @@ export function RecordExpenseDrawer({ open, onClose, onSaved }: { open: boolean;
           <Field id="exp-camp" label="Marketing campaign"><SelectInput id="exp-camp" value={v.campaignId} onChange={(e) => set({ campaignId: e.target.value })}><option value="">—</option>{d.campaigns.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</SelectInput></Field>
           <Field id="exp-receipt" label="Receipt" hint={`Required above ${d.baseCurrency} ${d.receiptRequiredAbove}.`} className="sm:col-span-2"><ReceiptInput id="exp-receipt" value={v.receipt} onChange={(f) => set({ receipt: f })} /></Field>
           <Field id="exp-notes" label="Notes" className="sm:col-span-2"><TextArea id="exp-notes" rows={2} value={v.notes} onChange={(e) => set({ notes: e.target.value })} /></Field>
-          {dupes.length > 0 && <p role="alert" className="rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-800 sm:col-span-2 dark:bg-warning-700/20 dark:text-warning-300">Possible duplicate: {dupes.map((x) => x.number).join(', ')} has the same payee, amount and date.</p>}
+          {dupes.length > 0 && <p role="alert" className="rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-700 sm:col-span-2 dark:bg-warning-700/20 dark:text-warning-500">Possible duplicate: {dupes.map((x) => x.number).join(', ')} has the same payee, amount and date.</p>}
           <div className="sm:col-span-2"><FormError error={save.error} /></div>
         </div>
       )}
@@ -291,7 +291,7 @@ export function ExpenseDetailDrawer({ id, onClose }: { id: string | null; onClos
         <Skeleton className="h-64" />
       ) : (
         <div className="space-y-5">
-          <div className="flex items-center gap-2"><ExpenseStatusBadge status={e.status} />{e.duplicateOf.length ? <span className="text-xs text-warning-700">Same payee, amount and date as {e.duplicateOf.map((x) => x.number).join(', ')}</span> : null}</div>
+          <div className="flex items-center gap-2"><ExpenseStatusBadge status={e.status} />{e.duplicateOf.length ? <span className="text-xs text-warning-700 dark:text-warning-500">Same payee, amount and date as {e.duplicateOf.map((x) => x.number).join(', ')}</span> : null}</div>
           <dl>
             <DetailRow label="Category">{e.categoryName} · {e.accountName}</DetailRow>
             <DetailRow label="Amount"><Amount value={e.amount} currency={e.currency} strong /></DetailRow>

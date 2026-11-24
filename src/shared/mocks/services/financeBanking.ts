@@ -172,7 +172,7 @@ function docNumbersOf(co: string, e: JournalEntry): string[] {
   }
   // Any other source (supplier bill payments, expenses, payroll…): document numbers quoted in the memo / line texts.
   const text = [e.memo, ...e.lines.map((l) => l.description)].join(' ')
-  for (const m of text.matchAll(/[A-Z]{2,5}(?:-[A-Z]{2,5})?-\d{4}-\d{3,6}/g)) if (!out.includes(m[0])) out.push(m[0])
+  for (const m of text.matchAll(/\b[A-Z]{2,5}(?:-[A-Z]{2,5})?-\d{4}-\d{3,6}\b/g)) if (!out.includes(m[0])) out.push(m[0])
   return out.filter(Boolean)
 }
 function sourceNumberOf(co: string, e: JournalEntry): string | null {

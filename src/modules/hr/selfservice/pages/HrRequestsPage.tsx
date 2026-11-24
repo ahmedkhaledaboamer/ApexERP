@@ -180,13 +180,13 @@ function DecideModal(props: { kind: 'profile' | 'letter'; id: string; action: 'a
         </>
       }
     >
-      {props.warning && <p className="mb-3 rounded-lg bg-warning-50 p-3 text-[0.8125rem] text-warning-800 dark:bg-warning-950 dark:text-warning-200">{props.warning}</p>}
+      {props.warning && <p className="mb-3 rounded-lg bg-warning-50 p-3 text-[0.8125rem] text-warning-700 dark:bg-warning-500/10 dark:text-warning-500">{props.warning}</p>}
       {(!approve || props.needsOverride || props.kind === 'profile') && (
         <F label={approve ? (props.needsOverride ? 'Override reason (the employee isn’t leaving)' : 'Comment (optional)') : 'Reason'}>
           <TextArea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} />
         </F>
       )}
-      {m.error && <p className="mt-3 text-[0.8125rem] text-danger-700 dark:text-danger-300" role="alert">{errorMessage(m.error)}</p>}
+      {m.error && <p className="mt-3 text-[0.8125rem] text-danger-700 dark:text-danger-500" role="alert">{errorMessage(m.error)}</p>}
     </Modal>
   )
 }
@@ -372,7 +372,7 @@ function OnBehalfModal({ onClose }: { onClose: () => void }) {
           </F>
         )}
       </div>
-      {m.error && <p className="mt-3 text-[0.8125rem] text-danger-700 dark:text-danger-300" role="alert">{errorMessage(m.error)}</p>}
+      {m.error && <p className="mt-3 text-[0.8125rem] text-danger-700 dark:text-danger-500" role="alert">{errorMessage(m.error)}</p>}
     </Modal>
   )
 }
@@ -442,7 +442,7 @@ function TemplatesView() {
   if (q.error) return <ErrorState message={errorMessage(q.error)} onRetry={() => q.refetch()} />
   const current = q.data.find((t) => t.id === selected) ?? q.data[0]
   return (
-    <div className="grid gap-4 lg:grid-cols-[16rem_1fr]">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[16rem_1fr]">
       <nav aria-label="Letter types" className="space-y-1">
         {q.data.map((t) => (
           <button
@@ -477,7 +477,7 @@ function TemplateEditor({ t }: { t: LetterType }) {
   const allowed = PLACEHOLDERS.filter((p) => t.includesSalary || !p.salary)
   return (
     <section aria-label={`Template ${t.name}`} className="space-y-3 rounded-xl border border-line bg-surface p-4">
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <F label="Name">
           <TextInput value={name} onChange={(e) => setName(e.target.value)} />
         </F>
@@ -486,13 +486,13 @@ function TemplateEditor({ t }: { t: LetterType }) {
         </F>
       </div>
       <Switch checked={active} onChange={setActive} label="Employees can request it" />
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <div>
           <F label="Template" hint={t.includesSalary ? 'Salary letter: pay placeholders allowed.' : 'No pay or bank placeholders in this letter.'}>
             <TextArea value={body} onChange={(e) => setBody(e.target.value)} rows={18} className="font-mono text-xs" />
           </F>
           {problems.length > 0 && (
-            <ul className="mt-2 list-disc ps-5 text-xs text-danger-700 dark:text-danger-300" role="alert">
+            <ul className="mt-2 list-disc ps-5 text-xs text-danger-700 dark:text-danger-500" role="alert">
               {problems.map((p) => (
                 <li key={p}>{p}</li>
               ))}
@@ -516,7 +516,7 @@ function TemplateEditor({ t }: { t: LetterType }) {
           </div>
         </div>
       </div>
-      <div className="grid gap-4 border-t border-line pt-3 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 border-t border-line pt-3 xl:grid-cols-2">
         <div className="space-y-3">
           <F label="Arabic name">
             <TextInput dir="rtl" lang="ar" value={nameAr} onChange={(e) => setNameAr(e.target.value)} />
@@ -582,9 +582,9 @@ function VerifyView() {
           Check
         </Button>
       </div>
-      {error && <p className="text-[0.8125rem] text-danger-700 dark:text-danger-300" role="alert">{error}</p>}
+      {error && <p className="text-[0.8125rem] text-danger-700 dark:text-danger-500" role="alert">{error}</p>}
       {result && (
-        <div role="status" className={`rounded-lg p-3 text-[0.8125rem] ${result.valid ? 'bg-success-50 text-success-800 dark:bg-success-950 dark:text-success-200' : 'bg-danger-50 text-danger-800 dark:bg-danger-950 dark:text-danger-200'}`}>
+        <div role="status" className={`rounded-lg p-3 text-[0.8125rem] ${result.valid ? 'bg-success-50 text-success-700 dark:bg-success-500/10 dark:text-success-500' : 'bg-danger-50 text-danger-700 dark:bg-danger-500/10 dark:text-danger-500'}`}>
           {result.status !== 'not_found' ? (
             <>
               <p className="font-semibold">{result.valid ? 'Authentic letter' : `Revoked letter${result.revokedAt ? ` (revoked ${fmtDate(result.revokedAt)})` : ''}`}</p>

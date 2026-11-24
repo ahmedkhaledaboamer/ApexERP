@@ -196,7 +196,7 @@ function ProjectsTab({ q }: { q: ProfitQuery }) {
     <Loading q={r}>
       {(d: ProjectProfitability) => (
         <>
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <StatCard label="Revenue" value={money(d.meta, d.totals.revenue)} hint={`${d.rows.length} project${d.rows.length === 1 ? '' : 's'}`} />
             <StatCard label="Direct costs" value={money(d.meta, d.totals.directCosts)} hint="Bills, expenses and claims tagged to projects" />
             <StatCard
@@ -239,7 +239,7 @@ function ProjectsTab({ q }: { q: ProfitQuery }) {
                   <td className={tdEnd}><Amount value={p.directCosts} blankZero /></td>
                   <td className={cn(tdEnd, 'num')}>
                     {p.labourHours}
-                    {p.unratedHours > 0 && <span className="block text-[0.6875rem] text-warning-700" title="Hours of people without a contract in force: no cost allocated">{p.unratedHours} h unrated</span>}
+                    {p.unratedHours > 0 && <span className="block text-[0.6875rem] text-warning-700 dark:text-warning-500" title="Hours of people without a contract in force: no cost allocated">{p.unratedHours} h unrated</span>}
                   </td>
                   {d.meta.labourVisible && <td className={tdEnd}><Amount value={p.labourCost ?? 0} blankZero /></td>}
                   <td className={tdEnd}><Amount value={p.margin} strong /></td>
@@ -273,7 +273,7 @@ function EventsTab({ q }: { q: ProfitQuery }) {
     <Loading q={r}>
       {(d: EventProfitability) => (
         <>
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <StatCard label="Event revenue" value={money(d.meta, d.totals.revenue)} hint={`${d.rows.length} event${d.rows.length === 1 ? '' : 's'} starting in the period`} />
             <StatCard label="Event costs" value={money(d.meta, d.totals.totalCost)} hint="Ledger + budget lines not billed" />
             <StatCard label="Profit" value={money(d.meta, d.totals.profit)} alert={d.totals.profit < 0} />
@@ -339,13 +339,13 @@ function CustomersTab({ q }: { q: ProfitQuery }) {
         const ranked = [...d.rows].filter((c) => c.revenue !== 0 || c.directCosts !== 0).sort((a, b) => b.grossMargin - a.grossMargin)
         return (
           <>
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <StatCard label="Revenue (net of credit notes)" value={money(d.meta, d.totals.revenue)} hint={`${d.rows.length} customers`} />
               <StatCard label="Gross margin" value={money(d.meta, d.totals.margin)} hint={d.totals.marginPct === null ? '' : `${d.totals.marginPct}%${d.meta.labourVisible ? ' after labour' : ' before labour'}`} />
               <StatCard label="Collected vs invoiced" value={money(d.meta, d.totals.collected)} hint={`of ${d.meta.currency} ${fmtMoney(d.totals.invoiced)} invoiced in the period`} />
               <StatCard label="Outstanding · DSO" value={money(d.meta, d.totals.outstanding)} hint={d.totals.dso === null ? 'No sales in the period' : `${d.totals.dso} days sales outstanding`} />
             </div>
-            <div className="grid gap-5 lg:grid-cols-2">
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
               <RankCard title="Top customers by margin" rows={ranked.slice(0, 5)} meta={d.meta} />
               <RankCard title="Bottom customers by margin" rows={ranked.slice(-5).reverse()} meta={d.meta} />
             </div>

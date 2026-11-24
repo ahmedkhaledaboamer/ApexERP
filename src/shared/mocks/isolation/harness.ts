@@ -119,7 +119,7 @@ export async function api(token: string | null, method: string, path: string, op
   const res = (pick.length ? await getResponse(pick, req.clone()) : undefined) ?? (await getResponse(ALL_HANDLERS, req))
   if (!res) throw new Error(`No handler for ${m} ${path}`)
   const text = await res.text()
-  let body: unknown = null
+  let body: unknown
   try {
     body = text ? JSON.parse(text) : null
   } catch {

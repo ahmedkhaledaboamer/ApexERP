@@ -42,7 +42,7 @@ export function FeedbackSummaryView({ s }: { s: FeedbackSummary }) {
           ))}
         </tr>
       </SimpleTable>
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Section title="Strengths">
           <ul className="space-y-1 text-[0.8125rem] text-ink-2">{s.strengths.length ? s.strengths.map((x, i) => <li key={i}>“{x}”</li>) : <li className="text-muted">—</li>}</ul>
         </Section>

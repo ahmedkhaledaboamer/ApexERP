@@ -239,7 +239,7 @@ function PaymentRunDrawer({ open, onClose, bills, onDone }: { open: boolean; onC
       }
     >
       <div className="space-y-4">
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field id="run-date" label="Payment date"><TextInput id="run-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
           <Field id="run-account" label="Pay from">
             <SelectInput id="run-account" value={account} onChange={(e) => setAccount(e.target.value)}>

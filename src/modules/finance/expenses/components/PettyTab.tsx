@@ -29,7 +29,7 @@ export function PettyTab({ onOpen, canManage }: { onOpen: (id: string) => void; 
       ) : !rows.length ? (
         <EmptyState icon={<Coins />} title="No petty cash fund" body={canManage ? 'Open a fund for an employee who holds cash for small purchases.' : 'You don’t hold a petty cash fund.'} />
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {rows.map((f) => (
             <Card key={f.id} className="cursor-pointer p-4 hover:border-brand-300" onClick={() => onOpen(f.id)} role="button" aria-label={`Open ${f.name}`}>
               <div className="flex items-start justify-between gap-2">
@@ -169,7 +169,7 @@ function RecordPanel({ fund, categories, onDone }: { fund: PettyFundDetail; cate
   // The categories may arrive after the panel opens: an empty choice means the first category (what the select shows).
   const categoryId = v.categoryId || categories[0]?.id || ''
   return (
-    <section className="grid gap-3 rounded-xl border border-line p-3 sm:grid-cols-3" aria-label="Record petty expense">
+    <section className="grid grid-cols-1 gap-3 rounded-xl border border-line p-3 sm:grid-cols-3" aria-label="Record petty expense">
       <Field id="pe-date" label="Date"><TextInput id="pe-date" type="date" max={today()} value={v.date} onChange={(e) => set({ date: e.target.value })} /></Field>
       <Field id="pe-cat" label="Category"><SelectInput id="pe-cat" value={categoryId} onChange={(e) => set({ categoryId: e.target.value })}>{categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</SelectInput></Field>
       <Field id="pe-amount" label="Amount"><TextInput id="pe-amount" inputMode="decimal" value={v.amount} onChange={(e) => set({ amount: e.target.value })} /></Field>
@@ -229,7 +229,7 @@ function TopUpPanel({ fund, banks, onDone }: { fund: PettyFundDetail; banks: { i
   const [chosenFrom, setFrom] = useState('')
   const from = chosenFrom || defaultBank(banks)
   return (
-    <section className="grid gap-3 rounded-xl border border-line p-3 sm:grid-cols-3" aria-label="Top up fund">
+    <section className="grid grid-cols-1 gap-3 rounded-xl border border-line p-3 sm:grid-cols-3" aria-label="Top up fund">
       <Field id="tu-amount" label="Amount"><TextInput id="tu-amount" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
       <Field id="tu-from" label="From"><SelectInput id="tu-from" value={from} onChange={(e) => setFrom(e.target.value)}>{banks.map((b) => <option key={b.id} value={b.id}>{b.code} {b.name}</option>)}</SelectInput></Field>
       <div className="flex items-end justify-end"><Button write loading={save.isPending} onClick={() => save.mutate({ id: fund.id, input: { amount: Number(amount), fromAccountId: from } }, { onSuccess: onDone })}>Top up</Button></div>
@@ -244,7 +244,7 @@ function CountPanel({ fund, onDone }: { fund: PettyFundDetail; onDone: () => voi
   const [reason, setReason] = useState('')
   const diff = counted === '' ? 0 : Math.round((Number(counted) - fund.cashExpected) * 100) / 100
   return (
-    <section className="grid gap-3 rounded-xl border border-line p-3 sm:grid-cols-3" aria-label="Cash count">
+    <section className="grid grid-cols-1 gap-3 rounded-xl border border-line p-3 sm:grid-cols-3" aria-label="Cash count">
       <Field id="cc-counted" label="Cash counted" hint={`Expected ${fund.cashExpected.toFixed(2)}`}><TextInput id="cc-counted" inputMode="decimal" value={counted} onChange={(e) => setCounted(e.target.value)} /></Field>
       <Field id="cc-reason" label="Reason for a difference" hint={diff ? `${diff < 0 ? 'Short' : 'Over'} ${Math.abs(diff).toFixed(2)} → 6950 over / short` : undefined}><TextInput id="cc-reason" value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
       <div className="flex items-end justify-end"><Button write loading={save.isPending} disabled={counted === ''} onClick={() => save.mutate({ id: fund.id, input: { counted: Number(counted), reason } }, { onSuccess: onDone })}>Record count</Button></div>

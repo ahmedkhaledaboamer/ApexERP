@@ -146,7 +146,7 @@ function AcknowledgeModal({ id, onClose }: { id: string; onClose: () => void }) 
               {r.ackStatus === 'pending' ? 'This record was withdrawn.' : `${r.ackStatus === 'appealed' ? 'You appealed' : 'You acknowledged'} on ${fmtDate(r.ackAt ?? '')}${r.employeeComment ? `: “${r.employeeComment}”` : '.'}`}
             </p>
           )}
-          {m.error && <p className="text-danger-700 dark:text-danger-300" role="alert">{errorMessage(m.error)}</p>}
+          {m.error && <p className="text-danger-700 dark:text-danger-500" role="alert">{errorMessage(m.error)}</p>}
         </div>
       )}
     </Modal>

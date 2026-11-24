@@ -171,7 +171,7 @@ function detailView(user: User, inv: InvoiceRecord): InvoiceDetail {
   const s = invoiceSettingsFor(co)
   const today = companyToday(co, clockNow())
   const full = financeAccessOf(user) === 'full'
-  const { companyId: _c, sendLog, history, zatca, voidJournalEntryId, customerVatNumber, paymentTermsDays, billingPct, milestone, ...base } = inv // eslint-disable-line @typescript-eslint/no-unused-vars
+  const { companyId: _c, sendLog, history, zatca, voidJournalEntryId, customerVatNumber, paymentTermsDays, billingPct, milestone, ...base } = inv
   const cns = financeCreditNotes.filter((c) => c.companyId === co && c.invoiceId === inv.id)
   const taxes = new Map<string, { net: number; tax: number }>()
   for (const l of inv.lines) {
@@ -494,7 +494,7 @@ export async function createFromSource(user: User, input: InvoiceFromSourceInput
   const s = invoiceSettingsFor(co)
   let built: ReturnType<typeof linesFromQuotation>
   let customerId: string
-  let leadId: string | null = null
+  let leadId: string | null
   if (quotationId) {
     const q = quotations.find((x) => x.companyId === co && x.id === quotationId)
     if (!q) bad('Quotation not found.', 'quotation_not_found')
@@ -543,7 +543,7 @@ export async function createFromSource(user: User, input: InvoiceFromSourceInput
 /* ---------------- credit notes ---------------- */
 
 function creditView(cn: Tenant<CreditNoteRecord>): CreditNote {
-  const { companyId: _c, createdBy, ...rest } = cn // eslint-disable-line @typescript-eslint/no-unused-vars
+  const { companyId: _c, createdBy, ...rest } = cn
   const inv = invoiceById(cn.companyId, cn.invoiceId)
   return { ...rest, lines: cn.lines.map((l) => ({ ...l })), zatca: cn.zatca ? { ...cn.zatca } : null, invoiceNumber: inv?.number ?? '', customerName: customerName(cn.companyId, cn.customerId), createdByName: nameOf(cn.companyId, createdBy) }
 }
@@ -598,7 +598,7 @@ const MODES: RecurringMode[] = ['draft', 'auto_issue']
 const STATUSES: RecurringStatus[] = ['active', 'paused', 'ended']
 
 function recurringView(r: Tenant<RecurringRecord>): RecurringSchedule {
-  const { companyId: _c, createdBy, periodIndex: _p, ...rest } = r // eslint-disable-line @typescript-eslint/no-unused-vars
+  const { companyId: _c, createdBy, periodIndex: _p, ...rest } = r
   const amount = totalsOf(r.template.lines.map((l) => lineMath(l.quantity, l.unitPrice, l.discount ?? 0, taxCodeOf(r.companyId, l.taxCodeId ?? '')?.rate ?? 0))).total
   return { ...structuredClone(rest), customerName: customerName(r.companyId, r.customerId), amount, createdByName: nameOf(r.companyId, createdBy) }
 }

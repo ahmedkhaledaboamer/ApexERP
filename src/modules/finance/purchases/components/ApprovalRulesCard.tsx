@@ -30,7 +30,7 @@ export function ApprovalRulesCard() {
       />
       <CardBody>
         {q.error ? <FinError error={q.error as Error} onRetry={() => void q.refetch()} /> : !v ? <Skeleton className="h-48" /> : (
-          <div className="grid gap-4 xl:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             {v.docTypes.map((d) => <DocRules key={d.id} view={v} docType={d.id} label={d.label} />)}
           </div>
         )}
@@ -60,7 +60,7 @@ function DocRules({ view, docType, label }: { view: ApprovalRulesView; docType: 
       {bands.length === 0 && <p className="mb-2 text-[0.8125rem] text-muted">No approval needed.</p>}
       <ol className="space-y-2">
         {bands.map((b, i) => (
-          <li key={i} className="flex items-center gap-2 text-[0.8125rem]">
+          <li key={i} className="flex flex-wrap items-center gap-2 text-[0.8125rem]">
             <span className="w-14 text-xs text-muted">Step {i + 1}</span>
             <span className="text-xs text-muted">from</span>
             <TextInput aria-label={`${label} step ${i + 1} amount`} type="number" min="0" className="num w-32" value={b.minAmount} disabled={ro} onChange={(e) => set(i, { minAmount: e.target.value })} />

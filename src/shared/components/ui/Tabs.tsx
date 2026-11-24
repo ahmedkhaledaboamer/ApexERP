@@ -38,7 +38,11 @@ export function Tabs<T extends string>({ items, value, onChange, label, variant 
       role="tablist"
       aria-label={label}
       className={cn(
-        variant === 'underline' ? 'flex gap-5 border-b border-line' : 'inline-flex gap-0.5 rounded-lg bg-sunken p-0.5',
+        // Too many tabs for the width (phones) scroll inside the strip, never the page. The underline's baseline is an
+        // inset shadow (not a border) so the active tab's 2px border sits on it without being clipped by the scroller.
+        variant === 'underline'
+          ? 'relative flex max-w-full gap-5 overflow-x-auto shadow-[inset_0_-1px_0_var(--color-line)] [scrollbar-width:none]'
+          : 'relative inline-flex max-w-full gap-0.5 overflow-x-auto rounded-lg bg-sunken p-0.5 [scrollbar-width:none]',
         className,
       )}
     >
@@ -61,8 +65,8 @@ export function Tabs<T extends string>({ items, value, onChange, label, variant 
             className={cn(
               'relative inline-flex items-center gap-1.5 text-[0.8125rem] font-medium whitespace-nowrap transition-colors duration-150 [&_svg]:size-3.5',
               variant === 'underline'
-                ? cn('-mb-px h-10 border-b-2', active ? 'border-ink text-ink' : 'border-transparent text-muted hover:text-ink')
-                : cn('h-7 rounded-md px-2.5', active ? 'bg-surface text-ink shadow-xs' : 'text-muted hover:text-ink'),
+                ? cn('h-10 shrink-0 border-b-2', active ? 'border-ink text-ink' : 'border-transparent text-muted hover:text-ink')
+                : cn('h-7 shrink-0 rounded-md px-2.5', active ? 'bg-surface text-ink shadow-xs' : 'text-muted hover:text-ink'),
             )}
           >
             {t.icon}

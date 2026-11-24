@@ -72,7 +72,7 @@ export function PayslipScreen({ q, backTo, backLabel }: { q: UseQueryResult<Pays
             ))}
           </dl>
 
-          <div className="grid gap-6 py-5 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-6 py-5 sm:grid-cols-2">
             {(['earning', 'deduction'] as const).map((t) => {
               const items = p.items.filter((i) => i.type === t)
               const total = t === 'earning' ? p.gross : p.totalDeductions

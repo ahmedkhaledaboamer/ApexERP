@@ -38,12 +38,12 @@ export default function FinanceOverviewPage() {
         {q.isError ? (
           <ErrorState message={errMsg(q.error)} onRetry={() => void q.refetch()} />
         ) : !o ? (
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-32" />)}
           </div>
         ) : (
           <>
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <StatCard label="Cash and bank" icon={<Landmark />} value={<Amount value={o.cashTotal} currency={cur} />} hint={`${o.cash.length} accounts`} to="/finance/accounts" />
               <StatCard
                 label="Receivables"
@@ -67,7 +67,7 @@ export default function FinanceOverviewPage() {
               />
             </div>
 
-            <div className="grid gap-6 xl:grid-cols-[1fr_2fr]">
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_2fr]">
               <Card>
                 <CardHeader title="Cash and bank accounts" description="Ledger balances in base currency, today." icon={<Landmark />} />
                 <CardBody>

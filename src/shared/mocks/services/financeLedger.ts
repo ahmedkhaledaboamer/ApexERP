@@ -151,7 +151,7 @@ function sourceOf(co: string, e: Pick<JournalEntry, 'sourceType' | 'sourceId'>):
 /* ---------------- helpers ---------------- */
 
 const strip = <T extends { companyId: string }>(r: T): Omit<T, 'companyId'> => {
-  const { companyId: _c, ...rest } = r // eslint-disable-line @typescript-eslint/no-unused-vars
+  const { companyId: _c, ...rest } = r
   return rest
 }
 const userName = (co: string, id: string | null) => (id ? (users.find((u) => u.id === id && u.companyId === co)?.name ?? 'Former user') : 'System')

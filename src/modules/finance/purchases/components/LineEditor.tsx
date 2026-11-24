@@ -88,7 +88,7 @@ export function LineEditor({ lines, onChange, meta, currency, defaultTaxId, disa
         const ev = meta?.events.find((e) => e.id === l.eventId)
         return (
           <div key={l.key} className="rounded-xl border border-line bg-surface p-3">
-            <div className="grid gap-2 md:grid-cols-[minmax(0,3fr)_minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1.3fr)_auto]">
+            <div className="grid grid-cols-1 gap-2 md:grid-cols-[minmax(0,3fr)_minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1.3fr)_auto]">
               <TextInput aria-label={`Line ${n} description`} placeholder="Description" value={l.description} disabled={disabled} onChange={(e) => set(l.key, { description: e.target.value })} />
               <TextInput aria-label={`Line ${n} quantity`} type="number" min="0" step="any" className="num" value={l.quantity} disabled={disabled} onChange={(e) => set(l.key, { quantity: e.target.value })} />
               <TextInput aria-label={`Line ${n} unit price`} type="number" min="0" step="0.01" placeholder="Unit price" className="num" value={l.unitPrice} disabled={disabled} onChange={(e) => set(l.key, { unitPrice: e.target.value })} />
@@ -100,7 +100,7 @@ export function LineEditor({ lines, onChange, meta, currency, defaultTaxId, disa
                 <Trash2 className="size-4" aria-hidden />
               </Button>
             </div>
-            <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
+            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-6">
               <SelectInput aria-label={`Line ${n} tax code`} className={sel} value={l.taxCodeId} disabled={disabled} onChange={(e) => set(l.key, { taxCodeId: e.target.value })}>
                 <option value="">Tax: supplier default</option>
                 {meta?.taxCodes.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}

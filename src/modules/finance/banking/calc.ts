@@ -32,7 +32,7 @@ export function parseCsv(text: string, delimiter: ',' | ';' | '\t' = detectDelim
   let row: string[] = []
   let cell = ''
   let q = false
-  const src = text.replace(/^﻿/, '')
+  const src = text.replace(/^\uFEFF/, '')
   for (let i = 0; i < src.length; i++) {
     const ch = src[i]
     if (q) {
@@ -102,7 +102,7 @@ export function parseAmount(raw: string): number | null {
     sign = -sign
     s = s.replace(/\bDR\b$/i, '')
   } else s = s.replace(/\bCR\b$/i, '')
-  s = s.replace(/[A-Z]{3}/gi, '').replace(/[\s ]/g, '')
+  s = s.replace(/[A-Z]{3}/gi, '').replace(/[\s\u00A0]/g, '')
   // 1.234,56 (European) → 1234.56; 1,234.56 → 1234.56
   if (/^-?\d{1,3}(\.\d{3})+,\d{1,2}$/.test(s)) s = s.replace(/\./g, '').replace(',', '.')
   else s = s.replace(/,/g, '')
@@ -160,7 +160,7 @@ export function buildLines(rows: string[][], mapping: CsvMapping, existing: Read
     const row = i + (mapping.hasHeader ? 2 : 1)
     const cell = (idx: number | null) => (idx === null || idx === undefined ? '' : (cells[idx] ?? ''))
     const date = parseDate(cell(mapping.date), mapping.dateFormat)
-    let amount: number | null = null
+    let amount: number | null
     if (mapping.amount !== null && mapping.amount !== undefined) {
       amount = parseAmount(cell(mapping.amount))
       if (amount !== null && mapping.invertSign) amount = -amount

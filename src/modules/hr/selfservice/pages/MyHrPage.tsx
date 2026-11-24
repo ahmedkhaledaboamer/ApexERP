@@ -135,11 +135,11 @@ function Portal({ d }: { d: MyHr }) {
         </p>
       </section>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <TimeCards onRequestLeave={() => setLeaveOpen(true)} />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Card
           title="My profile"
           actions={
@@ -161,7 +161,7 @@ function Portal({ d }: { d: MyHr }) {
             ]}
           />
           {pendingChange && (
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-warning-200 bg-warning-50 p-3 text-[0.8125rem] dark:border-warning-800 dark:bg-warning-950" data-testid="pending-change">
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-warning-500/30 bg-warning-50 p-3 text-[0.8125rem] dark:border-warning-500/30 dark:bg-warning-500/10" data-testid="pending-change">
               <span>
                 Waiting for HR: {pendingChange.fields.map((f) => PROFILE_CHANGE_FIELD_LABEL[f]).join(', ')}
                 {pendingChange.proposed.mobile ? ` → ${pendingChange.proposed.mobile}` : ''}
@@ -264,7 +264,7 @@ function Portal({ d }: { d: MyHr }) {
         )}
       </Card>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Card title="My payslips">
           {d.payslips.length ? (
             <ul className="divide-y divide-line text-[0.8125rem]">
@@ -304,7 +304,7 @@ function Portal({ d }: { d: MyHr }) {
         </Card>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Card title="My training and certificates">
           {d.training.enrollments.length || d.training.certificates.length ? (
             <ul className="divide-y divide-line text-[0.8125rem]">
@@ -476,7 +476,7 @@ function ProfileChangeModal({ d, onClose }: { d: MyHr; onClose: () => void }) {
         </>
       }
     >
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <F label="Mobile">
           <TextInput value={f.mobile} onChange={set('mobile')} inputMode="tel" />
         </F>
@@ -516,7 +516,7 @@ function ProfileChangeModal({ d, onClose }: { d: MyHr; onClose: () => void }) {
           </F>
         </div>
       </div>
-      {submit.error && <p className="mt-3 text-[0.8125rem] text-danger-700 dark:text-danger-300" role="alert">{errorMessage(submit.error)}</p>}
+      {submit.error && <p className="mt-3 text-[0.8125rem] text-danger-700 dark:text-danger-500" role="alert">{errorMessage(submit.error)}</p>}
     </Modal>
   )
 }
@@ -648,7 +648,7 @@ function LetterRequestModal({ d, onClose }: { d: MyHr; onClose: () => void }) {
           <TextInput value={languageNote} onChange={(ev) => setLanguageNote(ev.target.value)} />
         </F>
       </div>
-      {submit.error && <p className="mt-3 text-[0.8125rem] text-danger-700 dark:text-danger-300" role="alert">{errorMessage(submit.error)}</p>}
+      {submit.error && <p className="mt-3 text-[0.8125rem] text-danger-700 dark:text-danger-500" role="alert">{errorMessage(submit.error)}</p>}
     </Modal>
   )
 }

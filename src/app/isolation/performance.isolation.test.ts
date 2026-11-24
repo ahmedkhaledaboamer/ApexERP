@@ -81,7 +81,10 @@ const call = (u: User, method: string, path: string, body?: unknown) => callApi(
 
 function keysIn(v: unknown, out = new Set<string>()): Set<string> {
   if (Array.isArray(v)) v.forEach((x) => keysIn(x, out))
-  else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) (out.add(k), keysIn(x, out))
+  else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) {
+    out.add(k)
+    keysIn(x, out)
+  }
   return out
 }
 

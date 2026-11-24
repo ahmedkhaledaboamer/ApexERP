@@ -112,7 +112,7 @@ function AdjustmentModal({ adj, onClose }: { adj: PayAdjustment | null; onClose:
         </>
       }
     >
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {!adj && (
           <Field id="adj-emp" label="Employee" className="sm:col-span-2">
             <EmployeeSelect id="adj-emp" value={v.employeeId ?? ''} onChange={(employeeId) => set({ employeeId })} />
@@ -217,7 +217,7 @@ function LoanModal({ onClose }: { onClose: () => void }) {
         </>
       }
     >
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field id="loan-emp" label="Employee" className="sm:col-span-2">
           <EmployeeSelect id="loan-emp" value={v.employeeId ?? ''} onChange={(employeeId) => set({ employeeId })} />
         </Field>

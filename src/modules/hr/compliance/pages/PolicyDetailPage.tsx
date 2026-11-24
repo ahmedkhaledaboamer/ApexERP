@@ -150,7 +150,7 @@ export default function PolicyDetailPage() {
             </>
           )
         ) : tab === 'text' ? (
-          <div className="grid gap-4 xl:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             <section aria-label="Current version" className="space-y-2 rounded-xl border border-line bg-surface p-4">
               <p className="text-xs font-medium text-muted">{p.current ? `Version ${p.current.version} (published ${fmtDate(p.current.publishedAt)})` : 'Not published'}</p>
               {p.current ? (
@@ -216,7 +216,7 @@ function PublishModal({ id, next, onClose }: { id: string; next: number; onClose
           <TextInput value={note} onChange={(e) => setNote(e.target.value)} />
         </F>
       )}
-      {m.error && <p className="mt-3 text-[0.8125rem] text-danger-700 dark:text-danger-300" role="alert">{errorMessage(m.error)}</p>}
+      {m.error && <p className="mt-3 text-[0.8125rem] text-danger-700 dark:text-danger-500" role="alert">{errorMessage(m.error)}</p>}
     </Modal>
   )
 }

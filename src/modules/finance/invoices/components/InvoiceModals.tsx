@@ -205,8 +205,8 @@ export function CreditNoteModal({ inv, open, onClose }: { inv: InvoiceDetail; op
           <dd className="text-end font-semibold">{fmtMoney(preview.total, inv.currency)}</dd>
           {excess > 0 && (
             <>
-              <dt className="text-warning-700">Customer credit (above the balance)</dt>
-              <dd className="text-end text-warning-700">{fmtMoney(excess, inv.currency)}</dd>
+              <dt className="text-warning-700 dark:text-warning-500">Customer credit (above the balance)</dt>
+              <dd className="text-end text-warning-700 dark:text-warning-500">{fmtMoney(excess, inv.currency)}</dd>
             </>
           )}
         </dl>

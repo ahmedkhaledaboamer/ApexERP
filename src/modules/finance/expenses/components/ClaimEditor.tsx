@@ -122,7 +122,7 @@ export function ClaimEditorDrawer({ open, onClose, onDone }: { open: boolean; on
             Receipts are required above {d.baseCurrency} {d.policy.receiptRequiredAbove}; claim within {d.policy.claimMaxAgeDays} days. VAT is recovered when the receipt shows the merchant’s {d.baseCurrency === 'SAR' ? 'VAT number' : 'TRN'}.
           </p>
           {lines.map((l, i) => (
-            <fieldset key={l.key} className="grid gap-3 rounded-xl border border-line p-3 sm:grid-cols-3" aria-label={`Line ${i + 1}`}>
+            <fieldset key={l.key} className="grid grid-cols-1 gap-3 rounded-xl border border-line p-3 sm:grid-cols-3" aria-label={`Line ${i + 1}`}>
               <legend className="px-1 text-xs font-semibold text-muted">Line {i + 1}</legend>
               <Field id={`cl-date-${l.key}`} label="Date"><TextInput id={`cl-date-${l.key}`} type="date" max={today()} value={l.date} onChange={(e) => set(l.key, { date: e.target.value })} /></Field>
               <Field id={`cl-cat-${l.key}`} label="Category">

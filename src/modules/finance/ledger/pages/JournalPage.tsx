@@ -256,10 +256,10 @@ function EntryDrawer({ id, onClose, onOpen }: { id: string | null; onClose: () =
               </Link>
             ) : null}
             {e.status === 'reversed' && e.reversedBy && (
-              <span>Reversed by <button type="button" className="num font-medium text-brand-700 hover:underline" onClick={() => onOpen(e.reversedBy!)}>{e.reversedByNumber}</button></span>
+              <span>Reversed by <button type="button" className="num font-medium text-brand-700 hover:underline dark:text-brand-300" onClick={() => onOpen(e.reversedBy!)}>{e.reversedByNumber}</button></span>
             )}
             {e.reversalOf && (
-              <span>Reverses <button type="button" className="num font-medium text-brand-700 hover:underline" onClick={() => onOpen(e.reversalOf!)}>{e.reversalOfNumber}</button></span>
+              <span>Reverses <button type="button" className="num font-medium text-brand-700 hover:underline dark:text-brand-300" onClick={() => onOpen(e.reversalOf!)}>{e.reversalOfNumber}</button></span>
             )}
           </div>
           <p className="text-sm text-ink">{e.memo}</p>
@@ -296,7 +296,7 @@ function EntryDrawer({ id, onClose, onOpen }: { id: string | null; onClose: () =
           {reversing && (
             <div className="space-y-3 rounded-lg border border-line p-4">
               <p className="text-[0.8125rem] font-medium">Post the mirror entry</p>
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <Field id="rev-date" label="Reversal date" hint="Today when empty"><TextInput id="rev-date" type="date" value={date} onChange={(ev) => setDate(ev.target.value)} /></Field>
                 <Field id="rev-memo" label="Memo"><TextInput id="rev-memo" value={memo} placeholder={`Reversal of ${e.number}`} onChange={(ev) => setMemo(ev.target.value)} /></Field>
               </div>
@@ -392,14 +392,14 @@ function ManualEntryModal({ onClose, onPosted }: { onClose: () => void; onPosted
       }
     >
       <div className="space-y-4">
-        <div className="grid gap-3 sm:grid-cols-[12rem_1fr]">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-[12rem_1fr]">
           <Field id="je-date" label="Date" required><TextInput id="je-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
           <Field id="je-memo" label="Memo" required><TextInput id="je-memo" value={memo} onChange={(e) => setMemo(e.target.value)} /></Field>
         </div>
         <ol className="space-y-3" aria-label="Lines">
           {lines.map((l, i) => (
             <li key={l.key} className="space-y-2 rounded-lg border border-line p-3">
-              <div className="grid gap-2 sm:grid-cols-[1.4fr_1fr_7rem_7rem_auto]">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1.4fr_1fr_7rem_7rem_auto]">
                 <SelectInput aria-label={`Line ${i + 1} account`} value={l.accountId} onChange={(e) => upd(l.key, { accountId: e.target.value })}>
                   <option value="">Account…</option>
                   {postable.map((a: AccountRow) => <option key={a.id} value={a.id}>{a.code} {a.name}</option>)}
@@ -411,7 +411,7 @@ function ManualEntryModal({ onClose, onPosted }: { onClose: () => void; onPosted
                   <Trash2 className="size-4" aria-hidden />
                 </Button>
               </div>
-              <div className="grid gap-2 sm:grid-cols-4">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
                 {dimSelect(l, i + 1, 'departmentId', 'Department', dims.data?.departments)}
                 {dimSelect(l, i + 1, 'projectId', 'Project', dims.data?.projects)}
                 {dimSelect(l, i + 1, 'eventId', 'Event', dims.data?.events)}

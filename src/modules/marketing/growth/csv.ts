@@ -43,7 +43,7 @@ function isoDate(v: string): string {
  * order is keyword, date, position. Row numbers count the file's lines (header = 1).
  */
 export function parseKeywordCsv(text: string): KeywordImportRow[] {
-  const lines = text.replace(/^﻿/, '').split(/\r?\n/)
+  const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/)
   const first = lines.find((l) => l.trim()) ?? ''
   const sep = first.includes(';') && !first.includes(',') ? ';' : ','
   const head = splitCsvLine(first, sep).map((h) => h.toLowerCase())

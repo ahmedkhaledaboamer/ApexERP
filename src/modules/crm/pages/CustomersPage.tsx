@@ -1,7 +1,7 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { createColumnHelper, type FilterFn, type Table } from '@tanstack/react-table'
-import { BellRing, Building2, CircleDollarSign, Crown, Globe, ShieldOff, X } from 'lucide-react'
+import { BellRing, Building2, CircleDollarSign, Crown, Globe, Plus, ShieldOff, X } from 'lucide-react'
 import type { Scope } from '@/shared/types'
 import { customerPath, PATHS } from '@/app/paths'
 import { useCustomersQuery } from '@/modules/crm/hooks/useCrm'
@@ -11,8 +11,10 @@ import { useAutomationRules } from '@/shared/hooks/useAutomationRules'
 import { useLookups } from '@/shared/hooks/useLookups'
 import type { LookupsApi } from '@/shared/hooks/useLookups'
 import { CustomerStatusBadge, RenewsIn } from '@/modules/crm/components/CrmBadges'
+import { CustomerCreateDialog } from '@/modules/crm/components/CustomerCreateDialog'
+import { useNewParam } from '@/shared/hooks/useNewParam'
 import { useCurrentUser } from '@/store/hooks'
-import { SCOPE_LABELS, scopeOf } from '@/shared/lib/permissions'
+import { can, SCOPE_LABELS, scopeOf } from '@/shared/lib/permissions'
 import { fmtCompactMoney, fmtDate, fmtMoney } from '@/shared/lib/utils'
 import { Avatar } from '@/shared/components/ui/Avatar'
 import { Badge, DOT } from '@/shared/components/ui/Badge'
@@ -34,11 +36,14 @@ export default function CustomersPage() {
       </PageBody>
     )
   }
-  return <CustomersList scope={scope} />
+  return <CustomersList scope={scope} canEdit={can(user.role, 'sales', 'edit')} />
 }
 
-function CustomersList({ scope }: { scope: Scope }) {
+function CustomersList({ scope, canEdit }: { scope: Scope; canEdit: boolean }) {
   const navigate = useNavigate()
+  // New customer popup: the header button, and `?new=1` from the "+ New" menu / command palette.
+  const [creating, setCreating] = useState(false)
+  useNewParam(() => setCreating(true), { when: canEdit })
   const [params, setParams] = useSearchParams()
   const search = params.get('q') ?? ''
   const query = useCustomersQuery()
@@ -85,6 +90,14 @@ function CustomersList({ scope }: { scope: Scope }) {
               </Badge>
             )}
           </span>
+        }
+        actions={
+          canEdit && (
+            <Button write size="sm" onClick={() => setCreating(true)}>
+              <Plus />
+              New customer
+            </Button>
+          )
         }
       />
       <PageBody className="space-y-5">
@@ -135,6 +148,7 @@ function CustomersList({ scope }: { scope: Scope }) {
           }
         />
       </PageBody>
+      {canEdit && <CustomerCreateDialog open={creating} onClose={() => setCreating(false)} />}
     </>
   )
 }

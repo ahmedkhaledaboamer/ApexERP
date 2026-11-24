@@ -5,6 +5,7 @@ import {
   Bot,
   Briefcase,
   Building,
+  Building2,
   CalendarRange,
   CheckSquare,
   CircleUser,
@@ -98,6 +99,8 @@ export const CREATE_ACTIONS: CreateAction[] = [
   { id: 'lead', label: 'New lead', keywords: 'prospect company deal', area: 'sales', icon: UserPlus, target: { kind: 'lead-quick-add' }, module: 'sales' },
   // Contacts and contracts: the pages' create buttons follow sales edit.
   { id: 'contact', label: 'New contact', keywords: 'person decision maker', area: 'sales', icon: Contact, target: route(`${PATHS.contacts}?new=1`), module: 'sales', action: 'edit' },
+  // Existing clients added directly (most customers come from a won lead); sales edit, like contacts.
+  { id: 'customer', label: 'New customer', keywords: 'client account company existing', area: 'sales', icon: Building2, target: route(`${PATHS.customers}?new=1`), module: 'sales', action: 'edit' },
   { id: 'quotation', label: 'New quotation', keywords: 'quote proposal offer', area: 'sales', icon: FileText, target: route(PATHS.quotationNew), module: 'sales' },
   { id: 'contract', label: 'New contract', keywords: 'customer renewal subscription', area: 'sales', icon: FileSignature, target: route(`${PATHS.contracts}?new=1`), module: 'sales', action: 'edit' },
 

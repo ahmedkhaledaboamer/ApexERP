@@ -114,7 +114,7 @@ export function ProfitAndLossTab({ meta }: { meta: StatementsMeta }) {
       ) : !s ? (
         <Skeleton className="h-96" />
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-line bg-surface">
+        <div className="relative overflow-x-auto rounded-xl border border-line bg-surface">
           <table className="w-full text-[0.8125rem]" aria-label="Profit and loss">
             <thead className="border-b border-line bg-sunken/60 text-xs text-muted">
               <tr>
@@ -209,7 +209,7 @@ export function BalanceSheetTab({ meta }: { meta: StatementsMeta }) {
       ) : !s ? (
         <Skeleton className="h-96" />
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-line bg-surface">
+        <div className="relative overflow-x-auto rounded-xl border border-line bg-surface">
           <table className="w-full text-[0.8125rem]" aria-label="Balance sheet">
             <thead className="border-b border-line bg-sunken/60 text-xs text-muted">
               <tr><th className={th}>{s.currency}</th>{s.columns.map((c) => <th key={c.key} className={thEnd}>{c.label}</th>)}</tr>
@@ -286,7 +286,7 @@ export function CashFlowTab({ meta }: { meta: StatementsMeta }) {
       ) : !s ? (
         <Skeleton className="h-96" />
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-line bg-surface">
+        <div className="relative overflow-x-auto rounded-xl border border-line bg-surface">
           <table className="w-full text-[0.8125rem]" aria-label="Cash flow statement">
             <thead className="border-b border-line bg-sunken/60 text-xs text-muted">
               <tr><th className={th}>Indirect method</th><th className={thEnd}>{s.currency}</th></tr>
@@ -308,7 +308,7 @@ export function CashFlowTab({ meta }: { meta: StatementsMeta }) {
               <TotalRow label="Net change in cash and bank" strong tone="brand"><td className={cellNum}><Amount value={s.netChange} /></td></TotalRow>
               <tr><td className={cellLabel}>Cash and bank at the start</td><td className={cellNum}><Amount value={s.openingCash} /></td></tr>
               <tr><td className={cellLabel}>Cash and bank at the end</td><td className={cellNum}><Amount value={s.closingCash} /></td></tr>
-              <tr aria-label="Check line" className={s.reconciles ? '' : 'bg-danger-50'}>
+              <tr aria-label="Check line" className={s.reconciles ? '' : 'bg-danger-50 dark:bg-danger-500/10'}>
                 <td className={cellLabel}>Check: net change − (end − start), should be 0</td>
                 <td className={cellNum} data-testid="cash-flow-check"><Amount value={s.check} /></td>
               </tr>

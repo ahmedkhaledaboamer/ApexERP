@@ -263,7 +263,7 @@ function Deliveries({ id, canEdit }: { id: string; canEdit: boolean }) {
   const retry = useIntegrationMutation(integrationsApi.retryDelivery)
   if (q.isPending) return <Skeleton className="h-16" />
   return (
-    <div className="overflow-x-auto rounded-lg border border-line">
+    <div className="relative overflow-x-auto rounded-lg border border-line">
       <table className="w-full text-xs">
         <thead className="bg-sunken text-muted">
           <tr>

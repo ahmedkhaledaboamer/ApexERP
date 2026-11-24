@@ -19,7 +19,7 @@ import { activities } from '@/shared/mocks/db'
 import { TARGET_KEYS, TARGET_LABELS } from '@/shared/mocks/data/targets'
 import { delay, fail } from '@/shared/mocks/server'
 import { isClosedStatus, isLostStatus, isWonStatus, probabilityOf } from '@/shared/mocks/data/lookups'
-import { visibleLeads } from '@/shared/mocks/services/leads'
+import { pipelineLeads } from '@/shared/mocks/services/leads'
 import { targetTotalsFor } from '@/shared/mocks/services/targets'
 import { dueThisWeek, isOverdue, myTasks, overdueTasks, toTaskView } from '@/shared/mocks/selectors/tasks'
 import { scoped, tenantOf } from '@/shared/mocks/tenant'
@@ -127,7 +127,7 @@ export async function getDashboardSummary(user: User, period: DashboardPeriod = 
   const scope = scopeOf(user.role, 'sales')
   // Everything below is the caller's company only (tenant first, then the role's sales scope).
   const co = tenantOf(user)
-  const inScope = scope === 'hidden' ? [] : scoped(visibleLeads(user), user)
+  const inScope = scope === 'hidden' ? [] : scoped(pipelineLeads(user), user)
   const scopedIds = new Set(inScope.map((l) => l.id))
   const scopedActivities = activities.filter((a) => scopedIds.has(a.leadId))
   const now = new Date()

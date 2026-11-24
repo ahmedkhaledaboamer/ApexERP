@@ -118,7 +118,7 @@ function Detail({ inv }: { inv: InvoiceDetail }) {
       />
       <PageBody>
         <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
-          <div className="overflow-x-auto rounded-xl border border-line bg-zinc-100 p-3 sm:p-6 dark:bg-zinc-900">
+          <div className="relative overflow-x-auto rounded-xl border border-line bg-zinc-100 p-3 sm:p-6 dark:bg-zinc-900">
             <InvoiceDocument inv={inv} className="shadow-sm" />
           </div>
           <aside className="space-y-4">

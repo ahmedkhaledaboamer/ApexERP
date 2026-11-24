@@ -153,7 +153,7 @@ function ReportsBody({ o, tab, engagement, setTab }: { o: ReportOptions; tab: Re
             </p>
           )}
         </div>
-        <div className="overflow-x-auto">
+        <div className="relative overflow-x-auto">
           <Tabs label="Reports" items={[...o.reports.map((k) => ({ id: k as string, label: label(k) })), { id: ENGAGEMENT_TAB, label: 'Engagement' }]} value={engagement ? ENGAGEMENT_TAB : tab} onChange={(t) => setTab(t as ReportKey | typeof ENGAGEMENT_TAB)} />
         </div>
         <section id={`tab-panel-${engagement ? ENGAGEMENT_TAB : tab}`} role="tabpanel" aria-labelledby={`tab-${engagement ? ENGAGEMENT_TAB : tab}`}>

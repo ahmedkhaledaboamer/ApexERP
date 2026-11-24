@@ -21,7 +21,7 @@ export default function ProjectProfitabilityPage() {
   const r = useProjectProfit(id, q)
   const back = (
     <Link to={PATHS.financeProfitability} className="inline-flex items-center gap-1 text-[0.8125rem] text-muted hover:text-ink">
-      <ArrowLeft className="size-3.5" aria-hidden /> Profitability
+      <ArrowLeft className="size-3.5 rtl:rotate-180" aria-hidden /> Profitability
     </Link>
   )
   if (r.isPending) return <PageBody><Skeleton className="h-96 rounded-card" /></PageBody>
@@ -44,7 +44,7 @@ export default function ProjectProfitabilityPage() {
       />
       <PageBody className="space-y-5">
         {back}
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard label="Revenue" value={<Amount value={p.revenue} currency={cur} />} hint={p.budget ? `Budget ${cur} ${fmtMoney(p.budget)} · ${p.budgetBilledPct ?? 0}% billed (all time)` : 'No project value on record'} />
           <StatCard label="Direct costs" value={<Amount value={p.directCosts} currency={cur} />} hint="Bills, expenses and claims tagged to the project" />
           <StatCard

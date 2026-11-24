@@ -17,7 +17,7 @@ export function PolicyTab({ canEdit }: { canEdit: boolean }) {
   const cats = useCategories(canEdit)
   const [editing, setEditing] = useState<ExpenseCategory | 'new' | null>(null)
   return (
-    <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[2fr_1fr]">
       <section className="space-y-3">
         <div className="flex items-center justify-between"><h2 className="text-sm font-semibold text-ink">Categories</h2>{canEdit && <Button size="sm" write onClick={() => setEditing('new')}>Add category</Button>}</div>
         {cats.error ? <FinError error={cats.error} onRetry={() => cats.refetch()} /> : !cats.data ? <Skeleton className="h-48" /> : (

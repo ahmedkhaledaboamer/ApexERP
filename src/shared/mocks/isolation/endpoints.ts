@@ -14,7 +14,7 @@ import { getSessions } from '@/shared/mocks/services/security'
 import { eventAttendees, events } from '@/shared/mocks/data/events'
 import { teamIdsOf } from '@/shared/mocks/selectors/events'
 import { APEX, ADMIN, api, adminToken, other, platformToken, userById, type Co } from './harness'
-import { contactInputMapper, importRowMapper, leadInputMapper } from '@/shared/api/mappers'
+import { contactInputMapper, customerCreateMapper, importRowMapper, leadInputMapper } from '@/shared/api/mappers'
 import { CREATIVE_ENDPOINTS } from './creativeEndpoints'
 import { GROWTH_ENDPOINTS } from './growthEndpoints'
 import { EVENTS_ADVANCED_ENDPOINTS } from './eventsEndpoints'
@@ -507,6 +507,7 @@ export const ENDPOINTS: Endpoint[] = [
 
   /* ---- customers, contacts, contracts (handlers/crm.ts) ---- */
   { method: 'GET', path: '/customers', kind: 'company-list', module: 'customers', sample: () => ({}), count: { of: len, expected: ownCount(customers) } },
+  { method: 'POST', path: '/customers', kind: 'company-write', module: 'customers', sample: (co) => ({ body: customerCreateMapper.toApi({ name: `Isolation Customer ${uniq()} LLC`, industry: 'Logistics', sourceType: 'Website', contact: { name: 'Iso Buyer', mobile: mobile(co) } }) }) },
   { method: 'GET', path: '/customers/:id', kind: 'company-item', module: 'customers', sample: (co) => ({ params: { id: customer(co).id } }) },
   { method: 'PATCH', path: '/customers/:id', kind: 'company-item', module: 'customers', sample: (co) => ({ params: { id: customer(co).id }, body: { address_line: 'Isolation Street 1' } }) },
   { method: 'GET', path: '/contacts', kind: 'company-list', module: 'contacts', sample: () => ({}) },

@@ -50,6 +50,7 @@ async function issue(who: ReturnType<typeof as>, code: string, extra: Record<str
 
 describe('HR letters in Arabic and bilingual', () => {
   it('Arabic needs the company’s Arabic legal name: 422 missing_values (missing_ar), nothing numbered; then issued RTL with Arabic values', async () => {
+    setLegalAr('co_apex', '') // the seed now carries an Arabic legal name: clear it to exercise the refusal
     const { req, ok: refused } = await issue(noura, 'salary_certificate', { language: 'ar' })
     expect([refused.status, refused.body.code], refused.text).toEqual([422, 'missing_values'])
     expect(refused.body.missingAr ?? refused.body.missing_ar).toContain('company.legalName')

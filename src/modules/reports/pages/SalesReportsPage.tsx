@@ -357,7 +357,7 @@ function ReportNav({ current, data, onPick }: { current: ReportId; data: SalesRe
   return (
     <nav aria-label="Reports" className="print:hidden lg:sticky lg:top-4 lg:self-start">
       <p className="mb-2 hidden px-2 text-[0.6875rem] font-medium tracking-wide text-subtle uppercase lg:block">Ready-made reports</p>
-      <ul className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-1 sm:-mx-6 sm:px-6 lg:mx-0 lg:flex-col lg:gap-0.5 lg:overflow-visible lg:px-0 lg:pb-0">
+      <ul className="-mx-4 flex gap-1.5 relative overflow-x-auto px-4 pb-1 sm:-mx-6 sm:px-6 lg:mx-0 lg:flex-col lg:gap-0.5 lg:overflow-visible lg:px-0 lg:pb-0">
         {REPORT_IDS.map((id) => {
           const active = id === current
           const hint = navHint(id, data)

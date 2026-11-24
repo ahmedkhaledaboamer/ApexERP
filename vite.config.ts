@@ -27,10 +27,47 @@ function dropMockWorker(): Plugin {
   }
 }
 
+/** [chunk name, package-name patterns] → Rolldown chunk groups matching `node_modules/<package>/` (both path separators). */
+function vendorChunks(spec: [name: string, packages: string[]][]) {
+  return spec.map(([name, packages], i) => ({
+    name,
+    test: new RegExp(`[\\\\/]node_modules[\\\\/](?:${packages.map((p) => p.replace(/\//g, '[\\\\/]')).join('|')})[\\\\/]`),
+    // Earlier entries win when patterns overlap.
+    priority: spec.length - i,
+  }))
+}
+
 export default defineConfig({
   plugins: [react(), tailwindcss(), dropMockWorker()],
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
+  },
+  build: {
+    // Vite 8 bundles with Rolldown: `output.codeSplitting.groups` is the successor of Rollup's
+    // `manualChunks` (deprecated there). Big vendors get their own long-cacheable chunks; a group is
+    // only loaded by the chunks that import it (charts, dnd, excel… ship with the lazy pages using them).
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: vendorChunks([
+            ['vendor-react', ['react', 'react-dom', 'scheduler', 'react-router', 'react-router-dom', '@remix-run/router']],
+            ['vendor-query', ['@tanstack/react-query', '@tanstack/query-core']],
+            ['vendor-table', ['@tanstack/react-table', '@tanstack/table-core']],
+            ['vendor-redux', ['@reduxjs/toolkit', 'redux', 'react-redux', 'redux-thunk', 'reselect', 'immer', 'use-sync-external-store']],
+            // Before charts: a group also takes its dependencies (recharts uses clsx), and the shell needs these.
+            ['vendor-utils', ['clsx', 'tailwind-merge']],
+            ['vendor-charts', ['recharts', 'recharts-scale', 'react-smooth', 'victory-vendor', 'd3-.+', 'internmap', 'decimal.js-light', 'eventemitter3', 'lodash', 'react-is', 'fast-equals']],
+            ['vendor-dnd', ['@dnd-kit/.+']],
+            ['vendor-motion', ['framer-motion', 'motion-dom', 'motion-utils']],
+            ['vendor-forms', ['react-hook-form', '@hookform/resolvers', 'zod']],
+            ['vendor-date', ['date-fns']],
+            ['vendor-icons', ['lucide-react', '@radix-ui/react-icons']],
+            ['vendor-excel', ['read-excel-file', 'write-excel-file', 'fflate', 'unzipper', 'jszip', '@xmldom/xmldom', 'xpath']],
+            ['vendor-axios', ['axios']],
+          ]),
+        },
+      },
+    },
   },
   test: {
     // Unit tests run the mock services directly (no browser, no MSW).

@@ -177,7 +177,7 @@ function PlanModal({ plan, onClose }: { plan: CommissionPlan | null; onClose: ()
       title={plan ? `Edit ${plan.name}` : 'New commission plan'}
       footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button write loading={save.isPending} onClick={() => save.mutate(undefined, { onSuccess: () => { toast.success('Plan saved'); onClose() }, onError: (e) => toast.error('Not saved', e.message) })}>Save</Button></>}
     >
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field id="pl-name" label="Name" required><TextInput id="pl-name" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
         <Field id="pl-basis" label="Basis"><SelectInput id="pl-basis" value={f.basis} onChange={(e) => setF({ ...f, basis: e.target.value as CommissionBasis })}>{Object.entries(COMMISSION_BASIS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</SelectInput></Field>
         <Field id="pl-rate" label="Base rate (%)"><TextInput id="pl-rate" inputMode="decimal" value={String(f.rate)} onChange={(e) => setF({ ...f, rate: Number(e.target.value) || 0 })} /></Field>

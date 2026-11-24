@@ -168,7 +168,7 @@ function Performance() {
           {d && <span className="ms-auto pb-2 text-xs text-muted">As of {d.asOf} ({d.timezone})</span>}
         </div>
         {q.isPending ? (
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{Array.from({ length: 8 }, (_, i) => <Skeleton key={i} className="h-32 rounded-card" />)}</div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">{Array.from({ length: 8 }, (_, i) => <Skeleton key={i} className="h-32 rounded-card" />)}</div>
         ) : q.isError || !d ? (
           <ErrorState message={q.error instanceof Error ? q.error.message : 'Couldn’t load the figures.'} onRetry={() => void q.refetch()} />
         ) : (
@@ -199,7 +199,7 @@ function Section({ title, label, children }: { title: string; label: string; chi
 const GRID = 'grid grid-cols-1 gap-4 min-[26.25rem]:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 print:grid-cols-3'
 
 function Alerts({ alerts }: { alerts: PerformanceAlert[] }) {
-  const tone = { danger: 'border-danger-500/40 bg-danger-50 text-danger-700 dark:bg-danger-500/10', warning: 'border-warning-500/40 bg-warning-50 text-warning-800 dark:bg-warning-500/10', info: 'border-line bg-sunken/60 text-ink-2' }
+  const tone = { danger: 'border-danger-500/40 bg-danger-50 text-danger-700 dark:bg-danger-500/10 dark:text-danger-500', warning: 'border-warning-500/40 bg-warning-50 text-warning-700 dark:bg-warning-500/10 dark:text-warning-500', info: 'border-line bg-sunken/60 text-ink-2' }
   return (
     <section aria-label="Alerts" className="space-y-2">
       {alerts.map((a) => (
@@ -347,7 +347,7 @@ function Charts({ d }: { d: CompanyPerformance }) {
   if (!charts.length) return null
   return (
     <Section title="Trends" label="Trends">
-      <div className="grid gap-5 xl:grid-cols-2 print:grid-cols-2">{charts}</div>
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-2 print:grid-cols-2">{charts}</div>
     </Section>
   )
 }
@@ -361,7 +361,7 @@ function ScorecardSection({ d }: { d: CompanyPerformance }) {
       {s.rows.length === 0 ? (
         <Card><EmptyState title="No departments in your scope" body="The scorecard lists the departments you head." /></Card>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-line bg-surface">
+        <div className="relative overflow-x-auto rounded-xl border border-line bg-surface">
           <table className="w-full text-[0.8125rem]" aria-label="Department scorecard">
             <thead className="border-b border-line bg-sunken/60 text-xs text-muted">
               <tr>

@@ -114,7 +114,7 @@ export default function BillEditorPage() {
         }
       />
       <PageBody className="space-y-5">
-        <div className="grid gap-4 rounded-xl border border-line bg-surface p-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 rounded-xl border border-line bg-surface p-4 md:grid-cols-2 xl:grid-cols-4">
           <Field id="bill-vendor" label="Supplier" required hint={fromPo ? 'From the purchase order' : undefined}>
             <SelectInput id="bill-vendor" aria-label="Supplier" value={vendorId} disabled={fromPo} onChange={(e) => {
               setVendorId(e.target.value)

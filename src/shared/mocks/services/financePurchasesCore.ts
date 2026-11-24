@@ -334,7 +334,7 @@ export function refreshPoStatus(co: string, po: PoRecord, at: string): void {
 export function newPoRecord(co: string, f: { id?: string; vendorId: string; requester: Actor & { id: string }; departmentId: string | null; orderDate: string; expectedDate: string | null; currency: string; exchangeRate: number; notes: string; deliveryAddress: string; advancePct?: number | null; lines: unknown; at: string }): Tenant<PoRecord> {
   const id = f.id ?? nextId('purchaseOrder', 'PO')
   const vat = effectiveProfile(co, f.vendorId).vatNumber
-  const lines = buildLines(co, id, f.lines, { vendorId: f.vendorId, vatNumber: vat }).map(({ poLineId: _p, vatRecoverable: _v, ...l }) => ({ ...l, receivedQty: 0 })) // eslint-disable-line @typescript-eslint/no-unused-vars
+  const lines = buildLines(co, id, f.lines, { vendorId: f.vendorId, vatNumber: vat }).map(({ poLineId: _p, vatRecoverable: _v, ...l }) => ({ ...l, receivedQty: 0 }))
   const po: Tenant<PoRecord> = {
     companyId: co,
     id,

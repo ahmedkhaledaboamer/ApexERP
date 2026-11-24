@@ -215,7 +215,7 @@ function seedCompany(co: string): void {
   const creator = u(s.creator)
   for (const [n, e] of s.expenses.entries()) {
     const date = day(today, e.ago)
-    const { ago: _a, cat: cname, state, fundIdx, ...input } = e // eslint-disable-line @typescript-eslint/no-unused-vars
+    const { ago: _a, cat: cname, state, fundIdx, ...input } = e
     const fields = expenseFields(
       co,
       {

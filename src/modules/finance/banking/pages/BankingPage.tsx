@@ -174,7 +174,7 @@ function AccountModal({ account, onClose }: { account: BankAccount | null; onClo
         </>
       }
     >
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field id="ba-name" label="Name" required><TextInput id="ba-name" value={f.name} onChange={(e) => set('name', e.target.value)} /></Field>
         <Field id="ba-bank" label="Bank"><TextInput id="ba-bank" value={f.bankName} onChange={(e) => set('bankName', e.target.value)} /></Field>
         <Field id="ba-kind" label="Kind">
@@ -285,7 +285,7 @@ function TransferModal({ onClose }: { onClose: () => void }) {
       title="New transfer"
       footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button write loading={save.isPending} onClick={() => save.mutate(undefined, { onSuccess: (t) => { toast.success(`Transfer ${t.number} posted`); onClose() }, onError: (e) => toast.error('Not posted', e.message) })}>Post transfer</Button></>}
     >
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field id="tr-from" label="From"><SelectInput id="tr-from" value={f.from} onChange={(e) => set('from', e.target.value)}><option value="">Choose…</option>{accounts.data?.map((a) => <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>)}</SelectInput></Field>
         <Field id="tr-to" label="To"><SelectInput id="tr-to" value={f.to} onChange={(e) => set('to', e.target.value)}><option value="">Choose…</option>{accounts.data?.filter((a) => a.id !== f.from).map((a) => <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>)}</SelectInput></Field>
         <Field id="tr-out" label={`Amount out${from ? ` (${from.currency})` : ''}`}><TextInput id="tr-out" inputMode="decimal" value={f.amountFrom} onChange={(e) => set('amountFrom', e.target.value)} /></Field>
@@ -346,7 +346,7 @@ function Workspace({ id }: { id: string }) {
           ['Statement date', w.statementDate ? fmtDate(w.statementDate) : '—'],
           ['Statement balance', w.statementBalance === null ? '—' : <Amount key="sb" value={w.statementBalance} currency={cur} />],
           ['Cleared book balance', <Amount key="cb" value={w.clearedBalance} currency={cur} />],
-          ['Difference', <span key="d" data-testid="recon-difference" className={w.difference === 0 ? 'text-success-700' : 'text-danger-600'}><Amount value={w.difference} /></span>],
+          ['Difference', <span key="d" data-testid="recon-difference" className={w.difference === 0 ? 'text-success-700 dark:text-success-500' : 'text-danger-600'}><Amount value={w.difference} /></span>],
         ].map(([k, v]) => (
           <div key={String(k)} className="rounded-lg border border-line px-3 py-2">
             <dt className="text-xs text-muted">{k}</dt>
@@ -383,7 +383,7 @@ function Workspace({ id }: { id: string }) {
         </section>
       )}
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <section aria-label="Unmatched statement lines">
           <h3 className="mb-2 text-[0.8125rem] font-semibold text-ink">Statement lines to match ({w.statementLines.length})</h3>
           <SimpleTable label="Statement lines" head={<tr><th className={th} /><th className={th}>Date</th><th className={th}>Description</th><th className={thEnd}>Amount</th><th className={th} /></tr>}>
@@ -484,7 +484,7 @@ function FinishModal({ ws, onClose, onDone }: { ws: ReconcileWorkspace; onClose:
       description="The statement balance must equal the cleared book balance (difference 0)."
       footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button write loading={finish.isPending} onClick={() => finish.mutate(undefined, { onSuccess: (r) => { toast.success('Reconciled', `to ${fmtDate(r.statementDate)}`); onClose(); onDone(r.id) }, onError: (e) => toast.error('Not reconciled', e.message) })}>Finish</Button></>}
     >
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field id="fin-date" label="Statement date"><TextInput id="fin-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
         <Field id="fin-bal" label="Statement balance"><TextInput id="fin-bal" inputMode="decimal" value={balance} onChange={(e) => setBalance(e.target.value)} /></Field>
       </div>

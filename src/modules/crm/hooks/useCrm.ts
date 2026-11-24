@@ -4,6 +4,7 @@ import { leadKeys } from '@/modules/leads/queryKeys'
 import {
   createContact,
   createContract,
+  createCustomer,
   getContacts,
   getContracts,
   getCustomer,
@@ -12,7 +13,7 @@ import {
   updateContract,
   updateCustomer,
 } from '@/modules/crm/api/crmApi'
-import type { ContactInput, ContactUpdateInput, ContractInput, ContractUpdateInput, CustomerUpdateInput } from '@/modules/crm/types'
+import type { ContactInput, ContactUpdateInput, ContractInput, ContractUpdateInput, CustomerCreateInput, CustomerUpdateInput } from '@/modules/crm/types'
 import { scopeOf } from '@/shared/lib/permissions'
 import { getUsers } from '@/modules/auth/api/authApi'
 import { useCurrentUser } from '@/store/hooks'
@@ -56,6 +57,18 @@ export function useContractsQuery() {
     queryKey: crmKeys.contracts(user.id),
     queryFn: getContracts,
     enabled: scopeOf(user.role, 'sales') !== 'hidden',
+  })
+}
+
+/** The backing Won lead shows in the pipeline too, so lead caches refresh as well. */
+export function useCreateCustomer() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: CustomerCreateInput) => createCustomer(input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: crmKeys.all })
+      qc.invalidateQueries({ queryKey: leadKeys.all })
+    },
   })
 }
 

@@ -57,3 +57,22 @@ export const customerSchema = z.object({
 })
 
 export type CustomerValues = z.infer<typeof customerSchema>
+
+/** New customer form (POST /customers): company details plus an optional primary contact. */
+export const customerCreateSchema = customerSchema
+  .extend({
+    name: z.string().trim().min(1, 'Company name is required.').max(120, 'Keep it under 120 characters.'),
+    industry: z.string().min(1, 'Pick an industry.'),
+    subIndustry: z.string(),
+    sourceType: z.string().min(1, 'Pick how they found you.'),
+    contactName: z.string().trim().max(80, 'Keep it under 80 characters.'),
+    contactTitle: z.string().trim().max(80, 'Keep it under 80 characters.'),
+    contactMobile: optionalMobile,
+    contactEmail: optionalEmail,
+  })
+  .refine((v) => v.contactName !== '' || (v.contactMobile === '' && v.contactEmail === '' && v.contactTitle === ''), {
+    message: 'Give the contact a name, or leave the contact empty.',
+    path: ['contactName'],
+  })
+
+export type CustomerCreateValues = z.infer<typeof customerCreateSchema>

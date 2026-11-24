@@ -62,7 +62,7 @@ export default function PublicLetterVerifyPage() {
         </form>
 
         {code && !normalized && (
-          <p role="alert" className="rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 py-2 text-[0.8125rem] text-danger-700 dark:text-danger-400">
+          <p role="alert" className="rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 py-2 text-[0.8125rem] text-danger-700 dark:text-danger-500">
             That doesn’t look like a verification code: it has 12 letters and digits, e.g. ABCD-EFGH-JKMN.
           </p>
         )}
@@ -87,11 +87,11 @@ export default function PublicLetterVerifyPage() {
                   <p className="font-semibold text-ink">{v.companyName}</p>
                 </div>
                 {v.status === 'valid' ? (
-                  <p className="flex items-center gap-2 rounded-lg bg-success-50 px-3 py-2 font-semibold text-success-800 dark:bg-success-950 dark:text-success-200">
+                  <p className="flex items-center gap-2 rounded-lg bg-success-50 px-3 py-2 font-semibold text-success-700 dark:bg-success-500/10 dark:text-success-500">
                     <BadgeCheck className="size-5" aria-hidden /> Valid letter
                   </p>
                 ) : (
-                  <p className="flex items-center gap-2 rounded-lg bg-danger-50 px-3 py-2 font-semibold text-danger-800 dark:bg-danger-950 dark:text-danger-200">
+                  <p className="flex items-center gap-2 rounded-lg bg-danger-50 px-3 py-2 font-semibold text-danger-700 dark:bg-danger-500/10 dark:text-danger-500">
                     <ShieldX className="size-5" aria-hidden /> Revoked{v.revokedAt ? ` on ${letterDate(v.revokedAt.slice(0, 10))}` : ''}: this letter is no longer valid
                   </p>
                 )}

@@ -172,7 +172,7 @@ function Row({ label, value, currency, strong, note }: { label: string; value: n
 
 function Kpi({ label, value, currency, tone }: { label: string; value: number; currency: string; tone?: 'brand' | 'warn' }) {
   return (
-    <div className={cn('rounded-xl border border-line bg-surface px-4 py-3', tone === 'brand' && 'border-brand-300 bg-brand-50/40 dark:bg-brand-500/10', tone === 'warn' && 'border-warning-300')}>
+    <div className={cn('rounded-xl border border-line bg-surface px-4 py-3', tone === 'brand' && 'border-brand-300 bg-brand-50/40 dark:bg-brand-500/10', tone === 'warn' && 'border-warning-500/40')}>
       <p className="text-xs text-muted">{label}</p>
       <p className="mt-1 text-lg"><Amount value={value} currency={currency} strong /></p>
     </div>
@@ -191,14 +191,14 @@ function CorporateTaxTab({ settings }: { settings: TaxSettings }) {
       </div>
       {q.error ? <FinError error={q.error as Error} onRetry={() => void q.refetch()} /> : !e ? <Skeleton className="h-96" /> : (
         <>
-          <p className="rounded-lg border border-warning-300 bg-warning-50 px-3 py-2 text-[0.8125rem] dark:bg-warning-500/10">Estimate only — {fmtDate(e.from)} to {fmtDate(e.asOf)}. Consult your tax advisor before filing.</p>
-          <div className="grid gap-3 sm:grid-cols-4">
+          <p className="rounded-lg border border-warning-500/40 bg-warning-50 px-3 py-2 text-[0.8125rem] dark:bg-warning-500/10">Estimate only — {fmtDate(e.from)} to {fmtDate(e.asOf)}. Consult your tax advisor before filing.</p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
             <Kpi label="Accounting profit (to date)" value={e.accountingProfit} currency={e.currency} />
             <Kpi label="Taxable income" value={e.taxableIncome} currency={e.currency} />
             <Kpi label="Estimated corporate tax" value={e.tax} currency={e.currency} tone="brand" />
             <Kpi label={e.toProvide >= 0 ? 'Still to provide' : 'Over-provided'} value={e.toProvide} currency={e.currency} tone={e.toProvide !== 0 ? 'warn' : undefined} />
           </div>
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <SimpleTable label="Corporate tax computation" head={<tr><th className={th}>Computation</th><th className={thEnd}>{e.currency}</th></tr>}>
               <Row label="Revenue" value={e.revenue} />
               <Row label="Expenses" value={-e.expenses} />
@@ -234,14 +234,14 @@ function ZakatTab({ settings }: { settings: TaxSettings }) {
       </div>
       {q.error ? <FinError error={q.error as Error} onRetry={() => void q.refetch()} /> : !e ? <Skeleton className="h-96" /> : (
         <>
-          <p className="rounded-lg border border-warning-300 bg-warning-50 px-3 py-2 text-[0.8125rem] dark:bg-warning-500/10">Estimate, consult your advisor — balances as of {fmtDate(e.asOf)}.</p>
-          <div className="grid gap-3 sm:grid-cols-4">
+          <p className="rounded-lg border border-warning-500/40 bg-warning-50 px-3 py-2 text-[0.8125rem] dark:bg-warning-500/10">Estimate, consult your advisor — balances as of {fmtDate(e.asOf)}.</p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
             <Kpi label="Zakat base" value={e.base} currency={e.currency} />
             <Kpi label={`Zakat at ${e.rate} %`} value={e.zakat} currency={e.currency} tone="brand" />
             <Kpi label="Already provided" value={e.provided} currency={e.currency} />
             <Kpi label={e.toProvide >= 0 ? 'Still to provide' : 'Over-provided'} value={e.toProvide} currency={e.currency} tone={e.toProvide !== 0 ? 'warn' : undefined} />
           </div>
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <SimpleTable label="Zakat base" head={<tr><th className={th}>Simplified zakat base</th><th className={thEnd}>{e.currency}</th></tr>}>
               {e.lines.map((l) => <Row key={l.key} label={l.label} value={l.amount} note={l.note} />)}
               <Row label="Base (balance-sheet method)" value={e.baseByBalanceSheet} strong />

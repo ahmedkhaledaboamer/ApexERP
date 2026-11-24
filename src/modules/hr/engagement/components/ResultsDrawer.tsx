@@ -124,7 +124,7 @@ export function ResultsBody({ r }: { r: SurveyResults }) {
         </Section>
       )}
       {(r.byDepartment.length > 0 || r.byTenure.length > 0) && (
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {r.byDepartment.length > 0 && <Breakdown title="By department" rows={r.byDepartment} min={r.minGroup} />}
           {r.byTenure.length > 0 && <Breakdown title="By tenure" rows={r.byTenure} min={r.minGroup} />}
         </div>

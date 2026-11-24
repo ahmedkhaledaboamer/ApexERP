@@ -82,7 +82,7 @@ export function PdcTab({ canWrite, highlight }: { canWrite: boolean; highlight: 
               <td className={td}>{p.customerName}</td>
               <td className={td}>
                 <span className="num">{fmtDate(p.dueDate)}</span>
-                {p.depositDue && <span className="block text-xs font-medium text-warning-700 dark:text-warning-400">Deposit {p.dueDate === today ? 'today' : 'now'}</span>}
+                {p.depositDue && <span className="block text-xs font-medium text-warning-700 dark:text-warning-500">Deposit {p.dueDate === today ? 'today' : 'now'}</span>}
               </td>
               <td className={td}><span className="num text-xs">{p.allocations.map((a) => a.invoiceNumber).join(', ') || 'Advance'}</span></td>
               <td className={tdEnd}><Amount value={p.amount} currency={p.currency} /></td>
@@ -155,8 +155,8 @@ function ReceivePdcDrawer({ open, onClose }: { open: boolean; onClose: () => voi
       footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button write loading={save.isPending} onClick={submit}>Register cheque</Button></div>}
     >
       <div className="space-y-4">
-        {error && <p role="alert" className="rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 py-2 text-[0.8125rem] text-danger-700 dark:text-danger-400">{error}</p>}
-        <div className="grid gap-3 sm:grid-cols-2">
+        {error && <p role="alert" className="rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 py-2 text-[0.8125rem] text-danger-700 dark:text-danger-500">{error}</p>}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field id="pdc-customer" label="Customer" required className="sm:col-span-2">
             <SelectInput id="pdc-customer" value={customerId} onChange={(e) => { setCustomerId(e.target.value); setAlloc({}) }}>
               <option value="">Select a customer…</option>

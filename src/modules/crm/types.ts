@@ -92,6 +92,25 @@ export interface CustomerUpdateInput {
   ownerId?: string
 }
 
+/**
+ * POST /customers: an existing client added directly (not through a won lead). The server records a
+ * backing lead in the Won status (customers.lead_id) so contacts, notes and activities have a timeline.
+ */
+export interface CustomerCreateInput {
+  name: string
+  industry: string
+  subIndustry?: string
+  sourceType: SourceType
+  status?: CustomerStatus
+  website?: string
+  address?: string
+  emirate?: Emirate | ''
+  /** Default: the caller. Own-scope roles can only pick themselves; team scope their team. */
+  ownerId?: string
+  /** Optional primary contact (stored on the backing lead, like the Won flow's contacts). */
+  contact?: { name: string; title?: string; mobile?: string; email?: string } | null
+}
+
 export type ContactRecordType = 'Lead' | 'Customer'
 
 export interface ContactRow extends Contact {

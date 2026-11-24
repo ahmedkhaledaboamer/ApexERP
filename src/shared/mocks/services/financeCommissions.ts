@@ -173,7 +173,7 @@ export function createPlan(user: User, input: CommissionPlanInput | null): Commi
 export function updatePlan(user: User, id: string, input: CommissionPlanInput | null): CommissionPlan {
   if (!PLAN_ROLES.includes(user.role)) {
     planReader(user)
-    finCommissionPlans.find((p) => p.companyId === tenantOf(user) && p.id === id) ?? notFound()
+    if (!finCommissionPlans.find((p) => p.companyId === tenantOf(user) && p.id === id)) notFound()
   }
   const co = planWriter(user)
   const p = finCommissionPlans.find((x) => x.companyId === co && x.id === id) ?? notFound()

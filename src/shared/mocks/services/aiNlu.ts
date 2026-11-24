@@ -184,7 +184,7 @@ function dueOf(t: string): AiDueSpec | null {
 
 /** The text after "to" in a move request: "move L-1016 to Meeting" → "meeting"; Arabic "إلى" / "لـ". */
 function stageTextOf(t: string): string | null {
-  const m = t.match(/\b(?:to|as|into)\s+(?:the\s+)?(?:stage\s+|status\s+)?["“]?([a-z][a-z \-]{1,30}?)["”]?(?:\s+(?:stage|status|with|and|because|since|next|by|on|tomorrow)\b|[.,!?]|$)/)
+  const m = t.match(/\b(?:to|as|into)\s+(?:the\s+)?(?:stage\s+|status\s+)?["“]?([a-z][a-z -]{1,30}?)["”]?(?:\s+(?:stage|status|with|and|because|since|next|by|on|tomorrow)\b|[.,!?]|$)/)
   if (m) return m[1].trim()
   const ar = t.match(/(?:الي|لـ|لمرحله|لحاله)\s*([؀-ۿa-z ]{2,25})$/)
   return ar ? ar[1].trim() : null

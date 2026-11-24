@@ -107,7 +107,7 @@ function Block({ block }: { block: AiBlock }) {
       return null
     case 'cards':
       return (
-        <div className="grid gap-2 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {block.cards.map((c) => (
             <RecordCard key={`${c.type}:${c.id}`} card={c} />
           ))}
@@ -120,7 +120,7 @@ function Block({ block }: { block: AiBlock }) {
             <p className="flex-1 text-xs font-semibold text-ink-2">{block.title}</p>
             <span className="text-xs text-muted">{block.rows.length}</span>
           </div>
-          <div className="overflow-x-auto">
+          <div className="relative overflow-x-auto">
             <table className="w-full text-[0.8125rem]" data-testid="ai-table">
               <thead>
                 <tr className="border-b border-line text-xs text-muted">

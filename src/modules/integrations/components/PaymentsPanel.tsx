@@ -94,7 +94,7 @@ function GatewayCard({ g, canEdit }: { g: Gateway; canEdit: boolean }) {
       )}
       {canEdit && editing && (
         <form
-          className="grid gap-3 rounded-lg border border-line p-3 sm:grid-cols-2"
+          className="grid grid-cols-1 gap-3 rounded-lg border border-line p-3 sm:grid-cols-2"
           onSubmit={(e) => {
             e.preventDefault()
             save.mutate(

@@ -297,7 +297,7 @@ function WithdrawModal({ id, onClose }: { id: string; onClose: () => void }) {
       <F label="Reason">
         <TextArea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} />
       </F>
-      {m.error && <p className="mt-3 text-[0.8125rem] text-danger-700 dark:text-danger-300" role="alert">{errorMessage(m.error)}</p>}
+      {m.error && <p className="mt-3 text-[0.8125rem] text-danger-700 dark:text-danger-500" role="alert">{errorMessage(m.error)}</p>}
     </Modal>
   )
 }
@@ -363,7 +363,7 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
         </>
       }
     >
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="sm:col-span-2">
           <F label="Employee">
             <SelectInput value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>
@@ -450,7 +450,7 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
           </F>
         </div>
       </div>
-      {m.error && <p className="mt-3 text-[0.8125rem] text-danger-700 dark:text-danger-300" role="alert">{errorMessage(m.error)}</p>}
+      {m.error && <p className="mt-3 text-[0.8125rem] text-danger-700 dark:text-danger-500" role="alert">{errorMessage(m.error)}</p>}
     </Modal>
   )
 }
