@@ -210,6 +210,29 @@ describe('sign-up: paid plans', () => {
   })
 })
 
+describe('sign-up: company logo', () => {
+  const svg = (body: string) => `data:image/svg+xml;base64,${btoa(body)}`
+  const LOGO = svg('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="60" viewBox="0 0 200 60"><rect width="200" height="60" fill="#0f766e"/></svg>')
+
+  it('an optional logo given at sign-up becomes the new workspace’s logo; none keeps the monogram', async () => {
+    const s = await verified({ logo: LOGO })
+    const session = await completeSignup(s.signupId, { plan: 'trial' })
+    expect(session.tenant.branding.logoUrl).toMatch(/^data:image\/svg\+xml;base64,/)
+
+    const plain = await verified({ companyName: 'Plain Co', subdomain: 'plain-co', adminEmail: fresh(), logo: null })
+    expect((await completeSignup(plain.signupId, { plan: 'trial' })).tenant.branding.logoUrl).toBeNull()
+  })
+
+  it('refuses a logo that is not a safe image (422 invalid_logo) and holds nothing', async () => {
+    const before = pendingSignups.length
+    const bad = await apiError(startSignup(input({ adminEmail: fresh(), logo: 'data:image/png;base64,' + btoa('not an image') }), client()))
+    expect([bad.status, bad.code]).toEqual([422, 'invalid_logo'])
+    const script = await apiError(startSignup(input({ adminEmail: fresh(), logo: svg('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>') }), client()))
+    expect([script.status, script.code]).toEqual([422, 'invalid_logo'])
+    expect(pendingSignups.length).toBe(before)
+  })
+})
+
 describe('sign-up: subdomain', () => {
   it('rejects taken (company or pending), reserved and malformed addresses', async () => {
     expect((await apiError(startSignup(input({ subdomain: 'apexaora', adminEmail: fresh() }), client()))).status).toBe(409)

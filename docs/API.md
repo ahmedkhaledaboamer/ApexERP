@@ -906,7 +906,7 @@ Flow: availability (live) → **start** (validate, nothing created, code emailed
 |---|---|---|---|---|
 | GET | `/public/plans` | | `Plan[]` (billing model, active plans by rank) | |
 | GET | `/public/signup/availability?subdomain=` | | `SubdomainAvailability { subdomain, available, reason }` | never fails; `reason` explains format / reserved / taken |
-| POST | `/public/signup` | `SignupStartInput` | `SignupStarted { signupId, email, resendInSeconds, codeExpiresAt, devCode? }` | 422 validation, 409 `subdomain_taken` / `email_taken` / `email_pending`, 429 `rate_limited` |
+| POST | `/public/signup` | `SignupStartInput` (optional `logo`: image data URL, same rules as the Settings › Branding light logo; becomes the new workspace's `branding.logo_url` on complete) | `SignupStarted { signupId, email, resendInSeconds, codeExpiresAt, devCode? }` | 422 validation (422 `invalid_logo` for an unsafe / non-image logo), 409 `subdomain_taken` / `email_taken` / `email_pending`, 429 `rate_limited` |
 | GET | `/public/signup/:id` | | `SignupStatus { signupId, email, companyName, subdomain, country, verified, paidCheckouts[], resendInSeconds, codeExpiresAt }` (resume after a reload) | 404 `signup_not_found`, 429 `too_many_attempts` |
 | POST | `/public/signup/:id/resend` | `{}` | `SignupStarted` (new code; the old one stops working) | 429 `resend_cooldown`, 409 `already_verified`, 404, 429 `too_many_attempts` |
 | POST | `/public/signup/:id/verify` | `{ code }` | `SignupVerified { signupId, verified: true }` (idempotent) | 422 `invalid_code` ("N attempts left"), 422 `code_expired`, 429 `too_many_attempts`, 404 |

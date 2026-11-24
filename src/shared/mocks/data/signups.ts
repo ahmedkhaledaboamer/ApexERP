@@ -21,6 +21,8 @@ export interface PendingSignup {
   mobile: string
   /** Mock only; a real backend stores a hash. */
   password: string
+  /** Optional logo (checked, normalised image data URL); the new workspace's branding.logoUrl. */
+  logoUrl?: string | null
   createdAt: string
   code: string
   codeSentAt: string
